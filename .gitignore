@@ -5,3 +5,6 @@ results.csv
 report.html
 run.log
 .DS_Store
+site/
+logs/
+.wrangler/

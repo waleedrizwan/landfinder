@@ -47,6 +47,18 @@ reopens it. A full run (10 pages per country/state/province) takes under an hour
 
 Stopping with Ctrl-C is safe: progress is saved in `data/`, and running the same command again resumes.
 
+## Website and daily updates
+
+Every run also builds a small static website in `site/`. It shows today's cheapest listing, the
+cheapest land in each country, a map and a filterable table of every listing seen in the last 3 days.
+The live copy is at **https://cheapest-land.pages.dev**.
+
+- `./publish.sh` deploys `site/` to Cloudflare Pages with `wrangler`. Run `npx wrangler login` once first.
+- `./install_daily.sh` schedules `daily.sh` with launchd: a fresh scrape at 6:00 every morning, with
+  windows hidden in the Dock, then a deploy. If the Mac is asleep at that time, macOS runs the job when it
+  wakes. Logs go to `logs/`. Use `./install_daily.sh 7 30` to change the time, or `./install_daily.sh off`
+  to remove the job.
+
 ## Output
 
 - **`report.html`**: open it in a browser for a sortable, filterable table of every listing.

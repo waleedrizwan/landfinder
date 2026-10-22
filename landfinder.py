@@ -19,7 +19,7 @@ Output (in this folder)
   data/         raw scraped records + progress, so a stopped run resumes where it left off
 """
 import argparse, csv, json, math, os, queue, random, re, subprocess, sys, threading, time, warnings
-from datetime import datetime
+from datetime import datetime, timedelta
 
 warnings.filterwarnings("ignore")
 import requests
@@ -91,8 +91,9 @@ def acres_from_text(text):
     if not text:
         return None
     t = text.lower()
+    romance = bool(re.search(r"\b(de|des|la|le|du|à|superficie|terrain|terre|hectares? de|à vendre|venta|terreno)\b", t))
     pats = [
-        (r"([\d][\d,]*\.?\d*)\s*(?:acres?|ac\b|acre lot)", 1.0),
+        (r"((?:\d[\d,]*)?\.?\d+)\s*(?:acres?|ac\b|acre lot)", 1.0),
         (r"([\d][\d,]*\.?\d*)\s*(?:hectares?|ha\b|hect)", 2.4710538),
         (r"([\d][\d,]*\.?\d*)\s*(?:sq\.?\s*ft|sqft|square\s*feet|ft²|ft2)", 1 / 43560.0),
         (r"([\d][\d,]*\.?\d*)\s*(?:m²|m2\b|sq\.?\s*m\b|square\s*met)", 1 / ACRE_M2),
@@ -100,7 +101,11 @@ def acres_from_text(text):
     for pat, factor in pats:
         m = re.search(pat, t)
         if m:
-            v = num(m.group(1))
+            raw = m.group(1).rstrip(".,")
+            # "5,62 ha" and French/Spanish "1,140 hectare" use a decimal comma
+            if re.search(r",\d{1,2}$", raw) or (romance and re.fullmatch(r"\d{1,3},\d{3}", raw)):
+                raw = raw.replace(".", "").replace(",", ".")
+            v = num(raw)
             if v and v > 0:
                 return v * factor
     return None
@@ -138,6 +143,18 @@ PAYMENT_RX = re.compile(r"(/\s*mo\b|/\s*month|per month|a month|monthly|\$\s*\d+
 WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of)", re.I)
 MIN_PRICE = 500  # USD-ish floor applied to Properstar searches
 TILE_SCALE = 0.5  # tiled windows draw pages at half size
+CLAIM_RX = re.compile(r"\b(mining claims?|lode claims?|placer claims?|gold claims?|mineral claims?|mineral rights?|unpatented|lode gold|mining|prospecting)\b", re.I)
+LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\blease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenant\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b)", re.I)
+PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|hect|ha\b)", re.I)
+
+
+def placeholder_price(p):
+    if p is None:
+        return False
+    d = str(int(p)) if float(p).is_integer() else ""
+    return p <= 100 or (len(d) >= 3 and len(set(d)) == 1) or d in ("1234", "12345", "123456")
+
+
 AUCTION_RX = re.compile(r"\b(auction|tender|bid|starting bid)\b", re.I)
 
 
@@ -151,6 +168,20 @@ def flag(rec):
         f.append("price too low - likely monthly payment or per-m2 price")
     elif usd is not None and usd < 2000 and PAYMENT_RX.search(text):
         f.append("may be payment plan price")
+    if CLAIM_RX.search(text):
+        f.append("mining claim/mineral rights - not land ownership")
+    if "homes-for-sale" in (rec.get("url") or ""):
+        f.append("house listing - not vacant land")
+    if rec.get("source") == "kijiji" and usd is not None and usd < 3000:
+        f.append("price too low for Canada - likely a deposit, lease or placeholder")
+    if rec.get("source") == "properstar" and usd is not None and usd < 1000 and (acres or 0) > 1:
+        f.append("price may be per m2/acre/hectare (under $1,000 for over an acre)")
+    if LEASE_RX.search(text):
+        f.append("lease/rental - not a sale price")
+    if placeholder_price(rec.get("price")):
+        f.append("placeholder price")
+    if PER_UNIT_RX.search(text):
+        f.append("price may be per m2/acre/hectare")
     if AUCTION_RX.search(text):
         f.append("auction/tender - price may be a minimum bid")
     if not acres:
@@ -161,6 +192,10 @@ def flag(rec):
 
 
 def finalize(rec, rates):
+    if rec.get("source") == "kijiji":  # re-read area with the current parser (fixes older scrapes)
+        a = acres_from_text(rec.get("title")) or acres_from_text(rec.get("description"))
+        if a:
+            rec["acres"] = a
     rec["price_usd"] = to_usd(rec.get("price"), rec.get("currency"), rates)
     a = rec.get("acres")
     rec["acres"] = round(a, 4) if a else None
@@ -172,7 +207,9 @@ def finalize(rec, rates):
 # ----------------------------------------------------------------------------- storage
 
 class Store:
-    """Append-only JSONL of listings + set of finished page URLs, so runs resume."""
+    """Append-only JSONL of listings + set of finished page URLs, so runs resume.
+    A listing seen again on a later run is appended again; the newest line per URL wins, which keeps
+    prices current and lets the site drop listings that haven't been seen lately."""
 
     def __init__(self):
         os.makedirs(DATA, exist_ok=True)
@@ -192,11 +229,13 @@ class Store:
         new = 0
         with self.lock, open(self.path, "a") as f:
             for r in recs:
-                if r.get("url") and r["url"] not in self.urls:
+                if not r.get("url"):
+                    continue
+                if r["url"] not in self.urls:
                     self.urls.add(r["url"])
-                    r["scraped_at"] = datetime.now().isoformat(timespec="seconds")
-                    f.write(json.dumps(r) + "\n")
                     new += 1
+                r["scraped_at"] = datetime.now().isoformat(timespec="seconds")
+                f.write(json.dumps(r) + "\n")
         return new
 
     def mark(self, page_url):
@@ -205,14 +244,22 @@ class Store:
             f.write(page_url + "\n")
 
     def all(self):
-        out = []
+        """Latest record per URL, with first_seen = when it was first scraped."""
+        latest, first = {}, {}
         if os.path.exists(self.path):
             for line in open(self.path):
                 try:
-                    out.append(json.loads(line))
+                    r = json.loads(line)
                 except Exception:
-                    pass
-        return out
+                    continue
+                u = r.get("url")
+                if not u:
+                    continue
+                first.setdefault(u, r.get("scraped_at"))
+                latest[u] = r
+        for u, r in latest.items():
+            r["first_seen"] = first[u]
+        return list(latest.values())
 
 
 # ----------------------------------------------------------------------------- fetchers
@@ -438,7 +485,7 @@ def parse_landwatch(html, state):
         addr = ""
         if am:
             rest = text[am.end():].split(" | ")
-            addr = next((x for x in rest if x.strip()), "")
+            addr = next((x for x in rest if x.strip() and not re.match(r"^[\d.,]+\s*(beds?|baths?|sq\.? ?ft|sqft)\b", x.strip(), re.I)), "")
         out.append({
             "source": "landwatch",
             "country": "US",
@@ -612,6 +659,16 @@ COLS = ["usd_per_acre", "price_usd", "acres", "country", "region", "title", "pri
 def build_outputs(store):
     rates = load_fx()
     recs = [finalize(r, rates) for r in store.all()]
+    # far below everything else in the same country -> usually a wrong area or a per-m2 price
+    by = {}
+    for r in recs:
+        if r["usd_per_acre"] and not r["flags"]:
+            by.setdefault(r.get("country"), []).append(r["usd_per_acre"])
+    med = {c: sorted(v)[len(v) // 2] for c, v in by.items() if len(v) >= 20}
+    for r in recs:
+        m = med.get(r.get("country"))
+        if m and r["usd_per_acre"] and r["usd_per_acre"] < m / 250:
+            r["flags"] = "; ".join(x for x in (r["flags"], "far below other listings in this country") if x)
     recs.sort(key=lambda r: (r["usd_per_acre"] is None, r["usd_per_acre"] or 0))
     # same parcel reposted under a new URL ("Lot (PID 123) X" vs "(PID 123) X") -> keep one
     seen, uniq = set(), []
@@ -638,11 +695,52 @@ def build_outputs(store):
     html = tpl.replace("/*DATA*/[]", json.dumps(slim)).replace(
         "{{GENERATED}}", datetime.now().strftime("%Y-%m-%d %H:%M"))
     open(os.path.join(HERE, "report.html"), "w").write(html)
+    build_site(recs)
     clean = [r for r in recs if r["usd_per_acre"] and not r["flags"]]
     log("wrote %d listings (%d with clean price+area) -> results.csv, report.html" % (len(recs), len(clean)))
     for r in clean[:15]:
         log("  $%10.2f/acre  $%11.0f  %9.2f ac  %-3s %-22s %s" % (
             r["usd_per_acre"], r["price_usd"], r["acres"], r["country"], (r["region"] or "")[:22], r["url"]))
+
+
+SITE = os.path.join(HERE, "site")
+FLAG_CODES = [("price too low", "L"), ("payment plan", "P"), ("auction", "A"), ("wanted ad", "W"),
+              ("no land area", "N"), ("under $10/acre", "C"), ("lease/rental", "R"), ("placeholder", "X"),
+              ("per m2/acre", "U"), ("far below other", "O"),
+              ("mining claim", "M"), ("house listing", "H"), ("too low for Canada", "L")]
+
+
+def build_site(recs, fresh_days=3):
+    """Write site/index.html + site/data.json: every listing seen in the last few days of runs."""
+    os.makedirs(SITE, exist_ok=True)
+    stamps = [r.get("scraped_at") for r in recs if r.get("scraped_at")]
+    if not stamps:
+        return
+    newest = max(stamps)
+    cutoff = (datetime.fromisoformat(newest) - timedelta(days=fresh_days)).isoformat()
+    rows, countries = [], set()
+    for r in recs:
+        if (r.get("scraped_at") or "") < cutoff or r.get("price_usd") is None:
+            continue
+        codes = "".join(c for txt, c in FLAG_CODES if txt in (r.get("flags") or ""))
+        if "W" in codes:
+            continue
+        rnd = lambda v, d: None if v is None else round(v, d)
+        cc = (r.get("country") or "").upper() if len(r.get("country") or "") == 2 else (r.get("country") or "")
+        countries.add(cc)
+        rows.append([rnd(r.get("usd_per_acre"), 2), rnd(r["price_usd"], 0), rnd(r.get("acres"), 3), cc,
+                     (r.get("region") or "")[:60], (r.get("title") or "")[:110], r.get("source"), codes, r["url"],
+                     rnd(r.get("lat"), 4), rnd(r.get("lon"), 4)])
+    data = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "countries": len(countries), "rows": rows}
+    with open(os.path.join(SITE, "data.json"), "w") as f:
+        json.dump(data, f, separators=(",", ":"))
+    with open(os.path.join(HERE, "site_template.html")) as f:
+        html = f.read()
+    with open(os.path.join(SITE, "index.html"), "w") as f:
+        f.write(html)
+    open(os.path.join(SITE, ".nojekyll"), "w").close()
+    log("site: %d listings from %d countries -> site/" % (len(rows), len(countries)))
 
 
 # ----------------------------------------------------------------------------- main
