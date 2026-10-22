@@ -139,11 +139,11 @@ def to_usd(amount, currency, rates):
     return amount / rate if rate else None
 
 
-PAYMENT_RX = re.compile(r"(/\s*mo\b|/\s*month|per month|a month|monthly|\$\s*\d+\s*down|down payment)", re.I)
+PAYMENT_RX = re.compile(r"(\d\s*(?:/\s*)?month\b|/\s*mo\b|/\s*month|per month|a month|monthly|\$\s*\d+\s*down|down payment)", re.I)
 WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of)", re.I)
 MIN_PRICE = 1500  # USD-ish floor for Properstar searches; cheaper "prices" there are per-m2 or placeholders
 TILE_SCALE = 0.5  # tiled windows draw pages at half size
-CLAIM_RX = re.compile(r"\b(mining claims?|lode claims?|placer claims?|gold claims?|mineral claims?|mineral rights?|unpatented|lode gold|mining|prospecting)\b", re.I)
+CLAIM_RX = re.compile(r"\b(access deeds?|membership|timeshare|mining claims?|lode claims?|placer claims?|gold claims?|mineral claims?|mineral rights?|unpatented|lode gold|mining|prospecting)\b", re.I)
 LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\blease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenant\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b)", re.I)
 PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|hect|ha\b)", re.I)
 
@@ -169,7 +169,7 @@ def flag(rec):
     elif usd is not None and usd < 2000 and PAYMENT_RX.search(text):
         f.append("may be payment plan price")
     if CLAIM_RX.search(text):
-        f.append("mining claim/mineral rights - not land ownership")
+        f.append("mining claim/mineral rights/access deed - not land ownership")
     if "homes-for-sale" in (rec.get("url") or ""):
         f.append("house listing - not vacant land")
     if rec.get("source") == "kijiji" and usd is not None and usd < 3000:
@@ -191,7 +191,36 @@ def flag(rec):
     return "; ".join(f)
 
 
+DOWN_RX = re.compile(r"\$\s?([\d,]+(?:\.\d\d)?)\s*(?:down\b|dp\b|deposit|to start|and take over)", re.I)
+CASH_RX = re.compile(r"(?:(?:only|just|cash price(?: of| is)?|full price(?: of| is)?|total price(?: of| is)?|price(?: is)?:?|asking|for)\s*\$\s?([\d,]{3,}))"
+                     r"|(?:\$\s?([\d,]{3,})\s*(?:cash|total|full price|obo|firm|or best))", re.I)
+FINANCE_RX = re.compile(r"\b(seller financ|owner financ|financing available|down payment|\bdown\b|per month|/mo\b|monthly)", re.I)
+
+
+def fix_down_payment(rec):
+    """Some sellers enter the down payment as the price ('Only $2,700 Cash! ... $380 down').
+    Swap in the real cash/total price from the text; return True if the price is a down payment."""
+    p = rec.get("price")
+    if not p:
+        return False
+    text = " ".join(str(rec.get(k) or "") for k in ("title", "description"))
+    downs = {num(m) for m in DOWN_RX.findall(text)}
+    amt = re.escape("{:,.0f}".format(p)).replace(",", ",?")
+    if re.search(r"\$\s?%s\s*(?:/|per|a|each)?\s*(?:mo\b|month)" % amt, text, re.I):
+        return True  # the listed price is the monthly payment
+    if p not in downs and not (p < 3000 and FINANCE_RX.search(text)):
+        return False
+    totals = [num(a or b) for a, b in CASH_RX.findall(text)]
+    totals = [t for t in totals if t and t >= p * 1.5]
+    if totals:
+        rec["listed_price"] = p
+        rec["price"] = min(totals)
+        return False
+    return p in downs or bool(re.search(r"\$\s?%s\s*down" % re.escape("{:,.0f}".format(p)), text, re.I))
+
+
 def finalize(rec, rates):
+    down_only = rec.get("source") == "landwatch" and fix_down_payment(rec)
     if rec.get("source") == "kijiji":  # re-read area with the current parser (fixes older scrapes)
         a = acres_from_text(rec.get("title")) or acres_from_text(rec.get("description"))
         if a:
@@ -201,6 +230,8 @@ def finalize(rec, rates):
     rec["acres"] = round(a, 4) if a else None
     rec["usd_per_acre"] = (rec["price_usd"] / a) if (rec["price_usd"] and a) else None
     rec["flags"] = flag(rec)
+    if down_only:
+        rec["flags"] = "; ".join(x for x in (rec["flags"], "may be payment plan price - listed price is the down payment") if x)
     return rec
 
 
@@ -486,6 +517,8 @@ def parse_landwatch(html, state):
         if am:
             rest = text[am.end():].split(" | ")
             addr = next((x for x in rest if x.strip() and not re.match(r"^[\d.,]+\s*(beds?|baths?|sq\.? ?ft|sqft)\b", x.strip(), re.I)), "")
+        if len(text) > len(desc):
+            desc = (desc + " | " + text) if desc else text
         out.append({
             "source": "landwatch",
             "country": "US",
@@ -650,6 +683,56 @@ def crawl_kijiji(fetch, store, provinces, pages):
         log("kijiji     [%d/%d] %-28s +%d listings" % (pi, len(provinces), prov, total_new))
 
 
+# ----------------------------------------------------------------------------- verification
+
+def landwatch_full_description(html):
+    soup = BeautifulSoup(html, "lxml")
+    for sc in soup.find_all("script", type="application/ld+json"):
+        try:
+            d = json.loads(sc.string or "")
+        except Exception:
+            continue
+        t = d.get("@type")
+        if (t == "RealEstateListing" or (isinstance(t, list) and "RealEstateListing" in t)) and d.get("description"):
+            return re.sub(r"\s*,,\s*|\s*,\s*,\s*", " ", d["description"]).strip()
+    return None
+
+
+def verify_cheapest(store, a, n=60, rounds=4):
+    """Open the cheapest believable LandWatch listings and re-check them against their full description
+    (search cards cut descriptions short, which hides 'Only $2,700 cash ... $380 down' style pricing)."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    br = None
+    try:
+        for rnd in range(rounds):
+            rates = load_fx()
+            raw = {r["url"]: r for r in store.all()}
+            recs = sorted((finalize(dict(r), rates) for r in raw.values()),
+                          key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))
+            top = [r for r in recs if r["price_usd"] and r["flags"] in ("", "no land area listed")][:n]
+            todo = [r for r in top if r["source"] == "landwatch" and not (r.get("verified_at") or "").startswith(today)]
+            if not todo:
+                break
+            log("verifying %d of the cheapest %d listings (round %d)" % (len(todo), n, rnd + 1))
+            if br is None:
+                br = Browser(headless=a.headless, delay=a.delay, slot=None)
+            for r in todo:
+                if STOP.is_set():
+                    return
+                br.label = "verify " + r["url"][-12:]
+                html = br.get(r["url"])
+                rec = dict(raw[r["url"]])
+                rec["verified_at"] = datetime.now().isoformat(timespec="seconds")
+                if html:
+                    desc = landwatch_full_description(html)
+                    if desc:
+                        rec["description"] = desc
+                store.add([rec])
+    finally:
+        if br:
+            br.close()
+
+
 # ----------------------------------------------------------------------------- output
 
 COLS = ["price_usd", "usd_per_acre", "acres", "country", "region", "title", "price", "currency",
@@ -783,13 +866,18 @@ def main():
     ap.add_argument("--delay", type=float, default=2.5, help="base seconds between page loads")
     ap.add_argument("--fresh", action="store_true", help="re-scrape pages already done")
     ap.add_argument("--report-only", action="store_true")
+    ap.add_argument("--verify", type=int, default=60,
+                    help="after scraping, open this many of the cheapest listings to re-check their price (0 = off)")
+    ap.add_argument("--verify-only", action="store_true", help="only run the verification step, then rebuild outputs")
     a = ap.parse_args()
 
     store = Store()
     if a.fresh:
         store.done = set()
         open(store.prog_path, "w").close()
-    if not a.report_only:
+    if a.verify_only:
+        verify_cheapest(store, a, a.verify)
+    elif not a.report_only:
         sources = csv_list(a.sources, [])
         countries = csv_list(a.countries, PROPERSTAR_COUNTRIES)
         states = csv_list(a.states, US_STATES)
@@ -808,6 +896,8 @@ def main():
             if jobs:
                 log("%d browser jobs across %d Chrome windows" % (len(jobs), min(a.workers, len(jobs))))
                 run_pool(jobs, store, a)
+            if a.verify and not STOP.is_set():
+                verify_cheapest(store, a, a.verify)
         except KeyboardInterrupt:
             STOP.set()
             log("stopped by user - progress is saved; rerun the same command to resume")

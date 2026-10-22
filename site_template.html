@@ -186,7 +186,7 @@ const FLAGS = {L:"Price looks too low: may be a monthly payment or a per-m² pri
   N:"No land area listed", C:"Under $10 an acre: double-check the listing",
   R:"Lease or rental, not a sale price", X:"Looks like a placeholder price", U:"Price may be per m², acre or hectare",
   O:"Far cheaper than other listings in this country: the area or price is probably wrong",
-  M:"Mining claim or mineral rights: you don't own the land", H:"A house listing, not vacant land"};
+  M:"Mining claim, mineral rights or access deed: you don't own the land", H:"A house listing, not vacant land"};
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let regionNames; try { regionNames = new Intl.DisplayNames(["en"], {type:"region"}); } catch (e) {}

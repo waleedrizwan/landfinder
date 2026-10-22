@@ -45,6 +45,11 @@ reopens it. A full run (10 pages per country/state/province) takes under an hour
 ./run.sh --hidden                                # no visible windows: minimized to the Dock
 ```
 
+After scraping, landfinder opens the 60 cheapest believable listings and re-reads their full description,
+because search results cut it short. That catches sellers who enter a down payment or monthly payment as
+the price ("Only $2,700 cash! ... $380 down"). When the text gives the real cash price, that price is used;
+otherwise the listing is hidden. Use `--verify 0` to skip this step or `--verify-only` to run it alone.
+
 Stopping with Ctrl-C is safe: progress is saved in `data/`, and running the same command again resumes.
 
 ## Website and daily updates
