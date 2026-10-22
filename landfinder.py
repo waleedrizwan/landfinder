@@ -18,7 +18,7 @@ Output (in this folder)
   report.html   open in a browser: sortable, filterable table of the same data
   data/         raw scraped records + progress, so a stopped run resumes where it left off
 """
-import argparse, csv, json, os, random, re, sys, time, warnings
+import argparse, csv, json, math, os, queue, random, re, subprocess, sys, threading, time, warnings
 from datetime import datetime
 
 warnings.filterwarnings("ignore")
@@ -66,8 +66,15 @@ AREA_TO_M2 = {"SquareMeter": 1.0, "SquareFoot": 0.09290304, "Hectare": 10000.0,
               "Acre": ACRE_M2, "SquareKilometer": 1e6, "SquareYard": 0.83612736}
 
 
+STOP = threading.Event()
+_LOG_LOCK = threading.Lock()
+
+
 def log(msg):
-    print("[%s] %s" % (datetime.now().strftime("%H:%M:%S"), msg), flush=True)
+    name = threading.current_thread().name
+    tag = "" if name == "MainThread" else "%s " % name
+    with _LOG_LOCK:
+        print("[%s] %s%s" % (datetime.now().strftime("%H:%M:%S"), tag, msg), flush=True)
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -130,6 +137,7 @@ def to_usd(amount, currency, rates):
 PAYMENT_RX = re.compile(r"(/\s*mo\b|/\s*month|per month|a month|monthly|\$\s*\d+\s*down|down payment)", re.I)
 WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of)", re.I)
 MIN_PRICE = 500  # USD-ish floor applied to Properstar searches
+TILE_SCALE = 0.5  # tiled windows draw pages at half size
 AUCTION_RX = re.compile(r"\b(auction|tender|bid|starting bid)\b", re.I)
 
 
@@ -178,10 +186,11 @@ class Store:
                 except Exception:
                     pass
         self.done = set(open(self.prog_path).read().split()) if os.path.exists(self.prog_path) else set()
+        self.lock = threading.Lock()
 
     def add(self, recs):
         new = 0
-        with open(self.path, "a") as f:
+        with self.lock, open(self.path, "a") as f:
             for r in recs:
                 if r.get("url") and r["url"] not in self.urls:
                     self.urls.add(r["url"])
@@ -191,8 +200,8 @@ class Store:
         return new
 
     def mark(self, page_url):
-        self.done.add(page_url)
-        with open(self.prog_path, "a") as f:
+        with self.lock, open(self.prog_path, "a") as f:
+            self.done.add(page_url)
             f.write(page_url + "\n")
 
     def all(self):
@@ -215,28 +224,39 @@ class Browser:
     BLOCK_TITLES = ("access denied", "service unavailable", "just a moment", "attention required",
                     "are you a robot", "pardon our interruption")
 
-    def __init__(self, headless=False, delay=2.5):
+    def __init__(self, headless=False, delay=2.5, slot=None):
+        """slot = (x, y, w, h) to show a small tiled window; None = off-screen and minimized."""
         from playwright.sync_api import sync_playwright
         self.delay = delay
         self.headless = headless
+        self.slot = slot
+        self.label = ""
         self.pw = sync_playwright().start()
         self._launch()
 
     def _launch(self):
         headless = self.headless
         args = ["--disable-blink-features=AutomationControlled",
-                # keep the window out of the way: open off-screen, don't throttle it in the background
-                "--window-position=-3000,-3000", "--window-size=1366,900",
                 "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
                 "--disable-backgrounding-occluded-windows"]
+        if self.slot:
+            x, y, w, h = self.slot
+            # small window, content drawn at half scale so sites still get their desktop layout
+            args += ["--window-position=%d,%d" % (x, y), "--window-size=%d,%d" % (w, h),
+                     "--force-device-scale-factor=%s" % TILE_SCALE]
+        else:  # keep the window out of the way: off-screen, then minimized
+            args += ["--window-position=-3000,-3000", "--window-size=1366,900"]
         try:
             self.browser = self.pw.chromium.launch(channel="chrome", headless=headless, args=args)
         except Exception:
             log("Google Chrome not found; using Playwright's Chromium (run: .venv/bin/playwright install chromium)")
             self.browser = self.pw.chromium.launch(headless=headless, args=args)
-        self.ctx = self.browser.new_context(locale="en-US", viewport={"width": 1366, "height": 900})
+        if self.slot:
+            self.ctx = self.browser.new_context(locale="en-US", no_viewport=True)
+        else:
+            self.ctx = self.browser.new_context(locale="en-US", viewport={"width": 1366, "height": 900})
         self.page = self.ctx.new_page()
-        if not headless:
+        if not headless and not self.slot:
             self._minimize()
 
     def _minimize(self):
@@ -264,6 +284,7 @@ class Browser:
                     time.sleep(wait)
                     continue
                 html = self.page.content()
+                self._show_label()
                 time.sleep(self.delay + random.random() * self.delay)
                 return html
             except Exception as e:
@@ -281,6 +302,21 @@ class Browser:
                         log("  relaunch failed: %s" % str(e2)[:120])
                 time.sleep(5)
         return None
+
+    def _show_label(self):
+        """Banner + window title showing what this window is working on."""
+        if not (self.slot and self.label):
+            return
+        try:
+            self.page.evaluate("""(t) => {
+                let d = document.getElementById('__lf');
+                if (!d) { d = document.createElement('div'); d.id = '__lf';
+                  d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;' +
+                    'background:#14161b;color:#7fffd4;font:bold 30px Menlo,monospace;padding:8px 14px;opacity:.92';
+                  document.documentElement.appendChild(d); }
+                d.textContent = t; document.title = t; }""", "%s | %s" % (threading.current_thread().name, self.label))
+        except Exception:
+            pass
 
     def close(self):
         try:
@@ -356,28 +392,30 @@ def parse_properstar(html, slug):
     return out, int(res.get("total") or 0)
 
 
-def crawl_properstar(br, store, countries, pages):
-    for ci, slug in enumerate(countries, 1):
-        total_new = 0
-        for p in range(1, pages + 1):
-            # price.min skips the "EUR 5" listings that are really per-m2 prices or placeholders
-            url = "https://www.properstar.com/%s/buy/land-plot/price-low-to-high?price.min=%d" % (slug, MIN_PRICE)
-            if p > 1:
-                url += "&p=%d" % p
-            if url in store.done:
-                continue
-            html = br.get(url)
-            if not html:
-                break
-            recs, total = parse_properstar(html, slug)
-            if not recs:
-                store.mark(url)
-                break
-            total_new += store.add(recs)
+def crawl_properstar_one(br, store, slug, pages):
+    total_new = 0
+    for p in range(1, pages + 1):
+        if STOP.is_set():
+            break
+        # price.min skips the "EUR 5" listings that are really per-m2 prices or placeholders
+        url = "https://www.properstar.com/%s/buy/land-plot/price-low-to-high?price.min=%d" % (slug, MIN_PRICE)
+        if p > 1:
+            url += "&p=%d" % p
+        if url in store.done:
+            continue
+        br.label = "%s  page %d  (properstar)" % (slug, p)
+        html = br.get(url)
+        if not html:
+            break
+        recs, total = parse_properstar(html, slug)
+        if not recs:
             store.mark(url)
-            if p * 20 >= total:
-                break
-        log("properstar [%d/%d] %-28s +%d listings" % (ci, len(countries), slug, total_new))
+            break
+        total_new += store.add(recs)
+        store.mark(url)
+        if p * 20 >= total:
+            break
+    return total_new
 
 
 def parse_landwatch(html, state):
@@ -416,25 +454,90 @@ def parse_landwatch(html, state):
     return out
 
 
-def crawl_landwatch(br, store, states, pages):
-    for si, st in enumerate(states, 1):
-        total_new = 0
-        for p in range(1, pages + 1):
-            url = "https://www.landwatch.com/%s-land-for-sale/sort-price-low-high" % st
-            if p > 1:
-                url += "/page-%d" % p
-            if url in store.done:
-                continue
-            html = br.get(url)
-            if not html:
-                break
-            recs = parse_landwatch(html, st)
-            if not recs:
-                store.mark(url)
-                break
-            total_new += store.add(recs)
+def crawl_landwatch_one(br, store, st, pages):
+    total_new = 0
+    for p in range(1, pages + 1):
+        if STOP.is_set():
+            break
+        url = "https://www.landwatch.com/%s-land-for-sale/sort-price-low-high" % st
+        if p > 1:
+            url += "/page-%d" % p
+        if url in store.done:
+            continue
+        br.label = "%s  page %d  (landwatch)" % (st, p)
+        html = br.get(url)
+        if not html:
+            break
+        recs = parse_landwatch(html, st)
+        if not recs:
             store.mark(url)
-        log("landwatch  [%d/%d] %-28s +%d listings" % (si, len(states), st, total_new))
+            break
+        total_new += store.add(recs)
+        store.mark(url)
+    return total_new
+
+
+def screen_area():
+    """Usable desktop size on macOS (falls back to a 1440x900 screen)."""
+    try:
+        out = subprocess.run(["osascript", "-e", 'tell application "Finder" to get bounds of window of desktop'],
+                             capture_output=True, text=True, timeout=10).stdout
+        x0, y0, x1, y1 = [int(v) for v in out.replace(" ", "").split(",")]
+        return x1 - x0, y1 - y0
+    except Exception:
+        return 1440, 900
+
+
+def tile_slots(n, area="right"):
+    """Grid of n small windows on the right half (or the full) screen, below the menu bar."""
+    sw, sh = screen_area()
+    top = 30
+    x0 = sw // 2 if area == "right" else 0
+    width, height = sw - x0, sh - top
+    cols = max(1, math.ceil(math.sqrt(n)))
+    rows = math.ceil(n / cols)
+    w, h = width // cols, height // rows
+    return [(x0 + (i % cols) * w, top + (i // cols) * h, w, h) for i in range(n)]
+
+
+def run_pool(jobs, store, a):
+    """Several Chrome windows, each taking the next country/state off a shared queue."""
+    q = queue.Queue()
+    for j in jobs:
+        q.put(j)
+    n = max(1, min(a.workers, len(jobs)))
+    slots = [None] * n if a.hidden else tile_slots(n, a.tile)
+    total = len(jobs)
+    done = [0]
+
+    def worker(i):
+        br = None
+        try:
+            br = Browser(headless=a.headless, delay=a.delay, slot=slots[i])
+            while not STOP.is_set():
+                try:
+                    src, key = q.get_nowait()
+                except queue.Empty:
+                    break
+                fn = crawl_properstar_one if src == "properstar" else crawl_landwatch_one
+                try:
+                    new = fn(br, store, key, a.pages)
+                except Exception as e:
+                    log("%s %s failed: %s" % (src, key, str(e)[:120]))
+                    new = 0
+                done[0] += 1
+                log("%-10s [%d/%d] %-28s +%d listings" % (src, done[0], total, key, new))
+        finally:
+            if br:
+                br.close()
+
+    threads = [threading.Thread(target=worker, args=(i,), name="W%d" % (i + 1), daemon=True) for i in range(n)]
+    for i, t in enumerate(threads):
+        t.start()
+        time.sleep(3)  # stagger window launches
+    while any(t.is_alive() for t in threads):
+        for t in threads:
+            t.join(0.5)
 
 
 def parse_kijiji(html, prov):
@@ -555,7 +658,11 @@ def main():
     ap.add_argument("--countries", help="Properstar country slugs, comma-separated (default: all)")
     ap.add_argument("--states", help="US state slugs for LandWatch, e.g. new-mexico,arizona (default: all)")
     ap.add_argument("--provinces", help="Kijiji provinces, e.g. nova-scotia,saskatchewan (default: all)")
-    ap.add_argument("--headless", action="store_true", help="hide the Chrome window (more likely to get blocked)")
+    ap.add_argument("--workers", type=int, default=4, help="Chrome windows scraping in parallel")
+    ap.add_argument("--tile", choices=["right", "full"], default="right",
+                    help="tile the windows over the right half (default) or the whole screen")
+    ap.add_argument("--hidden", action="store_true", help="no visible windows: one per worker, minimized to the Dock")
+    ap.add_argument("--headless", action="store_true", help="fully headless Chrome (more likely to get blocked)")
     ap.add_argument("--delay", type=float, default=2.5, help="base seconds between page loads")
     ap.add_argument("--fresh", action="store_true", help="re-scrape pages already done")
     ap.add_argument("--report-only", action="store_true")
@@ -576,13 +683,16 @@ def main():
         try:
             if "kijiji" in sources:
                 crawl_kijiji(Plain(delay=max(1.0, a.delay / 2)), store, provs, a.pages)
-            if "landwatch" in sources or "properstar" in sources:
-                br = Browser(headless=a.headless, delay=a.delay)
-            if "landwatch" in sources:
-                crawl_landwatch(br, store, states, a.pages)
-            if "properstar" in sources:
-                crawl_properstar(br, store, countries, a.pages)
+            jobs = []
+            lw = [("landwatch", st) for st in states] if "landwatch" in sources else []
+            ps = [("properstar", c) for c in countries] if "properstar" in sources else []
+            for i in range(max(len(lw), len(ps))):  # interleave so no single site gets every window at once
+                jobs += lw[i:i + 1] + ps[i:i + 1]
+            if jobs:
+                log("%d browser jobs across %d Chrome windows" % (len(jobs), min(a.workers, len(jobs))))
+                run_pool(jobs, store, a)
         except KeyboardInterrupt:
+            STOP.set()
             log("stopped by user - progress is saved; rerun the same command to resume")
         finally:
             if br:

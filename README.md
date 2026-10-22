@@ -25,8 +25,10 @@ cd landfinder
 ./run.sh            # first run creates .venv and installs dependencies
 ```
 
-Chrome opens off-screen and minimizes itself to the Dock, so you can keep using your computer. If it
-gets closed, the script reopens it. A full run (10 pages per country/state/province) takes about 1.5–2 hours.
+By default, 4 small Chrome windows open tiled on the right half of your screen. Each one scrapes a
+different country or state at the same time, and a banner at the top shows what it's working on. Pages
+are drawn at half size, so sites still serve their desktop layout. If a window gets closed, the script
+reopens it. A full run (10 pages per country/state/province) takes under an hour with 4 windows.
 
 ## Usage
 
@@ -38,6 +40,9 @@ gets closed, the script reopens it. A full run (10 pages per country/state/provi
 ./run.sh --provinces nova-scotia,saskatchewan    # only these provinces (Kijiji)
 ./run.sh --report-only                           # rebuild outputs from saved data
 ./run.sh --fresh                                 # re-scrape pages already done
+./run.sh --workers 6                             # more windows in parallel (default 4)
+./run.sh --tile full                             # tile windows over the whole screen
+./run.sh --hidden                                # no visible windows: minimized to the Dock
 ```
 
 Stopping with Ctrl-C is safe: progress is saved in `data/`, and running the same command again resumes.
