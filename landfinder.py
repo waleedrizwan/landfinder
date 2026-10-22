@@ -659,6 +659,15 @@ COLS = ["usd_per_acre", "price_usd", "acres", "country", "region", "title", "pri
 def build_outputs(store):
     rates = load_fx()
     recs = [finalize(r, rates) for r in store.all()]
+    # one exact price on many different-size plots -> a placeholder or a per-m2 price, not a real total
+    same = {}
+    for r in recs:
+        if r.get("price") and (r.get("price_usd") or 0) < 5000:
+            same.setdefault((r.get("source"), r.get("country"), round(r["price"], 2)), set()).add(r.get("acres"))
+    for r in recs:
+        k = (r.get("source"), r.get("country"), round(r.get("price") or 0, 2))
+        if k in same and len(same[k]) >= 5:
+            r["flags"] = "; ".join(x for x in (r["flags"], "placeholder price - same price on many different-size plots") if x)
     # far below everything else in the same country -> usually a wrong area or a per-m2 price
     by = {}
     for r in recs:
