@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cheapest Land Worldwide</title>
+<style>
+:root{--bg:#f7f6f2;--fg:#1d1d1b;--mut:#6b6a64;--line:#dddbd2;--card:#fff;--acc:#2f6b3a;--warn:#a5531b}
+@media (prefers-color-scheme:dark){:root{--bg:#161614;--fg:#ecebe6;--mut:#9a988f;--line:#33322e;--card:#1f1f1c;--acc:#7bc488;--warn:#e39a5f}}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:20px 16px 8px;max-width:1300px;margin:auto}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mut)}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;max-width:1300px;margin:auto}
+.bar input,.bar select{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+.bar label{display:flex;gap:6px;align-items:center;color:var(--mut)}
+.wrap{max-width:1300px;margin:auto;padding:0 16px 40px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{position:sticky;top:0;background:var(--card);cursor:pointer;white-space:nowrap;font-weight:600;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.03em}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.big{font-weight:600;color:var(--acc)}
+.flag{color:var(--warn);font-size:12px}
+a{color:var(--acc)}
+.more{margin:14px auto;display:block;padding:8px 16px;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;cursor:pointer}
+</style></head><body>
+<header><h1>Cheapest land listings worldwide</h1>
+<div class="sub">Scraped {{GENERATED}} · <span id="count"></span> · prices converted to USD at that day's rates. Always open the listing — flagged rows often show a payment plan or per-m² price.</div></header>
+<div class="bar">
+ <input id="q" placeholder="Search title / region…" size="24">
+ <select id="src"><option value="">All sources</option></select>
+ <select id="ctry"><option value="">All countries</option></select>
+ <label>Min acres <input id="minac" type="number" step="any" style="width:80px"></label>
+ <label>Max total USD <input id="maxp" type="number" step="any" style="width:100px"></label>
+ <label><input id="hide" type="checkbox" checked> Hide flagged</label>
+</div>
+<div class="wrap"><table><thead><tr>
+ <th data-k="usd_per_acre">USD / acre</th><th data-k="price_usd">Price USD</th><th data-k="acres">Acres</th>
+ <th data-k="country">Country</th><th data-k="region">Region</th><th data-k="title">Listing</th><th data-k="source">Source</th>
+</tr></thead><tbody id="tb"></tbody></table><button class="more" id="more">Show more</button></div>
+<script>
+const D=/*DATA*/[];
+let key="usd_per_acre",asc=true,limit=300;
+const $=id=>document.getElementById(id);
+const fmt=(v,d)=>v==null?"—":Number(v).toLocaleString(undefined,{maximumFractionDigits:d});
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+[...new Set(D.map(r=>r.source))].sort().forEach(s=>$("src").add(new Option(s,s)));
+[...new Set(D.map(r=>r.country))].sort().forEach(s=>$("ctry").add(new Option(s,s)));
+function rows(){
+ const q=$("q").value.toLowerCase(),src=$("src").value,c=$("ctry").value,hide=$("hide").checked,
+  minac=parseFloat($("minac").value),maxp=parseFloat($("maxp").value);
+ let r=D.filter(x=>(!src||x.source===src)&&(!c||x.country===c)&&(!hide||!x.flags)
+  &&(isNaN(minac)||(x.acres||0)>=minac)&&(isNaN(maxp)||(x.price_usd!=null&&x.price_usd<=maxp))
+  &&(!q||((x.title||"")+" "+(x.region||"")).toLowerCase().includes(q)));
+ r.sort((a,b)=>{const A=a[key],B=b[key];if(A==null&&B==null)return 0;if(A==null)return 1;if(B==null)return -1;
+  return (A<B?-1:A>B?1:0)*(asc?1:-1)});
+ return r;
+}
+function draw(){
+ const r=rows();$("count").textContent=r.length.toLocaleString()+" of "+D.length.toLocaleString()+" listings shown";
+ $("tb").innerHTML=r.slice(0,limit).map(x=>`<tr><td class="n big">${x.usd_per_acre==null?"—":"$"+fmt(x.usd_per_acre,2)}</td>
+ <td class="n">${x.price_usd==null?"—":"$"+fmt(x.price_usd,0)}</td><td class="n">${fmt(x.acres,2)}</td>
+ <td>${esc(x.country)}</td><td>${esc(x.region)}</td>
+ <td><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title||"listing")}</a>${x.flags?`<div class="flag">⚠ ${esc(x.flags)}</div>`:""}</td>
+ <td>${esc(x.source)}</td></tr>`).join("");
+ $("more").style.display=r.length>limit?"block":"none";
+}
+document.querySelectorAll("th").forEach(th=>th.onclick=()=>{const k=th.dataset.k;asc=k===key?!asc:true;key=k;draw()});
+["q","src","ctry","hide","minac","maxp"].forEach(id=>$(id).oninput=()=>{limit=300;draw()});
+$("more").onclick=()=>{limit+=500;draw()};
+draw();
+</script></body></html>

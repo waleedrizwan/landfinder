@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+data/
+results.csv
+report.html
+run.log
+.DS_Store
