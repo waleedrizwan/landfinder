@@ -1,8 +1,8 @@
 # landfinder
 
 Find the cheapest land for sale anywhere on earth. landfinder scrapes land listings from big listing
-portals, converts every price to **USD per acre**, and ranks them cheapest first, with a link to each
-live listing.
+portals, converts every price to US dollars, and ranks them by **total price**, i.e. the cheapest piece of land you can
+actually buy. Price per acre is shown too. Every row links to the live listing.
 
 ## Sources
 
@@ -12,7 +12,7 @@ live listing.
 | [LandWatch](https://www.landwatch.com) | all 50 US states | real Chrome via Playwright |
 | [Kijiji](https://www.kijiji.ca) | every Canadian province/territory | plain HTTP requests |
 
-Each search is sorted cheapest first. Properstar results start at $500, because cheaper "prices" there
+Each search is sorted cheapest first. Properstar results start at $1,500, because cheaper "prices" there
 are almost always per-m² figures or placeholders.
 
 ## Quick start (macOS)
@@ -62,7 +62,7 @@ The live copy is at **https://cheapest-land.pages.dev**.
 ## Output
 
 - **`report.html`**: open it in a browser for a sortable, filterable table of every listing.
-- **`results.csv`**: the same data, cheapest USD/acre first.
+- **`results.csv`**: the same data, cheapest total price first.
 - **`data/`**: raw scraped records, exchange rates and crawl progress.
 
 The `flags` column marks listings to double-check:

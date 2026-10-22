@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cheapest Land on Earth</title>
-<meta name="description" content="The cheapest land for sale anywhere in the world, ranked by price per acre and updated daily from live listings.">
+<meta name="description" content="The cheapest pieces of land you can actually buy anywhere in the world, ranked by total price and updated daily from live listings.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;900&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
@@ -107,7 +107,7 @@ td .r{display:block;color:var(--ink-2);font-size:14px}
   td.place{grid-column:1;grid-row:1}
   td.listing{grid-column:1/3}
   td.tot,td.ac{grid-column:auto;text-align:left;color:var(--ink-2);font-size:14px}
-  td.tot::before{content:"Total "} td.ac::before{content:"Acres "}
+  td.tot::before{content:"Per acre "} td.ac::before{content:"Acres "}
   td.src{display:none}
 }
 
@@ -136,7 +136,7 @@ footer p{max-width:68ch}
 <main>
   <section id="countries"><div class="wrap">
     <h2>Cheapest land by country</h2>
-    <p class="lede">The lowest price per acre found in each country today. Choose a country to see all of its listings.</p>
+    <p class="lede">The cheapest piece of land you can buy in each country today. Choose a country to see all of its listings.</p>
     <div class="ranks" id="ranks"></div>
   </div></section>
 
@@ -149,20 +149,19 @@ footer p{max-width:68ch}
 
   <section id="all"><div class="wrap">
     <h2>Every listing</h2>
-    <p class="lede">Sorted by price per acre. Listings with a suspicious price, like a monthly payment or an auction minimum bid, are hidden unless you show them.</p>
+    <p class="lede">Sorted by total price, cheapest first. Listings with a suspicious price, like a monthly payment, a lease or an auction minimum bid, are hidden unless you show them.</p>
     <div class="filters">
       <label>Search<input id="q" type="search" placeholder="Town, region, words in title"></label>
       <label>Country<select id="fc"><option value="">Anywhere</option></select></label>
       <label>Max total price (USD)<input id="fmax" type="number" min="0" step="100" inputmode="numeric" placeholder="Any"></label>
       <label>Min acres<input id="fac" type="number" min="0" step="any" inputmode="decimal" placeholder="Any"></label>
       <label class="chk"><input id="fflag" type="checkbox"> Show flagged</label>
-      <label class="chk"><input id="fnoarea" type="checkbox"> Show listings without area</label>
     </div>
     <div class="count" id="count" aria-live="polite"></div>
     <table>
       <thead><tr>
-        <th class="n"><button data-k="0" aria-sort="ascending">Per acre</button></th>
-        <th class="n"><button data-k="1">Price</button></th>
+        <th class="n"><button data-k="1" aria-sort="ascending">Price</button></th>
+        <th class="n"><button data-k="0">Per acre</button></th>
         <th class="n"><button data-k="2">Acres</button></th>
         <th><button data-k="3">Place</button></th>
         <th>Listing</th><th>Source</th>
@@ -232,7 +231,7 @@ const srcName = s => ({properstar:"Properstar", landwatch:"LandWatch", kijiji:"K
   svg.innerHTML = out;
 })();
 
-let ALL = [], VIEW = [], shown = 50, sortK = 0, sortAsc = true;
+let ALL = [], VIEW = [], shown = 50, sortK = 1, sortAsc = true;
 
 fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
   ALL = d.rows;
@@ -242,32 +241,33 @@ fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.js
   $("hero").textContent = "Today's listings couldn't be loaded. Refresh the page to try again.";
 });
 
-const clean = r => r[0] != null && !r[7];
+// buyable at the listed price: no warning flags ("N" = no area listed is fine when ranking by total price)
+const clean = r => r[1] != null && (!r[7] || r[7] === "N");
 
 function hero(){
-  const c = ALL.filter(clean).sort((a, b) => a[0] - b[0]);
+  const c = ALL.filter(clean).sort((a, b) => a[1] - b[1]);
   const top = c[0]; if (!top) { $("hero").textContent = "No listings yet."; return; }
   const place = [top[4], cname(top[3])].filter(Boolean).join(", ");
   $("hero").className = "";
   $("hero").innerHTML = `
-    <p class="kicker">The cheapest land for sale on earth right now</p>
-    <h1 class="price"><span class="sign">${money(top[0])}</span><span class="per">an acre</span></h1>
-    <p class="where">${esc(acres(top[2]))} acres in ${esc(place)} ${cflag(top[3])}</p>
-    <p class="facts">${money(top[1])} total · listed on ${srcName(top[6])}</p>
+    <p class="kicker">The cheapest land you can buy on earth right now</p>
+    <h1 class="price"><span class="sign">${money(top[1])}</span><span class="per">total</span></h1>
+    <p class="where">${top[2] != null ? esc(acres(top[2])) + (top[2] === 1 ? " acre" : " acres") + " in " : "A plot in "}${esc(place)} ${cflag(top[3])}</p>
+    <p class="facts">${top[0] != null ? money(top[0]) + " an acre · " : ""}listed on ${srcName(top[6])}</p>
     <a class="btn" href="${esc(top[8])}" target="_blank" rel="noopener">Open the listing</a>
-    <div class="runnersup">${c.slice(1, 6).map(r => `<a href="${esc(r[8])}" target="_blank" rel="noopener"><b>${money(r[0])}/acre</b> ${cflag(r[3])} ${esc(r[3] === "US" || r[3] === "CA" ? (r[4] || "").split(",").slice(-2, -1)[0]?.trim() || r[4] || cname(r[3]) : cname(r[3]))}, ${esc(acres(r[2]))} ac</a>`).join("")}</div>`;
+    <div class="runnersup">${c.slice(1, 6).map(r => `<a href="${esc(r[8])}" target="_blank" rel="noopener"><b>${money(r[1])}</b> ${cflag(r[3])} ${esc(r[3] === "US" || r[3] === "CA" ? (r[4] || "").split(",").slice(-2, -1)[0]?.trim() || r[4] || cname(r[3]) : cname(r[3]))}${r[2] != null ? ", " + esc(acres(r[2])) + " ac" : ""}</a>`).join("")}</div>`;
 }
 
 function ranks(){
   const by = {};
-  for (const r of ALL) if (clean(r)) { const b = by[r[3]] ||= {min: r, n: 0}; b.n++; if (r[0] < b.min[0]) b.min = r; }
-  const list = Object.entries(by).sort((a, b) => a[1].min[0] - b[1].min[0]).slice(0, 30);
-  const lo = Math.log10(Math.max(1, list[0]?.[1].min[0] || 1)), hi = Math.log10(Math.max(10, list.at(-1)?.[1].min[0] || 10));
+  for (const r of ALL) if (clean(r)) { const b = by[r[3]] ||= {min: r, n: 0}; b.n++; if (r[1] < b.min[1]) b.min = r; }
+  const list = Object.entries(by).sort((a, b) => a[1].min[1] - b[1].min[1]).slice(0, 30);
+  const lo = Math.log10(Math.max(1, list[0]?.[1].min[1] || 1)), hi = Math.log10(Math.max(10, list.at(-1)?.[1].min[1] || 10));
   $("ranks").innerHTML = list.map(([cc, b]) => {
-    const w = 8 + 92 * (Math.log10(Math.max(1, b.min[0])) - lo) / Math.max(.01, hi - lo);
+    const w = 8 + 92 * (Math.log10(Math.max(1, b.min[1])) - lo) / Math.max(.01, hi - lo);
     return `<button class="rank" type="button" data-cc="${esc(cc)}"><span class="fl">${cflag(cc)}</span>
       <span class="cn">${esc(cname(cc))}<small>${b.n.toLocaleString("en-US")} listings</small></span>
-      <span class="v">${money(b.min[0])}/acre</span><span class="bar"><i style="width:${w.toFixed(1)}%"></i></span></button>`;
+      <span class="v">${money(b.min[1])}${b.min[2] != null ? `<small style="display:block;font-weight:400;color:var(--ink-2);font-size:13px">${acres(b.min[2])} ac</small>` : ""}</span><span class="bar"><i style="width:${w.toFixed(1)}%"></i></span></button>`;
   }).join("");
   $("ranks").onclick = e => { const b = e.target.closest(".rank"); if (!b) return;
     $("fc").value = b.dataset.cc; render(); $("all").scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"}); };
@@ -276,7 +276,7 @@ function ranks(){
 function filters(){
   const cs = [...new Set(ALL.map(r => r[3]))].sort((a, b) => cname(a).localeCompare(cname(b)));
   for (const cc of cs) $("fc").add(new Option(`${cflag(cc)} ${cname(cc)}`, cc));
-  for (const id of ["q", "fc", "fmax", "fac", "fflag", "fnoarea"]) $(id).addEventListener("input", () => { shown = 50; render(); });
+  for (const id of ["q", "fc", "fmax", "fac", "fflag"]) $(id).addEventListener("input", () => { shown = 50; render(); });
   document.querySelectorAll("th button").forEach(b => b.onclick = () => {
     const k = +b.dataset.k; sortAsc = sortK === k ? !sortAsc : k !== 2; sortK = k;
     document.querySelectorAll("th button").forEach(x => x.removeAttribute("aria-sort"));
@@ -286,8 +286,8 @@ function filters(){
 
 function render(){
   const q = $("q").value.trim().toLowerCase(), cc = $("fc").value, mx = parseFloat($("fmax").value),
-        ac = parseFloat($("fac").value), fl = $("fflag").checked, na = $("fnoarea").checked;
-  VIEW = ALL.filter(r => (fl || !r[7] || (na && r[7] === "N")) && (na || r[2] != null) && (!cc || r[3] === cc)
+        ac = parseFloat($("fac").value), fl = $("fflag").checked;
+  VIEW = ALL.filter(r => (fl || clean(r)) && (!cc || r[3] === cc)
     && (isNaN(mx) || (r[1] != null && r[1] <= mx)) && (isNaN(ac) || (r[2] || 0) >= ac)
     && (!q || (r[5] + " " + r[4]).toLowerCase().includes(q)));
   const k = sortK;
@@ -299,7 +299,7 @@ function render(){
   });
   $("count").textContent = `${VIEW.length.toLocaleString("en-US")} listings`;
   $("tb").innerHTML = VIEW.slice(0, shown).map(r => `<tr>
-    <td class="n ppa">${money(r[0])}</td><td class="n tot">${money(r[1])}</td><td class="n ac">${acres(r[2])}</td>
+    <td class="n ppa">${money(r[1])}</td><td class="n tot">${money(r[0])}</td><td class="n ac">${acres(r[2])}</td>
     <td class="place">${cflag(r[3])} ${esc(cname(r[3]))}<span class="r">${esc(r[4])}</span></td>
     <td class="listing"><a class="t" href="${esc(r[8])}" target="_blank" rel="noopener">${esc(r[5] || "View listing")}</a>${r[7] ? `<span class="flagnote">${[...r[7]].map(f => FLAGS[f]).filter(Boolean).join(". ")}</span>` : ""}</td>
     <td class="src">${srcName(r[6])}</td></tr>`).join("");
@@ -309,7 +309,7 @@ function render(){
 function map(){
   if (!window.L) { $("map").textContent = "The map couldn't load."; return; }
   const pts = ALL.filter(r => clean(r) && r[9] != null && r[10] != null);
-  const bins = [[100, "#1f7a4d", "Under $100/acre"], [1000, "#7aa83a", "$100–1,000"], [10000, "#d9a441", "$1,000–10,000"], [Infinity, "#b5532a", "Over $10,000"]];
+  const bins = [[2000, "#1f7a4d", "Under $2,000"], [10000, "#7aa83a", "$2,000–10,000"], [50000, "#d9a441", "$10,000–50,000"], [Infinity, "#b5532a", "Over $50,000"]];
   const color = v => bins.find(b => v < b[0])[1];
   const m = L.map("map", {preferCanvas: true, worldCopyJump: true, scrollWheelZoom: false}).setView([20, 0], 2);
   const dark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
@@ -317,9 +317,9 @@ function map(){
     {maxZoom: 16, attribution: "Tiles &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors"});
   let layer = tiles().addTo(m);
   window.addEventListener("themechange", () => { m.removeLayer(layer); layer = tiles().addTo(m); });
-  for (const r of pts.sort((a, b) => b[0] - a[0])) {
-    L.circleMarker([r[9], r[10]], {radius: 5, weight: 1, color: "#1d2a23", fillColor: color(r[0]), fillOpacity: .85})
-      .bindPopup(`<b>${money(r[0])} an acre</b><br>${money(r[1])} for ${acres(r[2])} acres<br>${esc(r[4])}, ${esc(cname(r[3]))}<br><a href="${esc(r[8])}" target="_blank" rel="noopener">Open the listing</a>`)
+  for (const r of pts.sort((a, b) => b[1] - a[1])) {
+    L.circleMarker([r[9], r[10]], {radius: 5, weight: 1, color: "#1d2a23", fillColor: color(r[1]), fillOpacity: .85})
+      .bindPopup(`<b>${money(r[1])}</b>${r[2] != null ? ` for ${acres(r[2])} acres` : ""}<br>${esc(r[4])}, ${esc(cname(r[3]))}<br><a href="${esc(r[8])}" target="_blank" rel="noopener">Open the listing</a>`)
       .addTo(m);
   }
   $("legend").innerHTML = bins.map(b => `<span style="--c:${b[1]}">${b[2]}</span>`).join("");

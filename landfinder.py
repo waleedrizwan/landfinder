@@ -141,7 +141,7 @@ def to_usd(amount, currency, rates):
 
 PAYMENT_RX = re.compile(r"(/\s*mo\b|/\s*month|per month|a month|monthly|\$\s*\d+\s*down|down payment)", re.I)
 WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of)", re.I)
-MIN_PRICE = 500  # USD-ish floor applied to Properstar searches
+MIN_PRICE = 1500  # USD-ish floor for Properstar searches; cheaper "prices" there are per-m2 or placeholders
 TILE_SCALE = 0.5  # tiled windows draw pages at half size
 CLAIM_RX = re.compile(r"\b(mining claims?|lode claims?|placer claims?|gold claims?|mineral claims?|mineral rights?|unpatented|lode gold|mining|prospecting)\b", re.I)
 LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\blease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenant\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b)", re.I)
@@ -174,8 +174,8 @@ def flag(rec):
         f.append("house listing - not vacant land")
     if rec.get("source") == "kijiji" and usd is not None and usd < 3000:
         f.append("price too low for Canada - likely a deposit, lease or placeholder")
-    if rec.get("source") == "properstar" and usd is not None and usd < 1000 and (acres or 0) > 1:
-        f.append("price may be per m2/acre/hectare (under $1,000 for over an acre)")
+    if rec.get("source") == "properstar" and usd is not None and usd < 1500:
+        f.append("price may be per m2/acre/hectare (agency listing under $1,500)")
     if LEASE_RX.search(text):
         f.append("lease/rental - not a sale price")
     if placeholder_price(rec.get("price")):
@@ -652,7 +652,7 @@ def crawl_kijiji(fetch, store, provinces, pages):
 
 # ----------------------------------------------------------------------------- output
 
-COLS = ["usd_per_acre", "price_usd", "acres", "country", "region", "title", "price", "currency",
+COLS = ["price_usd", "usd_per_acre", "acres", "country", "region", "title", "price", "currency",
         "source", "flags", "url", "lat", "lon", "scraped_at"]
 
 
@@ -668,6 +668,16 @@ def build_outputs(store):
         k = (r.get("source"), r.get("country"), round(r.get("price") or 0, 2))
         if k in same and len(same[k]) >= 5:
             r["flags"] = "; ".join(x for x in (r["flags"], "placeholder price - same price on many different-size plots") if x)
+    # a "total" price that would only buy ~20 m2 at that country's typical price per m2 is a per-m2 price
+    m2p = {}
+    for r in recs:
+        if r["price_usd"] and r.get("acres") and not r["flags"]:
+            m2p.setdefault(r.get("country"), []).append(r["price_usd"] / (r["acres"] * ACRE_M2))
+    med_m2 = {c: sorted(v)[len(v) // 2] for c, v in m2p.items() if len(v) >= 20}
+    for r in recs:
+        m = med_m2.get(r.get("country"))
+        if m and r["price_usd"] and r["price_usd"] < 20 * m:
+            r["flags"] = "; ".join(x for x in (r["flags"], "price may be per m2 (would buy under 20 m2 at local prices)") if x)
     # far below everything else in the same country -> usually a wrong area or a per-m2 price
     by = {}
     for r in recs:
@@ -678,7 +688,7 @@ def build_outputs(store):
         m = med.get(r.get("country"))
         if m and r["usd_per_acre"] and r["usd_per_acre"] < m / 250:
             r["flags"] = "; ".join(x for x in (r["flags"], "far below other listings in this country") if x)
-    recs.sort(key=lambda r: (r["usd_per_acre"] is None, r["usd_per_acre"] or 0))
+    recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # cheapest total price first
     # same parcel reposted under a new URL ("Lot (PID 123) X" vs "(PID 123) X") -> keep one
     seen, uniq = set(), []
     for r in recs:
@@ -705,11 +715,11 @@ def build_outputs(store):
         "{{GENERATED}}", datetime.now().strftime("%Y-%m-%d %H:%M"))
     open(os.path.join(HERE, "report.html"), "w").write(html)
     build_site(recs)
-    clean = [r for r in recs if r["usd_per_acre"] and not r["flags"]]
-    log("wrote %d listings (%d with clean price+area) -> results.csv, report.html" % (len(recs), len(clean)))
+    clean = [r for r in recs if r["price_usd"] and r["flags"] in ("", "no land area listed")]
+    log("wrote %d listings (%d with a believable price) -> results.csv, report.html" % (len(recs), len(clean)))
     for r in clean[:15]:
-        log("  $%10.2f/acre  $%11.0f  %9.2f ac  %-3s %-22s %s" % (
-            r["usd_per_acre"], r["price_usd"], r["acres"], r["country"], (r["region"] or "")[:22], r["url"]))
+        log("  $%9.0f  %9s ac  %-3s %-22s %s" % (
+            r["price_usd"], "%.2f" % r["acres"] if r["acres"] else "?", r["country"], (r["region"] or "")[:22], r["url"]))
 
 
 SITE = os.path.join(HERE, "site")
