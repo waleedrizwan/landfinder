@@ -18,7 +18,7 @@ Output (in this folder)
   report.html   open in a browser: sortable, filterable table of the same data
   data/         raw scraped records + progress, so a stopped run resumes where it left off
 """
-import argparse, csv, json, math, os, queue, random, re, subprocess, sys, threading, time, warnings
+import argparse, csv, html, json, math, os, queue, random, re, subprocess, sys, threading, time, warnings
 from datetime import datetime, timedelta
 
 warnings.filterwarnings("ignore")
@@ -794,9 +794,9 @@ def build_outputs(store):
             w.writerow(row)
     slim = [{k: r.get(k) for k in COLS if k not in ("lat", "lon", "scraped_at")} for r in recs]
     tpl = open(os.path.join(HERE, "report_template.html")).read()
-    html = tpl.replace("/*DATA*/[]", json.dumps(slim)).replace(
+    page = tpl.replace("/*DATA*/[]", json.dumps(slim)).replace(
         "{{GENERATED}}", datetime.now().strftime("%Y-%m-%d %H:%M"))
-    open(os.path.join(HERE, "report.html"), "w").write(html)
+    open(os.path.join(HERE, "report.page"), "w").write(page)
     build_site(recs)
     clean = [r for r in recs if r["price_usd"] and r["flags"] in ("", "no land area listed")]
     log("wrote %d listings (%d with a believable price) -> results.csv, report.html" % (len(recs), len(clean)))
@@ -810,6 +810,155 @@ FLAG_CODES = [("price too low", "L"), ("payment plan", "P"), ("auction", "A"), (
               ("no land area", "N"), ("under $10/acre", "C"), ("lease/rental", "R"), ("placeholder", "X"),
               ("per m2/acre", "U"), ("far below other", "O"),
               ("mining claim", "M"), ("house listing", "H"), ("too low for Canada", "L")]
+
+
+SOURCE_NAMES = {"properstar": "Properstar", "landwatch": "LandWatch", "kijiji": "Kijiji"}
+COUNTRY_NAMES = {
+    "AD": "Andorra", "AE": "United Arab Emirates", "AF": "Afghanistan", "AG": "Antigua & Barbuda",
+    "AI": "Anguilla", "AL": "Albania", "AM": "Armenia", "AO": "Angola", "AQ": "Antarctica",
+    "AR": "Argentina", "AS": "American Samoa", "AT": "Austria", "AU": "Australia", "AW": "Aruba",
+    "AX": "Åland Islands", "AZ": "Azerbaijan", "BA": "Bosnia & Herzegovina", "BB": "Barbados",
+    "BD": "Bangladesh", "BE": "Belgium", "BF": "Burkina Faso", "BG": "Bulgaria", "BH": "Bahrain",
+    "BI": "Burundi", "BJ": "Benin", "BL": "St. Barthélemy", "BM": "Bermuda", "BN": "Brunei", "BO": "Bolivia",
+    "BQ": "Caribbean Netherlands", "BR": "Brazil", "BS": "Bahamas", "BT": "Bhutan", "BV": "Bouvet Island",
+    "BW": "Botswana", "BY": "Belarus", "BZ": "Belize", "CA": "Canada", "CC": "Cocos (Keeling) Islands",
+    "CD": "Congo - Kinshasa", "CF": "Central African Republic", "CG": "Congo - Brazzaville",
+    "CH": "Switzerland", "CI": "Côte d’Ivoire", "CK": "Cook Islands", "CL": "Chile", "CM": "Cameroon",
+    "CN": "China", "CO": "Colombia", "CR": "Costa Rica", "CU": "Cuba", "CV": "Cape Verde", "CW": "Curaçao",
+    "CX": "Christmas Island", "CY": "Cyprus", "CZ": "Czechia", "DE": "Germany", "DJ": "Djibouti",
+    "DK": "Denmark", "DM": "Dominica", "DO": "Dominican Republic", "DZ": "Algeria", "EC": "Ecuador",
+    "EE": "Estonia", "EG": "Egypt", "EH": "Western Sahara", "ER": "Eritrea", "ES": "Spain", "ET": "Ethiopia",
+    "FI": "Finland", "FJ": "Fiji", "FK": "Falkland Islands", "FM": "Micronesia", "FO": "Faroe Islands",
+    "FR": "France", "GA": "Gabon", "GB": "United Kingdom", "GD": "Grenada", "GE": "Georgia",
+    "GF": "French Guiana", "GG": "Guernsey", "GH": "Ghana", "GI": "Gibraltar", "GL": "Greenland",
+    "GM": "Gambia", "GN": "Guinea", "GP": "Guadeloupe", "GQ": "Equatorial Guinea", "GR": "Greece",
+    "GS": "South Georgia & South Sandwich Islands", "GT": "Guatemala", "GU": "Guam", "GW": "Guinea-Bissau",
+    "GY": "Guyana", "HK": "Hong Kong", "HM": "Heard & McDonald Islands", "HN": "Honduras", "HR": "Croatia",
+    "HT": "Haiti", "HU": "Hungary", "ID": "Indonesia", "IE": "Ireland", "IL": "Israel", "IM": "Isle of Man",
+    "IN": "India", "IO": "British Indian Ocean Territory", "IQ": "Iraq", "IR": "Iran", "IS": "Iceland",
+    "IT": "Italy", "JE": "Jersey", "JM": "Jamaica", "JO": "Jordan", "JP": "Japan", "KE": "Kenya",
+    "KG": "Kyrgyzstan", "KH": "Cambodia", "KI": "Kiribati", "KM": "Comoros", "KN": "St. Kitts & Nevis",
+    "KP": "North Korea", "KR": "South Korea", "KW": "Kuwait", "KY": "Cayman Islands", "KZ": "Kazakhstan",
+    "LA": "Laos", "LB": "Lebanon", "LC": "St. Lucia", "LI": "Liechtenstein", "LK": "Sri Lanka",
+    "LR": "Liberia", "LS": "Lesotho", "LT": "Lithuania", "LU": "Luxembourg", "LV": "Latvia", "LY": "Libya",
+    "MA": "Morocco", "MC": "Monaco", "MD": "Moldova", "ME": "Montenegro", "MF": "St. Martin",
+    "MG": "Madagascar", "MH": "Marshall Islands", "MK": "North Macedonia", "ML": "Mali",
+    "MM": "Myanmar (Burma)", "MN": "Mongolia", "MO": "Macao", "MP": "Northern Mariana Islands",
+    "MQ": "Martinique", "MR": "Mauritania", "MS": "Montserrat", "MT": "Malta", "MU": "Mauritius",
+    "MV": "Maldives", "MW": "Malawi", "MX": "Mexico", "MY": "Malaysia", "MZ": "Mozambique", "NA": "Namibia",
+    "NC": "New Caledonia", "NE": "Niger", "NF": "Norfolk Island", "NG": "Nigeria", "NI": "Nicaragua",
+    "NL": "Netherlands", "NO": "Norway", "NP": "Nepal", "NR": "Nauru", "NU": "Niue", "NZ": "New Zealand",
+    "OM": "Oman", "PA": "Panama", "PE": "Peru", "PF": "French Polynesia", "PG": "Papua New Guinea",
+    "PH": "Philippines", "PK": "Pakistan", "PL": "Poland", "PM": "St. Pierre & Miquelon",
+    "PN": "Pitcairn Islands", "PR": "Puerto Rico", "PS": "Palestine", "PT": "Portugal", "PW": "Palau",
+    "PY": "Paraguay", "QA": "Qatar", "RE": "Réunion", "RO": "Romania", "RS": "Serbia", "RU": "Russia",
+    "RW": "Rwanda", "SA": "Saudi Arabia", "SB": "Solomon Islands", "SC": "Seychelles", "SD": "Sudan",
+    "SE": "Sweden", "SG": "Singapore", "SH": "St. Helena", "SI": "Slovenia", "SJ": "Svalbard & Jan Mayen",
+    "SK": "Slovakia", "SL": "Sierra Leone", "SM": "San Marino", "SN": "Senegal", "SO": "Somalia",
+    "SR": "Suriname", "SS": "South Sudan", "ST": "São Tomé & Príncipe", "SV": "El Salvador",
+    "SX": "Sint Maarten", "SY": "Syria", "SZ": "Eswatini", "TC": "Turks & Caicos Islands", "TD": "Chad",
+    "TF": "French Southern Territories", "TG": "Togo", "TH": "Thailand", "TJ": "Tajikistan", "TK": "Tokelau",
+    "TL": "Timor-Leste", "TM": "Turkmenistan", "TN": "Tunisia", "TO": "Tonga", "TR": "Türkiye",
+    "TT": "Trinidad & Tobago", "TV": "Tuvalu", "TW": "Taiwan", "TZ": "Tanzania", "UA": "Ukraine",
+    "UG": "Uganda", "UM": "U.S. Outlying Islands", "US": "United States", "UY": "Uruguay",
+    "UZ": "Uzbekistan", "VA": "Vatican City", "VC": "St. Vincent & Grenadines", "VE": "Venezuela",
+    "VG": "British Virgin Islands", "VI": "U.S. Virgin Islands", "VN": "Vietnam", "VU": "Vanuatu",
+    "WF": "Wallis & Futuna", "WS": "Samoa", "XK": "Kosovo", "YE": "Yemen", "YT": "Mayotte",
+    "ZA": "South Africa", "ZM": "Zambia", "ZW": "Zimbabwe",
+}
+
+
+def site_country(cc):
+    """Country name shown on the site; same rule as the page's JavaScript."""
+    if cc and len(cc) == 2 and cc.upper() in COUNTRY_NAMES:
+        return COUNTRY_NAMES[cc.upper()]
+    return re.sub(r"\b\w", lambda m: m.group(0).upper(), (cc or "").replace("-", " "))
+
+
+def site_flag(cc):
+    if cc and len(cc) == 2:
+        return "".join(chr(127397 + ord(c)) for c in cc.upper())
+    return "\U0001f310"
+
+
+def site_money(v):
+    if v is None:
+        return "\u2014"
+    return "$%.2f" % v if v < 10 else "$" + format(int(round(v)), ",")
+
+
+def site_acres(v):
+    if v is None:
+        return "\u2014"
+    return "%.2f" % v if v < 1 else "%.1f" % v if v < 100 else format(int(round(v)), ",")
+
+
+def site_clean(row):
+    """Buyable at the listed price: no warning flags ('N' = no area listed is fine for a total-price ranking)."""
+    return row[1] is not None and row[7] in ("", "N")
+
+
+def site_hero(rows):
+    """HTML for the hero: cheapest believable listing, plus the next five."""
+    c = sorted((r for r in rows if site_clean(r)), key=lambda r: r[1])
+    if not c:
+        return '<p class="kicker">No listings yet.</p>', "", ""
+    top = c[0]
+    e = html.escape
+    place = ", ".join(x for x in (top[4], site_country(top[3])) if x)
+    size = ("%s %s in " % (site_acres(top[2]), "acre" if top[2] == 1 else "acres")) if top[2] is not None else "A plot in "
+    per = (site_money(top[0]) + " an acre \u00b7 ") if top[0] is not None else ""
+    runners = []
+    for r in c[1:6]:
+        parts = (r[4] or "").split(",")
+        if r[3] in ("US", "CA"):
+            label = parts[-2].strip() if len(parts) >= 2 and parts[-2].strip() else (r[4] or site_country(r[3]))
+        else:
+            label = site_country(r[3])
+        ac = (", %s ac" % site_acres(r[2])) if r[2] is not None else ""
+        runners.append('<a href="%s" target="_blank" rel="noopener"><b>%s</b> %s %s%s</a>' % (
+            e(r[8]), site_money(r[1]), site_flag(r[3]), e(label), e(ac)))
+    body = (
+        '<p class="kicker">The cheapest land you can buy on earth right now</p>\n'
+        '    <h1 class="price"><span class="sign">%s</span><span class="per">total</span></h1>\n'
+        '    <p class="where">%s%s %s</p>\n'
+        '    <p class="facts">%slisted on %s</p>\n'
+        '    <a class="btn" href="%s" target="_blank" rel="noopener">Open the listing</a>\n'
+        '    <div class="runnersup">%s</div>'
+    ) % (site_money(top[1]), e(size), e(place), site_flag(top[3]), per, SOURCE_NAMES.get(top[6], top[6]),
+         e(top[8]), "".join(runners))
+    headline = "%s buys %s%s" % (site_money(top[1]), size if top[2] is not None else "a plot in ", place)
+    return body, headline, place
+
+
+def site_ranks(rows, limit=30):
+    """HTML for the by-country ranking: cheapest believable listing per country, cheapest country first."""
+    by = {}
+    for r in rows:
+        if not site_clean(r):
+            continue
+        b = by.setdefault(r[3], {"min": r, "n": 0})
+        b["n"] += 1
+        if r[1] < b["min"][1]:
+            b["min"] = r
+    items = sorted(by.items(), key=lambda kv: kv[1]["min"][1])[:limit]
+    if not items:
+        return ""
+    lo = math.log10(max(1, items[0][1]["min"][1]))
+    hi = math.log10(max(10, items[-1][1]["min"][1]))
+    out = []
+    for cc, b in items:
+        m = b["min"]
+        w = 8 + 92 * (math.log10(max(1, m[1])) - lo) / max(.01, hi - lo)
+        ac = ('<small style="display:block;font-weight:400;color:var(--ink-2);font-size:13px">%s ac</small>'
+              % site_acres(m[2])) if m[2] is not None else ""
+        out.append(
+            '<button class="rank" type="button" data-cc="%s"><span class="fl">%s</span>\n'
+            '      <span class="cn">%s<small>%s listings</small></span>\n'
+            '      <span class="v">%s%s</span><span class="bar"><i style="width:%.1f%%"></i></span></button>'
+            % (html.escape(cc), site_flag(cc), html.escape(site_country(cc)), format(b["n"], ","),
+               site_money(m[1]), ac, w))
+    return "\n    ".join(out)
 
 
 def build_site(recs, fresh_days=3):
@@ -837,10 +986,24 @@ def build_site(recs, fresh_days=3):
             "countries": len(countries), "rows": rows}
     with open(os.path.join(SITE, "data.json"), "w") as f:
         json.dump(data, f, separators=(",", ":"))
+    hero, headline, place = site_hero(rows)
+    options = "".join('<option value="%s">%s %s</option>' % (html.escape(cc), site_flag(cc), html.escape(site_country(cc)))
+                      for cc in sorted(countries, key=site_country))
+    stamp = datetime.now().astimezone()
+    updated = "Updated %s from %s live listings in %d countries." % (
+        stamp.strftime("%B %-d, %Y at %-I:%M %p"), format(len(rows), ","), len(countries))
+    description = ("Today's cheapest land on earth: %s. Every cheap plot for sale worldwide, "
+                   "ranked by total price and updated daily from live listings." % headline) if headline else \
+        "The cheapest pieces of land you can actually buy anywhere in the world, ranked by total price and updated daily from live listings."
     with open(os.path.join(HERE, "site_template.html")) as f:
-        html = f.read()
+        page = f.read()
+    for key, val in (("<!--HERO-->", hero), ("<!--RANKS-->", site_ranks(rows)), ("<!--COUNTRIES-->", options),
+                     ("<!--UPDATED-->", html.escape(updated)), ("{{DESCRIPTION}}", html.escape(description, quote=True)),
+                     ("{{ROWS}}", format(len(rows), ","))):
+        assert key in page, "site_template.html is missing " + key
+        page = page.replace(key, val)
     with open(os.path.join(SITE, "index.html"), "w") as f:
-        f.write(html)
+        f.write(page)
     open(os.path.join(SITE, ".nojekyll"), "w").close()
     log("site: %d listings from %d countries -> site/" % (len(rows), len(countries)))
 
