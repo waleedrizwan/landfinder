@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-landfinder — scrape the cheapest land listings on earth and rank them by USD per acre.
+landfinder — scrape the cheapest land listings on earth and rank them by total price in USD.
 
 Sources
   properstar  worldwide portal (~100+ countries), land plots sorted cheapest first
@@ -14,8 +14,9 @@ Usage
   ./run.sh --report-only                     # rebuild results.csv / report.html from saved data
 
 Output (in this folder)
-  results.csv   every listing, cheapest USD/acre first, with a "flags" column for suspicious prices
+  results.csv   every listing, cheapest total price first, with a "flags" column for suspicious prices
   report.html   open in a browser: sortable, filterable table of the same data
+  site/         the static website (index.html + data.json) deployed by publish.sh
   data/         raw scraped records + progress, so a stopped run resumes where it left off
 """
 import argparse, csv, html, json, math, os, queue, random, re, subprocess, sys, threading, time, warnings
