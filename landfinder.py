@@ -895,7 +895,7 @@ def site_money(v):
 def site_acres(v):
     if v is None:
         return "\u2014"
-    return "%.2f" % v if v < 1 else "%.1f" % v if v < 100 else format(int(round(v)), ",")
+    return "<0.01" if v < .01 else "%.2f" % v if v < 1 else "%.1f" % v if v < 100 else format(int(round(v)), ",")
 
 
 def site_clean(row):
