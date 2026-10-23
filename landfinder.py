@@ -740,6 +740,20 @@ COLS = ["price_usd", "usd_per_acre", "acres", "country", "region", "title", "pri
         "source", "flags", "url", "lat", "lon", "scraped_at"]
 
 
+KIJIJI_TITLE_MAX = 64  # Kijiji cuts titles off at this many characters
+
+
+def same_title(t1, raw1, t2, raw2, source):
+    """Normalized titles t1/t2 name the same listing: equal, or (Kijiji) one is the other cut off at 64 chars,
+    as in '(PID 123) Old Port Road, Nova Scotia' vs 'Lot (PID 123) Old Port Road, Nova Scot'."""
+    if t1 == t2:
+        return True
+    if source != "kijiji":
+        return False
+    (short, raw_short), long_ = ((t1, raw1), t2) if len(t1) < len(t2) else ((t2, raw2), t1)
+    return len(raw_short) >= KIJIJI_TITLE_MAX and long_.startswith(short)
+
+
 def build_outputs(store):
     rates = load_fx()
     recs = [finalize(r, rates) for r in store.all()]
@@ -774,13 +788,14 @@ def build_outputs(store):
             r["flags"] = "; ".join(x for x in (r["flags"], "far below other listings in this country") if x)
     recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # cheapest total price first
     # same parcel reposted under a new URL ("Lot (PID 123) X" vs "(PID 123) X") -> keep one
-    seen, uniq = set(), []
+    seen, uniq = {}, []
     for r in recs:
-        t = re.sub(r"[^a-z0-9]", "", re.sub(r"^\s*lot\b", "", (r.get("title") or "").lower()))
-        key = (r.get("source"), r.get("country"), round(r.get("price") or 0), r.get("acres"), t)
-        if key in seen:
+        title = r.get("title") or ""
+        t = re.sub(r"[^a-z0-9]", "", re.sub(r"^\s*lot\b", "", title.lower()))
+        key = (r.get("source"), r.get("country"), round(r.get("price") or 0), r.get("acres"))
+        if any(same_title(t, title, *prev, r.get("source")) for prev in seen.get(key, ())):
             continue
-        seen.add(key)
+        seen.setdefault(key, []).append((t, title))
         uniq.append(r)
     recs = uniq
     csv_path = os.path.join(HERE, "results.csv")
