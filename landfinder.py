@@ -987,14 +987,19 @@ def build_site(recs, fresh_days=3):
         rows.append([rnd(r.get("usd_per_acre"), 2), rnd(r["price_usd"], 0), rnd(r.get("acres"), 3), cc,
                      (r.get("region") or "")[:60], (r.get("title") or "")[:110], r.get("source"), codes, r["url"],
                      rnd(r.get("lat"), 4), rnd(r.get("lon"), 4)])
-    data = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "countries": len(countries), "rows": rows}
+    stamp = datetime.now().astimezone()
+    data = {"generated": stamp.isoformat(timespec="seconds"), "countries": len(countries), "rows": rows}
     with open(os.path.join(SITE, "data.json"), "w") as f:
         json.dump(data, f, separators=(",", ":"))
+    write_site(rows, countries, stamp)
+    log("site: %d listings from %d countries -> site/" % (len(rows), len(countries)))
+
+
+def write_site(rows, countries, stamp):
+    """Fill site_template.html with the hero, country ranking and filter options -> site/index.html."""
     hero, headline, place = site_hero(rows)
     options = "".join('<option value="%s">%s %s</option>' % (html.escape(cc), site_flag(cc), html.escape(site_country(cc)))
                       for cc in sorted(countries, key=site_country))
-    stamp = datetime.now().astimezone()
     updated = "Updated %s from %s live listings in %d countries." % (
         stamp.strftime("%B %-d, %Y at %-I:%M %p"), format(len(rows), ","), len(countries))
     description = ("Today's cheapest land on earth: %s. Every cheap plot for sale worldwide, "
@@ -1010,7 +1015,6 @@ def build_site(recs, fresh_days=3):
     with open(os.path.join(SITE, "index.html"), "w") as f:
         f.write(page)
     open(os.path.join(SITE, ".nojekyll"), "w").close()
-    log("site: %d listings from %d countries -> site/" % (len(rows), len(countries)))
 
 
 # ----------------------------------------------------------------------------- main
