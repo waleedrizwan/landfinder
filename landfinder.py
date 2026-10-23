@@ -808,8 +808,13 @@ def build_outputs(store):
 SITE = os.path.join(HERE, "site")
 FLAG_CODES = [("price too low", "L"), ("payment plan", "P"), ("auction", "A"), ("wanted ad", "W"),
               ("no land area", "N"), ("under $10/acre", "C"), ("lease/rental", "R"), ("placeholder", "X"),
-              ("per m2/acre", "U"), ("far below other", "O"),
+              ("per m2/acre", "U"), ("price may be per m2", "U"), ("far below other", "O"),
               ("mining claim", "M"), ("house listing", "H"), ("too low for Canada", "L")]
+
+
+def site_codes(flags):
+    """One letter per kind of warning in a listing's flags text, each letter once."""
+    return "".join(dict.fromkeys(c for txt, c in FLAG_CODES if txt in (flags or "")))
 
 
 SOURCE_NAMES = {"properstar": "Properstar", "landwatch": "LandWatch", "kijiji": "Kijiji"}
@@ -973,7 +978,7 @@ def build_site(recs, fresh_days=3):
     for r in recs:
         if (r.get("scraped_at") or "") < cutoff or r.get("price_usd") is None:
             continue
-        codes = "".join(c for txt, c in FLAG_CODES if txt in (r.get("flags") or ""))
+        codes = site_codes(r.get("flags"))
         if "W" in codes:
             continue
         rnd = lambda v, d: None if v is None else round(v, d)
