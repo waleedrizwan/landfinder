@@ -796,7 +796,7 @@ def build_outputs(store):
     tpl = open(os.path.join(HERE, "report_template.html")).read()
     page = tpl.replace("/*DATA*/[]", json.dumps(slim)).replace(
         "{{GENERATED}}", datetime.now().strftime("%Y-%m-%d %H:%M"))
-    open(os.path.join(HERE, "report.page"), "w").write(page)
+    open(os.path.join(HERE, "report.html"), "w").write(page)
     build_site(recs)
     clean = [r for r in recs if r["price_usd"] and r["flags"] in ("", "no land area listed")]
     log("wrote %d listings (%d with a believable price) -> results.csv, report.html" % (len(recs), len(clean)))
