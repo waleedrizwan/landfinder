@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cheapest Land</title>
 <meta name="description" content="The cheapest land listings worldwide, sorted by total price and updated daily.">
+<!-- inline icon (a "for sale" sign on a field): Cloudflare Pages answers /favicon.ico with this page -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3CclipPath id='r'%3E%3Crect width='32' height='32' rx='7'/%3E%3C/clipPath%3E%3Cg clip-path='url(%23r)'%3E%3Crect width='32' height='32' fill='%233d8fd6'/%3E%3Cpath d='M0 21c6-5 12-6 19-2s10 3 13 1v12H0z' fill='%236cc36c'/%3E%3Cpath d='M0 27c8-4 17-4 32 1v4H0z' fill='%232e8b4a'/%3E%3Crect x='15' y='14' width='2.4' height='13' fill='%237a4b2a'/%3E%3Crect x='7' y='5' width='18.5' height='12' rx='2.5' fill='%23fff'/%3E%3Cpath d='M19.0 9.2c-.8-.8-1.9-1.2-3-1.2-1.7 0-3 .9-3 2.2 0 3 6 1.6 6 4.6 0 1.4-1.4 2.4-3.2 2.4-1.2 0-2.4-.5-3.2-1.3M16.0 6.5v12' transform='translate(16.2 11.0) scale(0.78) translate(-16 -12.5)' stroke='%231f6f43' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <style>
 :root{--bg:#fff;--fg:#222;--muted:#666;--line:#ddd;--card:#fff;--link:#1a5fb4;--warn:#b54708}
 @media (prefers-color-scheme:dark){
@@ -40,7 +43,19 @@ header h1{font-size:18px;margin:0}
 .card .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .card .w{color:var(--warn);font-size:13px}
 .more{display:block;margin:20px auto 40px;font:inherit;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:9px 18px;cursor:pointer}
-#map{height:calc(100vh - 170px);min-height:400px;border:1px solid var(--line);border-radius:8px;margin-bottom:16px}
+#map{height:calc(100vh - 210px);height:calc(100dvh - 210px);min-height:420px;border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
+@media (prefers-color-scheme:dark){#map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}}
+.pin div,.cl div{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:999px;cursor:pointer;font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.pin div{background:var(--card);color:var(--fg);border:1px solid var(--line);padding:5px 8px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.pin div:hover{border-color:var(--fg)}
+.pin div.flag{border-color:var(--warn);color:var(--warn)}
+.cl div{background:var(--fg);color:var(--bg);padding:7px 11px;font-weight:400;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.cl div b{font-weight:700}
+.cl div.big{padding:9px 13px;font-size:13px}
+.cl div.huge{padding:11px 15px;font-size:14px}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--card);color:var(--fg)}
+.leaflet-popup-content{margin:14px 16px;font-size:15px;line-height:1.45}
+.card.pop{border:0;padding:0;background:none}
 .note{color:var(--muted);font-size:13px;margin:0 0 24px}
 footer{border-top:1px solid var(--line);color:var(--muted);font-size:13px;padding:16px 0 32px}
 footer p{margin:4px 0}
@@ -52,7 +67,7 @@ footer p{margin:4px 0}
   <h1>Cheapest Land</h1>
   <nav class="tabs" role="tablist">
     <button role="tab" id="t-list" aria-selected="true">Listings</button>
-    <button role="tab" id="t-map" aria-selected="false">Heat map</button>
+    <button role="tab" id="t-map" aria-selected="false">Map</button>
   </nav>
 </div></header>
 
@@ -81,8 +96,10 @@ footer p{margin:4px 0}
   </section>
 
   <section id="p-map" hidden>
+    <div class="count" id="mcount"></div>
     <div id="map"></div>
-    <p class="note">Where the matching listings are. Listings from LandWatch and Mercado Libre don't include coordinates, so they aren't on the map.</p>
+    <p class="note">Click a group to zoom in and a price to see the listing. Pick a country above to jump to it.
+      LandWatch listings are pinned at their ZIP code's center. Mercado Libre listings have no location, so they aren't on the map.</p>
   </section>
 </main>
 
@@ -92,9 +109,10 @@ footer p{margin:4px 0}
 </div></footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
-// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon]
+// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle]
+// title and region are in English; originalTitle is set when the title was translated
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let regionNames; try { regionNames = new Intl.DisplayNames(["en"], {type:"region"}); } catch (e) {}
@@ -115,11 +133,11 @@ const FILTERS = ["q", "fc", "fmin", "fmax", "facmin", "facmax", "fppa", "fsrc", 
 // buyable at the listed price: no warning flags ("N" = no area listed is fine when ranking by total price)
 const clean = r => r[1] != null && (!r[7] || r[7] === "N");
 
-let ALL = [], VIEW = [], shown = PAGE, map, heat;
+let ALL = [], VIEW = [], shown = PAGE, map, pins, mapCC = null, mapTimer;
 
 fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
   ALL = d.rows.filter(r => r[1] != null).sort((a, b) => a[1] - b[1]);
-  for (const r of ALL) r.text = (r[5] + " " + r[4] + " " + cname(r[3])).toLowerCase();
+  for (const r of ALL) r.text = (r[5] + " " + (r[11] || "") + " " + r[4] + " " + cname(r[3])).toLowerCase();
   $("updated").textContent = `Updated ${new Date(d.generated).toLocaleString("en-US", {dateStyle:"medium", timeStyle:"short"})}.`;
   const cs = [...new Set(ALL.map(r => r[3]))].sort((a, b) => cname(a).localeCompare(cname(b)));
   for (const cc of cs) $("fc").add(new Option(cname(cc), cc));
@@ -138,7 +156,7 @@ $("t-map").onclick = () => tab("map");
 
 function tab(name){
   for (const t of ["list", "map"]) { $("t-" + t).setAttribute("aria-selected", t === name); $("p-" + t).hidden = t !== name; }
-  if (name === "map") { initMap(); map.invalidateSize(); renderHeat(); }
+  if (name === "map" && window.L) { initMap(); map.invalidateSize(); renderMap(); }
 }
 
 function update(){
@@ -153,33 +171,69 @@ function update(){
     && (isNaN(ppa) || (r[0] != null && r[0] <= ppa))
     && (!q || r.text.includes(q)));
   renderGrid();
-  if (map && !$("p-map").hidden) renderHeat();
+  if (map && !$("p-map").hidden) { clearTimeout(mapTimer); mapTimer = setTimeout(renderMap, 150); }
 }
+
+// listing details, shared by the grid cards and the map popups
+const details = r => `<div class="p">${money(r[1])}</div>
+    <div class="m">${r[2] != null ? acres(r[2]) + (r[2] === 1 ? " acre" : " acres") + " · " + money(r[0]) + "/acre" : "Area not listed"}</div>
+    <a class="t" href="${esc(r[8])}" target="_blank" rel="noopener"${r[11] ? ` title="Original: ${esc(r[11])}"` : ""}>${esc(r[5] || "View listing")}</a>
+    <div class="m">${esc([r[4], cname(r[3])].filter(Boolean).join(", "))} · ${srcName(r[6])}</div>
+    ${clean(r) ? "" : `<div class="w">${[...r[7]].map(f => FLAGS[f]).filter(Boolean).join(". ")}</div>`}`;
 
 function renderGrid(){
   $("count").textContent = `${VIEW.length.toLocaleString("en-US")} listings, cheapest first`;
-  $("grid").innerHTML = VIEW.slice(0, shown).map(r => `<div class="card">
-    <div class="p">${money(r[1])}</div>
-    <div class="m">${r[2] != null ? acres(r[2]) + (r[2] === 1 ? " acre" : " acres") + " · " + money(r[0]) + "/acre" : "Area not listed"}</div>
-    <a class="t" href="${esc(r[8])}" target="_blank" rel="noopener">${esc(r[5] || "View listing")}</a>
-    <div class="m">${esc([r[4], cname(r[3])].filter(Boolean).join(", "))} · ${srcName(r[6])}</div>
-    ${clean(r) ? "" : `<div class="w">${[...r[7]].map(f => FLAGS[f]).filter(Boolean).join(". ")}</div>`}
-  </div>`).join("");
+  $("grid").innerHTML = VIEW.slice(0, shown).map(r => `<div class="card">${details(r)}</div>`).join("");
   $("more").hidden = shown >= VIEW.length;
 }
 
+// "$950", "$1.2k", "$35k", "$1.5M": short enough for a map pin
+const short = v => v < 1e3 ? "$" + Math.round(v) : v < 1e6 ? "$" + (v < 1e4 ? (v / 1e3).toFixed(1).replace(/\.0$/, "") : Math.round(v / 1e3)) + "k"
+  : "$" + (v / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+
 function initMap(){
-  if (map || !window.L) return;
-  map = L.map("map", {worldCopyJump: true}).setView([20, 0], 2);
+  if (map) return;
+  map = L.map("map", {worldCopyJump: true, minZoom: 2}).setView([25, 0], 2);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     {maxZoom: 18, attribution: "&copy; OpenStreetMap contributors"}).addTo(map);
+  // nearby listings group into one bubble with their count and cheapest price; click it to zoom in
+  pins = L.markerClusterGroup({chunkedLoading: true, showCoverageOnHover: false, maxClusterRadius: z => z <= 3 ? 110 : z <= 6 ? 80 : 60,
+    iconCreateFunction: c => {
+      let min = Infinity;
+      for (const m of c.getAllChildMarkers()) min = Math.min(min, m.options.row[1]);
+      const n = c.getChildCount();
+      return L.divIcon({className: "cl", iconSize: [0, 0],
+        html: `<div class="${n < 100 ? "" : n < 1000 ? "big" : "huge"}"><b>${n.toLocaleString("en-US")}</b> from ${short(min)}</div>`});
+    }}).addTo(map);
 }
 
-function renderHeat(){
-  if (!map || !L.heatLayer) return;
-  const pts = VIEW.filter(r => r[9] != null && r[10] != null).map(r => [r[9], r[10], 1]);
-  if (heat) map.removeLayer(heat);
-  heat = L.heatLayer(pts, {radius: 18, blur: 15, maxZoom: 8}).addTo(map);
+function renderMap(){
+  if (!pins) return;
+  const on = [];
+  for (const r of VIEW) {
+    if (r[9] == null || r[10] == null || (r[9] === 0 && r[10] === 0)) continue;
+    if (!r.pin) {  // made once per listing, reused as the filters change
+      r.pin = L.marker([r[9], r[10]], {row: r, icon: L.divIcon({className: "pin", iconSize: [0, 0],
+        html: `<div class="${clean(r) ? "" : "flag"}">${short(r[1])}</div>`})});
+      r.pin.bindPopup(() => `<div class="card pop">${details(r)}${r[6] === "landwatch" ? `<div class="m">Pin shows the ZIP code area</div>` : ""}</div>`,
+        {minWidth: 220, maxWidth: 280});
+    }
+    on.push(r.pin);
+  }
+  pins.clearLayers();
+  pins.addLayers(on);
+  const off = VIEW.length - on.length;
+  $("mcount").textContent = `${on.length.toLocaleString("en-US")} listings on the map` + (off ? ` · ${off.toLocaleString("en-US")} without a location` : "");
+  const cc = $("fc").value;
+  if (cc !== mapCC) {  // country changed: show the whole country, or the world for all countries
+    mapCC = cc;
+    if (cc && on.length) {
+      // frame where most listings are: the outermost 5% (Alaska and Hawaii, mislocated pins) would zoom far out
+      const span = v => { v.sort((a, b) => a - b); const k = Math.floor(v.length * .05); return [v[k], v[v.length - 1 - k]]; };
+      const [s, n] = span(on.map(m => m.getLatLng().lat)), [w, e] = span(on.map(m => m.getLatLng().lng));
+      map.fitBounds(L.latLngBounds([[s, w], [n, e]]).pad(.1), {padding: [30, 30], maxZoom: 9, animate: false});
+    } else map.setView([25, 0], 2, {animate: false});
+  }
 }
 </script>
 </body>

@@ -48,6 +48,7 @@ reopens it. A full run (10 pages per country/state/province) takes under an hour
 ./run.sh --states new-mexico,arizona,nevada      # only these US states (LandWatch)
 ./run.sh --provinces nova-scotia,saskatchewan    # only these provinces (Kijiji)
 ./run.sh --report-only                           # rebuild outputs from saved data
+./run.sh --report-only --no-translate            # ...without translating new titles (no claude CLI calls)
 ./run.sh --fresh                                 # re-scrape pages already done
 ./run.sh --workers 6                             # more windows in parallel (default 4)
 ./run.sh --tile full                             # tile windows over the whole screen
@@ -63,9 +64,21 @@ Stopping with Ctrl-C is safe: progress is saved in `data/`, and running the same
 
 ## Website and daily updates
 
-Every run also builds a small static website in `site/`. It shows today's cheapest listing, the
-cheapest land in each country, a map and a filterable table of every listing seen in the last 3 days.
-The live copy is at **https://cheapest-land.pages.dev**.
+Every run also builds a small static website in `site/`: every listing seen in the last 3 days, cheapest
+first, with search and filters, plus a map. On the map, nearby listings group into bubbles showing how many
+there are and the cheapest price; click one to zoom in, click a price pin to see the listing, or pick a
+country to jump to it. The live copy is at **https://cheapest-land.pages.dev**.
+
+LandWatch listings come without coordinates, so they're pinned at their ZIP code's center, from the US Census
+ZIP code file in `geo/us_zip_centroids.csv.gz` (2024 ZCTA Gazetteer). Mercado Libre listings have no location
+and only appear in the list.
+
+Everything on the site is in English. Titles that aren't (OLX, Mercado Libre, French Kijiji ads, the odd German
+or Spanish Properstar title) and place names in Cyrillic are translated with Claude when the site is built: the
+`claude` CLI with the Haiku model, 80 texts per call. Translations are cached in `data/translations.json`, so each
+text is only sent once and a daily run only translates new listings. Hover a title on the site to see the
+original; searching in the original language still works. `--no-translate` skips the step, and without the
+`claude` CLI the original text is kept.
 
 - `./publish.sh` deploys `site/` to Cloudflare Pages with `wrangler`. Run `npx wrangler login` once first.
 - `./install_daily.sh` schedules `daily.sh` with launchd: a fresh scrape at 6:00 every morning, with

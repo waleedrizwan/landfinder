@@ -20,7 +20,8 @@ Output (in this folder)
   report.html   open in a browser: sortable, filterable table of the same data
   data/         raw scraped records + progress, so a stopped run resumes where it left off
 """
-import argparse, csv, json, math, os, queue, random, re, subprocess, sys, threading, time, warnings
+import argparse, csv, gzip, json, math, os, queue, random, re, shutil, subprocess, sys, threading, time, warnings
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from html import unescape
 
@@ -130,6 +131,30 @@ def acres_from_text(text):
     return None
 
 
+US_STATE_CODES = set("""AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY
+NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR""".split())
+ZIP_RX = re.compile(r"\b([A-Z]{2}),?\s+(\d{5})\b")
+_ZIPS = {}
+
+
+def zip_location(text):
+    """(lat, lon) of the US ZIP code in an address like 'Deming, NM, 88030', from the Census ZIP code
+    centers in geo/us_zip_centroids.csv.gz. LandWatch listings have no coordinates, only addresses."""
+    if not _ZIPS:
+        try:
+            with gzip.open(os.path.join(HERE, "geo", "us_zip_centroids.csv.gz"), "rt") as f:
+                for line in f:
+                    z, lat, lon = line.strip().split(",")
+                    if z.isdigit():
+                        _ZIPS[z] = (float(lat), float(lon))
+        except OSError:
+            _ZIPS["-"] = None  # file missing: don't retry for every listing
+    for state, z in ZIP_RX.findall(text or ""):
+        if state in US_STATE_CODES and z in _ZIPS:
+            return _ZIPS[z]
+    return None
+
+
 def load_fx():
     """USD exchange rates, cached for the day."""
     path = os.path.join(DATA, "fx.json")
@@ -161,13 +186,13 @@ def to_usd(amount, currency, rates):
 # English, French and Spanish, plus the OLX languages: Polish, Ukrainian/Russian, Romanian, Bulgarian, Portuguese, Uzbek
 PAYMENT_RX = re.compile(r"(\d\s*(?:/\s*)?month\b|/\s*mo\b|/\s*month|per month|a month|monthly|\$\s*\d+\s*down|down payment"
                         r"|cuotas|anticipo|financiad|financiaci|\braty\b|розстроч|рассроч|presta[çc][õo]es)", re.I)
-WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of|kupi[eę]\b|куплю|cump[aă]r\b|compro\b|busco\b|procuro\b)", re.I)
+WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of|i will buy|will buy|kupi[eę]\b|куплю|cump[aă]r\b|compro\b|busco\b|procuro\b)", re.I)
 MIN_PRICE = 1500  # USD-ish floor for Properstar and Mercado Libre searches; cheaper "prices" there are per-m2 or placeholders
 TILE_SCALE = 0.5  # tiled windows draw pages at half size
 CLAIM_RX = re.compile(r"\b(access deeds?|membership|timeshare|mining claims?|lode claims?|placer claims?|gold claims?|mineral claims?|mineral rights?|unpatented|lode gold|mining|prospecting)\b", re.I)
 LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\blease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenant\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b"
                       r"|dzier[żz]aw|wynaj[eę]|do wynaj|оренд|аренд|\bздам\b|\bздаю\b|\bсдам\b|\bсдаю\b|под наем|[iî]nchiri|arrend|\balug|\bijara|\ben renta\b|\bse renta\b)", re.I)
-PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|hect|ha\b)"
+PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|hect|ha\b|sotk|square met)"
                          r"|(?:(?:\bza|\bза|\bpe|\bper|\bx)\s+|/\s*)(?:1\s*)?(m2\b|m²|mp\b|metr|сот|м2|м²|кв\.?\s*м|ar\b|ara\b)"
                          r"|\b(?:so|su)[‘'ʻ’`]?t(?:ig[‘'ʻ’`]?i|ixi|kasi)\s*\$?\s*\d|сотк[аи]\s*[-–—:]?\s*\$?\s*\d", re.I)  # Uzbek/Russian "its sotka [costs] 500"
 # "1/8 udziału", "udział 1/4 w prawie własności", "1/2 interest": only part of the property is for sale
@@ -190,11 +215,17 @@ def placeholder_price(p):
 AUCTION_RX = re.compile(r"\b(auction|tender|bid|starting bid)\b|przetarg|licytac|licita[tț]i|аукці|аукци|\bторги\b|subasta|leil[aã]o|leilões", re.I)
 
 
+def burial_plot(title):
+    m = CEMETERY_RX.search(title or "")
+    return bool(m) and not NEAR_RX.search(title[max(0, m.start() - 20):m.start()])  # "Rua do Cemitério" is a street
+
+
 def flag(rec):
     f = []
     usd, acres = rec.get("price_usd"), rec.get("acres")
-    text = " ".join(str(rec.get(k) or "") for k in ("title", "description"))
-    if WANTED_RX.search(rec.get("title") or ""):
+    # title_en: the English translation of a non-English title (see add_english), so English checks apply to it too
+    text = " ".join(str(rec.get(k) or "") for k in ("title", "title_en", "description"))
+    if WANTED_RX.search(rec.get("title") or "") or WANTED_RX.search(rec.get("title_en") or ""):
         f.append("wanted ad - not a listing")
     if usd is not None and usd < 300:
         f.append("price too low - likely monthly payment or per-m2 price")
@@ -202,10 +233,9 @@ def flag(rec):
         f.append("may be payment plan price")
     if CLAIM_RX.search(text):
         f.append("mining claim/mineral rights/access deed - not land ownership")
-    if SHARE_RX.search(rec.get("title") or ""):
+    if SHARE_RX.search(rec.get("title") or "") or SHARE_RX.search(rec.get("title_en") or ""):
         f.append("share of a property - not the whole plot")
-    m = CEMETERY_RX.search(rec.get("title") or "")
-    if m and not NEAR_RX.search(rec["title"][max(0, m.start() - 20):m.start()]):  # "Rua do Cemitério" is a street
+    if burial_plot(rec.get("title")) or burial_plot(rec.get("title_en")):
         f.append("burial plot - not land you can use")
     if usd and (rec.get("currency") or "USD") != "USD":
         if any((num(n.replace(".", "")) or 0) > usd * 3 for n in USD_IN_TEXT_RX.findall(rec.get("title") or "")):
@@ -267,6 +297,10 @@ def finalize(rec, rates):
         a = acres_from_text(rec.get("title")) or acres_from_text(rec.get("description"))
         if a:
             rec["acres"] = a
+    if rec.get("source") == "landwatch" and rec.get("lat") is None:  # place it at its ZIP code's center
+        ll = zip_location(rec.get("title")) or zip_location(rec.get("description"))
+        if ll:
+            rec["lat"], rec["lon"] = ll
     rec["price_usd"] = to_usd(rec.get("price"), rec.get("currency"), rates)
     a = rec.get("acres")
     rec["acres"] = round(a, 4) if a else None
@@ -704,7 +738,7 @@ def parse_kijiji(html, prov):
 
 def crawl_kijiji(fetch, store, provinces, pages):
     for pi, (prov, loc) in enumerate(provinces.items(), 1):
-        total_new = 0
+        total_new, prev = 0, set()
         for p in range(1, pages + 1):
             if STOP.is_set():
                 return
@@ -719,11 +753,13 @@ def crawl_kijiji(fetch, store, provinces, pages):
             if not recs:
                 store.mark(url)
                 break
-            n = store.add(recs)
-            total_new += n
-            store.mark(url)
-            if n == 0 and p > 1:   # Kijiji repeats the last page past the end
+            urls = {r["url"] for r in recs}
+            if urls <= prev:  # Kijiji repeats the last page past the end
+                store.mark(url)
                 break
+            prev = urls
+            total_new += store.add(recs)
+            store.mark(url)
         log("kijiji     [%d/%d] %-28s +%d listings" % (pi, len(provinces), prov, total_new))
 
 
@@ -912,15 +948,100 @@ def verify_cheapest(store, a, n=60, rounds=4):
             br.close()
 
 
+# ----------------------------------------------------------------------------- translation
+
+FRENCH_RX = re.compile(r"[éèêàâùûôîç]|\b(terrains?|vendre|vendu|terres?|boisé|érablière|près|avec|secteur|zoné|pieds)\b", re.I)
+CYRILLIC_RX = re.compile(r"[Ѐ-ӿ]")
+# common non-English words: Properstar titles are usually English, but some come in German, French, Spanish...
+FOREIGN_RX = re.compile(r"\b(de|del|la|las|los|el|en|con|para|venta|vendo|vende|se|mit|und|von|vom|im|zum|zur|der|die|das|di|"
+                        r"della|vendesi|edificabile|terreno|terrain|à|avec|pour|sur|com|uma|um|het|een|van|met|och|med|på|na|do|ze|za)\b", re.I)
+TRANSLATE_PROMPT = ("You translate real-estate listing titles and place names into English. The input is a JSON array of "
+                    "strings. Reply with only a JSON array of the same length, in the same order: each string as short, "
+                    "natural English. Keep numbers and prices as written, and write units in English (соток/сот -> sotka, "
+                    "га -> ha, кв.м -> m²). Write names of towns, regions and streets in Latin letters (transliterate "
+                    "Cyrillic), so no Cyrillic is left. Return strings that are already English unchanged.")
+
+
+def translate(texts):
+    """English versions of texts, from Claude: the claude CLI with the Haiku model, 80 texts per call.
+    Cached in data/translations.json so each text is only sent once; anything untranslated stays as it is."""
+    path = os.path.join(DATA, "translations.json")
+    try:
+        cache = json.load(open(path))
+    except (OSError, ValueError):
+        cache = {}
+    todo = sorted({t for t in texts if t and t not in cache})
+    claude = shutil.which("claude")
+    if not todo or not claude:
+        if todo:
+            log("translation skipped: the claude CLI isn't installed (%d texts stay as they are)" % len(todo))
+        return cache
+    batches = [[]]
+    for t in todo:
+        if len(batches[-1]) >= 80 or sum(map(len, batches[-1])) + len(t) > 6000:
+            batches.append([])
+        batches[-1].append(t)
+    log("translating %d texts to English with Claude (%d batches)" % (len(todo), len(batches)))
+    lock, failed = threading.Lock(), []
+
+    def run(batch):
+        if len(failed) >= 3 or STOP.is_set():  # e.g. not signed in or out of usage: don't keep trying
+            return
+        out, err = None, ""
+        try:
+            p = subprocess.run([claude, "-p", "--model", "haiku", "--tools", "", "--strict-mcp-config",
+                                "--no-session-persistence", "--setting-sources", "", "--system-prompt", TRANSLATE_PROMPT],
+                               input=json.dumps(batch, ensure_ascii=False), capture_output=True, text=True, timeout=300)
+            err = (p.stderr or p.stdout).strip()
+            m = re.search(r"\[.*\]", p.stdout, re.S)
+            out = json.loads(m.group(0)) if m else None
+        except (subprocess.TimeoutExpired, ValueError) as e:
+            err = str(e)
+        if isinstance(out, list) and len(out) == len(batch) and all(isinstance(x, str) for x in out):
+            with lock:
+                cache.update(zip(batch, out))
+        else:
+            failed.append(batch)
+            log("  translation batch failed: %s" % (err[:150] or "reply wasn't a matching JSON array"))
+
+    try:
+        with ThreadPoolExecutor(4) as ex:
+            list(ex.map(run, batches))
+    finally:
+        with open(path, "w") as f:
+            json.dump(cache, f, ensure_ascii=False)
+    return cache
+
+
+def add_english(recs):
+    """Set title_en on non-English listings (OLX, Mercado Libre, French Kijiji ads, foreign-looking Properstar
+    titles, anything in Cyrillic) and region_en on place names written in Cyrillic, for the site."""
+    titled = [r for r in recs if r.get("title") and (r.get("source") in ("olx", "mercadolibre") or CYRILLIC_RX.search(r["title"])
+                                                     or (r.get("source") == "kijiji" and FRENCH_RX.search(r["title"]))
+                                                     or (r.get("source") == "properstar" and FOREIGN_RX.search(r["title"])))]
+    placed = [r for r in recs if CYRILLIC_RX.search(r.get("region") or "")]
+    tr = translate([r["title"] for r in titled] + [r["region"] for r in placed])
+    for r in titled:
+        if tr.get(r["title"], r["title"]) != r["title"]:
+            r["title_en"] = tr[r["title"]]
+    for r in placed:
+        if r["region"] in tr:
+            r["region_en"] = tr[r["region"]]
+
+
 # ----------------------------------------------------------------------------- output
 
-COLS = ["price_usd", "usd_per_acre", "acres", "country", "region", "title", "price", "currency",
+COLS =["price_usd", "usd_per_acre", "acres", "country", "region", "title", "price", "currency",
         "source", "flags", "url", "lat", "lon", "scraped_at"]
 
 
-def build_outputs(store):
+def build_outputs(store, english=True):
     rates = load_fx()
-    recs = [finalize(r, rates) for r in store.all()]
+    recs = store.all()
+    cutoff = site_cutoff(recs)
+    if english and cutoff:  # before finalize, so the price checks also read the English titles
+        add_english([r for r in recs if (r.get("scraped_at") or "") >= cutoff])
+    recs = [finalize(r, rates) for r in recs]
     # one exact price on many different-size plots -> a placeholder or a per-m2 price, not a real total
     same = {}
     for r in recs:
@@ -992,14 +1113,18 @@ FLAG_CODES = [("price too low", "L"), ("payment plan", "P"), ("auction", "A"), (
               ("share of a property", "S"), ("allotment garden", "S"), ("burial plot", "S"), ("wrong currency", "L")]
 
 
-def build_site(recs, fresh_days=3):
+def site_cutoff(recs, fresh_days=3):
+    """The site shows listings seen within a few days of the newest scrape."""
+    stamps = [r.get("scraped_at") for r in recs if r.get("scraped_at")]
+    return (datetime.fromisoformat(max(stamps)) - timedelta(days=fresh_days)).isoformat() if stamps else None
+
+
+def build_site(recs):
     """Write site/index.html + site/data.json: every listing seen in the last few days of runs."""
     os.makedirs(SITE, exist_ok=True)
-    stamps = [r.get("scraped_at") for r in recs if r.get("scraped_at")]
-    if not stamps:
+    cutoff = site_cutoff(recs)
+    if not cutoff:
         return
-    newest = max(stamps)
-    cutoff = (datetime.fromisoformat(newest) - timedelta(days=fresh_days)).isoformat()
     rows, countries = [], set()
     for r in recs:
         if (r.get("scraped_at") or "") < cutoff or r.get("price_usd") is None:
@@ -1011,8 +1136,9 @@ def build_site(recs, fresh_days=3):
         cc = (r.get("country") or "").upper() if len(r.get("country") or "") == 2 else (r.get("country") or "")
         countries.add(cc)
         rows.append([rnd(r.get("usd_per_acre"), 2), rnd(r["price_usd"], 0), rnd(r.get("acres"), 3), cc,
-                     (r.get("region") or "")[:60], (r.get("title") or "")[:110], r.get("source"), codes, r["url"],
-                     rnd(r.get("lat"), 4), rnd(r.get("lon"), 4)])
+                     (r.get("region_en") or r.get("region") or "")[:60], (r.get("title_en") or r.get("title") or "")[:110],
+                     r.get("source"), codes, r["url"], rnd(r.get("lat"), 4), rnd(r.get("lon"), 4),
+                     r["title"][:110] if r.get("title_en") else None])  # the original title, when translated
     data = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"),
             "countries": len(countries), "rows": rows}
     with open(os.path.join(SITE, "data.json"), "w") as f:
@@ -1049,6 +1175,8 @@ def main():
     ap.add_argument("--verify", type=int, default=60,
                     help="after scraping, open this many of the cheapest listings to re-check their price (0 = off)")
     ap.add_argument("--verify-only", action="store_true", help="only run the verification step, then rebuild outputs")
+    ap.add_argument("--no-translate", action="store_true",
+                    help="don't translate new non-English titles for the site (uses the claude CLI)")
     a = ap.parse_args()
 
     store = Store()
@@ -1098,7 +1226,7 @@ def main():
         finally:
             if br:
                 br.close()
-    build_outputs(store)
+    build_outputs(store, english=not a.no_translate)
 
 
 if __name__ == "__main__":
