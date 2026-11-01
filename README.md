@@ -69,6 +69,14 @@ first, with search and filters, plus a map. On the map, nearby listings group in
 there are and the cheapest price; click one to zoom in, click a price pin to see the listing, or pick a
 country to jump to it. The live copy is at **https://cheapest-land.pages.dev**.
 
+Each card is tagged with the kind of property: vacant land, building lot, farmland, forest, recreational,
+waterfront, commercial, dacha plot, land with house, or house. The Type filter shows one kind. LandWatch tags come
+from LandWatch's own category, or "land with house" when the card lists beds, baths or square feet. For the other
+sites, the tag comes from words in the title, its English translation and the description, in each site's languages.
+So the tag is a good guess, not a guarantee: "build your dream cottage" still counts as vacant land, and a house the
+seller doesn't mention goes unnoticed. Tagging makes no Claude calls. House listings stay hidden with the flagged ones
+unless you pick House in the Type filter.
+
 LandWatch listings come without coordinates, so they're pinned at their ZIP code's center, from the US Census
 ZIP code file in `geo/us_zip_centroids.csv.gz` (2024 ZCTA Gazetteer). Mercado Libre listings have no location
 and only appear in the list.
@@ -89,7 +97,7 @@ original; searching in the original language still works. `--no-translate` skips
 ## Output
 
 - **`report.html`**: open it in a browser for a sortable, filterable table of every listing.
-- **`results.csv`**: the same data, cheapest total price first.
+- **`results.csv`**: the same data, cheapest total price first. The `type` column is the property type shown on the site.
 - **`data/`**: raw scraped records, exchange rates and crawl progress.
 
 The `flags` column marks listings to double-check:

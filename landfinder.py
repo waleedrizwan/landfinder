@@ -291,6 +291,108 @@ def fix_down_payment(rec):
     return p in downs or bool(re.search(r"\$\s?%s\s*down" % re.escape("{:,.0f}".format(p)), text, re.I))
 
 
+# What kind of property a listing is, for the site cards and results.csv. Every source is scraped from its
+# land-for-sale section, so condos and townhouses don't come up: the question is what's on the land.
+LANDWATCH_TYPES = {"homes": "house", "homesite": "building lot", "farms-and-ranches": "farmland", "horse-property": "farmland",
+                   "recreational-property": "recreational", "hunting-property": "recreational", "timberland-property": "forest",
+                   "commercial-property": "commercial", "lakefront-property": "waterfront"}  # anything else: vacant land
+LANDWATCH_TYPE_RX = re.compile(r"-(%s)-for-sale/" % "|".join(LANDWATCH_TYPES))
+LANDWATCH_BEDS_RX = re.compile(r"\|\s*\d+\s*(?:beds?|baths?)\s*\||\|\s*[\d,]+\s*sqft\s*\|", re.I)  # "| 3 beds | • | 1 baths |" on the card
+# a word between "with" and the building that doesn't mean it's only an idea: "with room for a home", "this lot is perfect for a cabin"
+_WORD = (r"(?:(?!(?:for|to|your|future|dream|potential|room|space|plenty|ideal|perfect|great|build|building|views?|access|of|no|"
+         r"place|property|land|lot|parcel|acreage|tract|spot|site|area|para|pour|projet|proyecto|projeto|possib\w*|posibil\w*|"
+         r"autoriza\w*|proiect|pentru|под|для|без|bez|pod|former|ruin\w*|collapsed|burn(?:ed|t)|бывш\w*|колишн\w*|паднал\w*|"
+         r"срутен\w*|разрушен\w*)\b)\S+\s+)")
+# a house, cabin or other home already on the plot ("with a log cabin", "z domem", "с домом", "uyi bor"), not one sellers
+# suggest building: "build your dream cottage" or "perfect for a cabin" is still vacant land
+HOUSE_RX = re.compile(
+    r"\b(?:with|w/|includes?|including|plus|has|existing|this|there is|there's)\s+" + _WORD + "{0,5}?"
+    r"(?:(?<!well )(?<!pump )(?<!court )(?<!tree )(?<!bath )(?<!guard )(?<!storage )(?<!green )(?<!hoop )(?<!hen )(?<!chicken )"
+    r"(?<!dog )(?<!boat )(?<!club )(?<!pool )house|home|farmhouse|cabin|cottage|chalet|bungalow|camp|mobile home|manufactured home"
+    r"|modular home|yurt|dwelling|residence)\b"
+    # not "Cabin/Home Site", "home plans", "House Creek", nor a word cut off where LandWatch shortens the description ("home | $124,900")
+    r"(?!\s*(?:/\s*\w+\s*)?(?:sites?|plans?|projects?|permits?|potential|lots?|owners?|community|building|construct\w*|materials?|kits?|to\b|allowed"
+    r"|ok\b|friendly|welcome|permitted|hook-?ups?|pads?|parking|creek|road|rd|street|st|lane|ln|drive|dr|avenue|ave|way|trail|hollow"
+    r"|ridge|lake|river|mountain|\|))"
+    r"|\b(?:house|home|cabin|cottage|farmhouse|chalet|bungalow)\s+(?:was\s+)?(?:originally\s+)?built in (?:18|19|20)\d\d\b"
+    r"|\bthe\s+(?:existing\s+|old\s+)?(?:house|home|cabin|cottage|farmhouse|chalet|bungalow|mobile home)\s+(?:is|has|was|needs|sits|features)\b"
+    r"|\bfixer[- ]upper|\bhandyman special"
+    r"|\bavec\s+" + _WORD + r"{0,3}?(?:maison|chalet|camp|roulotte|b[aâ]tisse|r[ée]sidence|cabane)\b"
+    r"|\b(?:con|incluye)\s+" + _WORD + r"{0,3}?(?:casa|caba[ñn]a|vivienda)\b|\bcasa\s+(?:con|y|más)\s+terreno"
+    r"|\bcom\s+" + _WORD + r"{0,3}?(?:casa|moradia|vivenda)\b|\b(?:moradia|casa|vivenda)\s+t\d\b"
+    r"|\bz\s+" + _WORD + r"{0,3}?(?:domem|domkiem)\b|\bdom\s+z\s+(?:\S+\s+)?działk|\bzabudowan|\bsiedlisk(?:o|a|iem)\b"
+    r"|\bз\s+" + _WORD + r"{0,3}?(?:будинком|будиночком|хатою)|\b(?:є|стоїть)\s+" + _WORD + r"?(?:будинок|хата)\b"
+    r"|\bбудинок\s+з\s+(?:\S+\s+)?ділянк"
+    r"|\bс(?:ъс)?\s+" + _WORD + r"{0,3}?(?:домом|домиком|къща|вила)\b|\b(?:есть|стоит|имеется)\s+" + _WORD + r"?(?:дом|домик)\b"
+    r"|\bдом\s+(?:с|на)\s+(?:\S+\s+)?участк|\bжилой дом\b|\bстара къща"
+    r"|\bcu\s+" + _WORD + r"{0,3}?(?:cas[aă]|caban[aă])\b"
+    r"|\buyi\s+bor|\buy\s+bilan|\bhovlili\b|\bhovli\s+sotiladi|\d+\s*xonali\s+(?:uy|hovli)|уйи\s+бор|уй\s+билан"
+    r"|(?:ҳовли|ховли)\s+(?:\S+\s+){0,2}сотилади", re.I)
+# just before a building: it's planned, ruled out or the neighbour's ("move an existing home", "approval for a T4 house",
+# "não ... com casa", "подходяща за изграждане на къща с двор", "граничи с къща")
+PLANNED_RX = re.compile(r"\b(?:build|move|bring|place|put|add|call|make|for|para|pour|pentru|за|под|для|під|pod|projet\w*|proyecto|projeto|plans?"
+                        r"|construc\w*|budow\w*|изграждане|строител\w*|строительств\w*|будівництв\w*|граничи\w*|рядом|поруч"
+                        r"|possib\w*|posibil\w*|variant\w*|schimb\w*|exchange|обмен\w*|обмін\w*|troca|permuta"
+                        r"|not?|não|sin|nu|без|bez|ні|нет)\W+(?:\S+\s+){0,3}$", re.I)
+
+
+def has_house(text):
+    return any(not PLANNED_RX.search(text[max(0, m.start() - 40):m.start()]) for m in HOUSE_RX.finditer(text))
+# a plot in a dacha or garden cooperative (Kazakhstan, Ukraine, Uzbekistan), with or without a summer house
+DACHA_RX = re.compile(r"\bдач[аиуеыі]\b|\bдачн|\bсадов\w*\s+(?:участ|товарищ|общест)|\bсадівн|\bсадовод|\bdacha\b", re.I)
+COMMERCIAL_RX = re.compile(
+    r"\bcommercial(?:ly)?[- ](?:vacant\s+)?(?:lot|land|property|parcel|zon\w*|use|building lot|development)|\bhighway commercial"
+    r"|\bzoned (?:commercial|industrial|c-?\d)\b|\bindustrial[- ](?:lot|land|park|property|parcel|zon\w*|use)|\blight industrial|\bmixed[- ]use"
+    r"|\bterrain (?:commercial|industriel)|\b(?:terreno|lote|uso|zona)s?\s+(?:comercial|industrial)|\bteren\s+(?:industrial|comercial)"
+    r"|\b(?:działk\w*|teren\w*|grunt\w*)\s+inwestycyjn|\b(?:przemysłow|usługow|komercyjn)\w*"
+    r"|\b(?:комерційн|промислов)\w*\s+(?:призначення|нерухом|ділянк|забудов|об)|\bпід\s+комерці"
+    r"|\b(?:коммерческ|промышленн)\w*\s+(?:назначени|недвижим|участ|объект)|\bпод\s+(?:бизнес|коммерци)"
+    r"|\bпромишлен|\bтърговск|\bиндустриал", re.I)
+LOT_RX = re.compile(
+    r"\b(?:building|residential|city|town|village|serviced|subdivision|condominium|house|cottage|duplex)[- ](?:lots?|sites?)\b"
+    r"|\b(?:building|residential) land\b|\bvacant lots?\b|\bhome ?sites?\b|\blots? in (?:a |the )?(?:condominium|subdivision)"
+    r"|\bzoned (?:residential|r-?\d)\b|\bservices? (?:at|to) the lot|\bterrain (?:r[ée]sidentiel|constructible|[àa] b[aâ]tir)|\blot r[ée]sidentiel"
+    r"|\blotes?\b|\bloteamento|\bterrenos? urbanos?|\burbaniza|\bpara (?:construir|constru[cç][aã]o)"
+    r"|\bbudowlan|\bpod zabudow|\bwarunk\w* zabudowy"
+    r"|\bИЖС\b|\bІЖБ\b|\bИЖБ\b|\bпод\s+(?:строительств|дом\b|застройк)|\bдля\s+(?:строительств|будівництв)|\bпід\s+(?:забудов|будівництв)"
+    r"|\bжитлов\w+\s+забудов|\bintravilan|\bconstruibil|\bloc de cas|\bteren de construc|\bpentru construc"
+    r"|\bУПИ\b|\bурегулиран|\bв регулация|\bдворно място", re.I)
+FARM_RX = re.compile(
+    r"\bfarm(?:land|s)?\b(?![- ](?:road|rd|lane|ln|drive|dr|street|st|market))|\branch(?:land|es)?\b(?![- ]?(?:style|home|house|road|rd))"
+    r"|\bpasture|\bhay ?field|\bcrop ?land|\btillable|\bagricultural|\borchard|\bvineyard"
+    r"|\bferme\b|\bterres? agricoles?|\bfinca\b|\bchacra|\bestancia|\bganader|\bagr[ií]cola|\brancho\b|\bherdade|\br[uú]stic[oa]s?\b"
+    r"|\bolival|\bvinha\b|\broln\w*|\brolnicz|\bgospodarstw|\błąk[aię]\b|\bpastwisk"
+    r"|\bОСГ\b|\bсільськогосп|\bсільгосп|\bпа[йї]\b|\bфермер|\bсельхоз|\bКФХ\b|\bЛПХ\b|\bпашн|\bсенокос"
+    r"|\bextravilan|\barabil|\bagricol|\bf[aâ]na[tț]|\bp[aă][sș]un|\blivad|\bземеделск|\bнив[аи]\b|\bливад|\bлозе\b|\bfermer", re.I)
+REC_RX = re.compile(
+    r"\brecreation(?:al)?[- ](?:lot|land|property|parcel|acreage)|\brec lot|\bhunting[- ](?:land|property|tract|camp|acreage|parcel|ground)"
+    r"|\bcampground|\bterrain de camping|\brv (?:lot|park|site)\b|\brekreacyjn|\bletniskow|\bрекреац|\bбаза отдыха|\bдля отдыха", re.I)
+FOREST_RX = re.compile(
+    r"\btimber ?land|\btimber tract|\bwood ?lot|\bforest ?land|\bterre [àa] bois|\b[ée]rabli[èe]re|\bsugar ?bush|\bmaple bush"
+    r"|\bdziałk\w* leśn|\bgrunt\w* leśn|\bleśn\w* działk|\bteren forestier|\bлісов\w+ ділянк|\bлесн\w+ участ|\bгорск\w+ (?:територ|имот|земя)", re.I)
+
+
+def property_type(rec):
+    """LandWatch's own category (from the URL, or a house when the card lists beds, baths or square feet), otherwise
+    the first match in the title, its English translation and the description. Free: no Claude calls."""
+    # Properstar's description is only "Land Plot for sale, <place>", and place names like "Finca Gloriana" would mislead
+    keys = ("title", "title_en") if rec.get("source") == "properstar" else ("title", "title_en", "description")
+    text = " ".join(str(rec.get(k) or "") for k in keys)
+    if rec.get("source") == "landwatch":
+        m = LANDWATCH_TYPE_RX.search(rec.get("url") or "")
+        kind = LANDWATCH_TYPES[m.group(1)] if m else "vacant land"
+        if kind != "house" and (LANDWATCH_BEDS_RX.search(text) or has_house(text)):
+            return "land with house"
+        return kind
+    if has_house(text):
+        return "land with house"
+    for kind, rx in (("dacha plot", DACHA_RX), ("commercial", COMMERCIAL_RX), ("building lot", LOT_RX), ("farmland", FARM_RX),
+                     ("recreational", REC_RX), ("forest", FOREST_RX)):
+        if rx.search(text):
+            return kind
+    return "vacant land"
+
+
 def finalize(rec, rates):
     down_only = rec.get("source") == "landwatch" and fix_down_payment(rec)
     if rec.get("source") == "kijiji":  # re-read area with the current parser (fixes older scrapes)
@@ -306,6 +408,7 @@ def finalize(rec, rates):
     rec["acres"] = round(a, 4) if a else None
     rec["usd_per_acre"] = (rec["price_usd"] / a) if (rec["price_usd"] and a) else None
     rec["flags"] = flag(rec)
+    rec["type"] = property_type(rec)
     if down_only:
         rec["flags"] = "; ".join(x for x in (rec["flags"], "may be payment plan price - listed price is the down payment") if x)
     return rec
@@ -1031,7 +1134,7 @@ def add_english(recs):
 
 # ----------------------------------------------------------------------------- output
 
-COLS =["price_usd", "usd_per_acre", "acres", "country", "region", "title", "price", "currency",
+COLS =["price_usd", "usd_per_acre", "acres", "type", "country", "region", "title", "price", "currency",
         "source", "flags", "url", "lat", "lon", "scraped_at"]
 
 
@@ -1111,6 +1214,8 @@ FLAG_CODES = [("price too low", "L"), ("payment plan", "P"), ("auction", "A"), (
               ("per m2/acre", "U"), ("far below other", "O"),
               ("mining claim", "M"), ("house listing", "H"), ("too low for Canada", "L"),
               ("share of a property", "S"), ("allotment garden", "S"), ("burial plot", "S"), ("wrong currency", "L")]
+TYPE_CODES = {"vacant land": "V", "building lot": "L", "farmland": "F", "forest": "T", "recreational": "R", "waterfront": "W",
+              "commercial": "C", "dacha plot": "G", "land with house": "B", "house": "H"}  # labels are in site_template.html
 
 
 def site_cutoff(recs, fresh_days=3):
@@ -1138,7 +1243,8 @@ def build_site(recs):
         rows.append([rnd(r.get("usd_per_acre"), 2), rnd(r["price_usd"], 0), rnd(r.get("acres"), 3), cc,
                      (r.get("region_en") or r.get("region") or "")[:60], (r.get("title_en") or r.get("title") or "")[:110],
                      r.get("source"), codes, r["url"], rnd(r.get("lat"), 4), rnd(r.get("lon"), 4),
-                     r["title"][:110] if r.get("title_en") else None])  # the original title, when translated
+                     r["title"][:110] if r.get("title_en") else None,  # the original title, when translated
+                     TYPE_CODES.get(r.get("type"), "V")])
     data = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"),
             "countries": len(countries), "rows": rows}
     with open(os.path.join(SITE, "data.json"), "w") as f:
