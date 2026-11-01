@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-landfinder — scrape the cheapest land listings on earth and rank them by USD per acre.
+landfinder — scrape the cheapest land listings on earth and rank them by total price in USD.
 
 Sources
-  properstar  worldwide portal (~100+ countries), land plots sorted cheapest first
-  landwatch   all 50 US states, sorted cheapest first
-  kijiji      every Canadian province, land-for-sale sorted cheapest first
+  properstar    worldwide portal (~100+ countries), land plots sorted cheapest first
+  landwatch     all 50 US states, sorted cheapest first
+  kijiji        every Canadian province, land-for-sale sorted cheapest first
+  olx           classifieds in Poland, Ukraine, Romania, Portugal, Bulgaria, Kazakhstan, Uzbekistan
+  mercadolibre  classifieds in Argentina and Mexico
 
 Usage
   ./run.sh                                   # everything, 10 pages per country/state/province
   ./run.sh --sources properstar --pages 20   # go deeper on one source
-  ./run.sh --countries paraguay,bolivia      # only these Properstar countries
+  ./run.sh --countries paraguay,bolivia      # only these countries (Properstar, OLX, Mercado Libre)
   ./run.sh --report-only                     # rebuild results.csv / report.html from saved data
 
 Output (in this folder)
@@ -20,6 +22,7 @@ Output (in this folder)
 """
 import argparse, csv, json, math, os, queue, random, re, subprocess, sys, threading, time, warnings
 from datetime import datetime, timedelta
+from html import unescape
 
 warnings.filterwarnings("ignore")
 import requests
@@ -60,6 +63,22 @@ KIJIJI_PROVINCES = {
     "alberta": "l9003", "british-columbia": "l9007", "manitoba": "l9006", "new-brunswick": "l9005",
     "newfoundland": "l9008", "nova-scotia": "l9002", "ontario": "l9004", "prince-edward-island": "l9011",
     "quebec": "l9001", "saskatchewan": "l9009", "territories": "l9010",
+}
+
+# OLX: country -> (site, land-for-sale category id, ISO country, currency of the site's price filter, USD floor).
+# Below the floor nearly every "price" is per m², per sotka (100 m²) or a placeholder. It's lower where real
+# village plots sell for a few hundred dollars, higher where sellers often quote a price per unit.
+OLX_SITES = {
+    "poland": ("www.olx.pl", 24, "PL", "PLN", 1500), "ukraine": ("www.olx.ua", 1608, "UA", "UAH", 1000),
+    "romania": ("www.olx.ro", 709, "RO", "EUR", 1000), "portugal": ("www.olx.pt", 410, "PT", "EUR", 500),
+    "bulgaria": ("www.olx.bg", 529, "BG", "EUR", 500), "kazakhstan": ("www.olx.kz", 10, "KZ", "KZT", 500),
+    "uzbekistan": ("www.olx.uz", 10, "UZ", "UZS", 1500),
+}
+
+# Mercado Libre land-for-sale searches. Its other country sites make visitors sign in first.
+MELI_SITES = {
+    "argentina": ("https://inmuebles.mercadolibre.com.ar/terrenos-lotes/venta/", "AR", "ARS"),
+    "mexico": ("https://inmuebles.mercadolibre.com.mx/terrenos/venta/", "MX", "MXN"),
 }
 
 AREA_TO_M2 = {"SquareMeter": 1.0, "SquareFoot": 0.09290304, "Hectare": 10000.0,
@@ -139,13 +158,26 @@ def to_usd(amount, currency, rates):
     return amount / rate if rate else None
 
 
-PAYMENT_RX = re.compile(r"(\d\s*(?:/\s*)?month\b|/\s*mo\b|/\s*month|per month|a month|monthly|\$\s*\d+\s*down|down payment)", re.I)
-WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of)", re.I)
-MIN_PRICE = 1500  # USD-ish floor for Properstar searches; cheaper "prices" there are per-m2 or placeholders
+# English, French and Spanish, plus the OLX languages: Polish, Ukrainian/Russian, Romanian, Bulgarian, Portuguese, Uzbek
+PAYMENT_RX = re.compile(r"(\d\s*(?:/\s*)?month\b|/\s*mo\b|/\s*month|per month|a month|monthly|\$\s*\d+\s*down|down payment"
+                        r"|cuotas|anticipo|financiad|financiaci|\braty\b|розстроч|рассроч|presta[çc][õo]es)", re.I)
+WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of|kupi[eę]\b|куплю|cump[aă]r\b|compro\b|busco\b|procuro\b)", re.I)
+MIN_PRICE = 1500  # USD-ish floor for Properstar and Mercado Libre searches; cheaper "prices" there are per-m2 or placeholders
 TILE_SCALE = 0.5  # tiled windows draw pages at half size
 CLAIM_RX = re.compile(r"\b(access deeds?|membership|timeshare|mining claims?|lode claims?|placer claims?|gold claims?|mineral claims?|mineral rights?|unpatented|lode gold|mining|prospecting)\b", re.I)
-LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\blease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenant\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b)", re.I)
-PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|hect|ha\b)", re.I)
+LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\blease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenant\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b"
+                      r"|dzier[żz]aw|wynaj[eę]|do wynaj|оренд|аренд|\bздам\b|\bздаю\b|\bсдам\b|\bсдаю\b|под наем|[iî]nchiri|arrend|\balug|\bijara|\ben renta\b|\bse renta\b)", re.I)
+PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|hect|ha\b)"
+                         r"|(?:(?:\bza|\bза|\bpe|\bper|\bx)\s+|/\s*)(?:1\s*)?(m2\b|m²|mp\b|metr|сот|м2|м²|кв\.?\s*м|ar\b|ara\b)"
+                         r"|\b(?:so|su)[‘'ʻ’`]?t(?:ig[‘'ʻ’`]?i|ixi|kasi)\s*\$?\s*\d|сотк[аи]\s*[-–—:]?\s*\$?\s*\d", re.I)  # Uzbek/Russian "its sotka [costs] 500"
+# "1/8 udziału", "udział 1/4 w prawie własności", "1/2 interest": only part of the property is for sale
+SHARE_RX = re.compile(r"(\b\d+\s*/\s*\d+\s*(?:udzia|cz[eę][sś]ci|w drodze|w prawie|частк|долю|доли|долі|share|interest)|udzia[łl]\w*\s+\d+\s*/\s*\d+|\(\s*1\s*/\s*\d+\s*\)"
+                      r"|^\s*udzia[łl]|sprzeda\w*\s+udzia[łl]|udzia[łl]\w*\s+w\s+(?:działk|nieruchom|grunc|prawie))", re.I)  # not "+ udział w drodze"
+ALLOTMENT_RX = re.compile(r"\brod\b|ogr[oó]d\w*\s+działkow|działkow\w*\s+ogr[oó]d", re.I)  # Polish allotment gardens (ROD)
+CEMETERY_RX = re.compile(r"cemit[eé]rio|sepultur|jazigo|cementerio|cmentarz|cimitir|кладбищ|цвинтар|гробищ|\bnicho\b|b[oó]veda"
+                         r"|cemetery\s+(?:plots?|lots?|spaces?|sites?)|private cemetery|burial|\bgrave\b|columbari", re.I)
+NEAR_RX = re.compile(r"\b(near|next to|close to|junto|perto|cerca|frente|al lado|l[aâ]ng[aă]|около|біля|возле|koło|obok|przy|rua|calle|strada|ulica|ul\.|вул|ул\.)", re.I)
+USD_IN_TEXT_RX = re.compile(r"(?:usd|u\$s|us\$|u\$d|d[oó]lares)\s*([\d.,]{3,})", re.I)  # "Lote ... Usd 880.000" priced in pesos
 
 
 def placeholder_price(p):
@@ -155,7 +187,7 @@ def placeholder_price(p):
     return p <= 100 or (len(d) >= 3 and len(set(d)) == 1) or d in ("1234", "12345", "123456")
 
 
-AUCTION_RX = re.compile(r"\b(auction|tender|bid|starting bid)\b", re.I)
+AUCTION_RX = re.compile(r"\b(auction|tender|bid|starting bid)\b|przetarg|licytac|licita[tț]i|аукці|аукци|\bторги\b|subasta|leil[aã]o|leilões", re.I)
 
 
 def flag(rec):
@@ -170,6 +202,16 @@ def flag(rec):
         f.append("may be payment plan price")
     if CLAIM_RX.search(text):
         f.append("mining claim/mineral rights/access deed - not land ownership")
+    if SHARE_RX.search(rec.get("title") or ""):
+        f.append("share of a property - not the whole plot")
+    m = CEMETERY_RX.search(rec.get("title") or "")
+    if m and not NEAR_RX.search(rec["title"][max(0, m.start() - 20):m.start()]):  # "Rua do Cemitério" is a street
+        f.append("burial plot - not land you can use")
+    if usd and (rec.get("currency") or "USD") != "USD":
+        if any((num(n.replace(".", "")) or 0) > usd * 3 for n in USD_IN_TEXT_RX.findall(rec.get("title") or "")):
+            f.append("wrong currency - the title gives a much higher US dollar price")
+    if rec.get("source") == "olx" and rec.get("country") == "PL" and ALLOTMENT_RX.search(text):
+        f.append("allotment garden plot - usage rights, not land ownership")
     if "homes-for-sale" in (rec.get("url") or ""):
         f.append("house listing - not vacant land")
     if rec.get("source") == "kijiji" and usd is not None and usd < 3000:
@@ -664,6 +706,8 @@ def crawl_kijiji(fetch, store, provinces, pages):
     for pi, (prov, loc) in enumerate(provinces.items(), 1):
         total_new = 0
         for p in range(1, pages + 1):
+            if STOP.is_set():
+                return
             seg = "" if p == 1 else "page-%d/" % p
             url = "https://www.kijiji.ca/b-land-for-sale/%s/%sc641%s?sort=priceAsc" % (prov, seg, loc)
             if url in store.done:
@@ -681,6 +725,140 @@ def crawl_kijiji(fetch, store, provinces, pages):
             if n == 0 and p > 1:   # Kijiji repeats the last page past the end
                 break
         log("kijiji     [%d/%d] %-28s +%d listings" % (pi, len(provinces), prov, total_new))
+
+
+def olx_area_m2(params):
+    """Land area from OLX listing params: m², or sotkas (100 m²) on the ex-Soviet sites."""
+    for k in ("m", "area_de_terreno_m2", "space", "land_area"):
+        v = params.get(k) or {}
+        n = num(v.get("key"))
+        if n:
+            return n * 100 if re.search(r"сот|sot", (v.get("label") or "").lower()) else n
+    return None
+
+
+def parse_olx(data, cc):
+    out = []
+    for o in data.get("data") or []:
+        params = {p.get("key"): p.get("value") or {} for p in o.get("params") or []}
+        pr = params.get("price") or {}
+        if pr.get("type") not in ("price", "arranged") or not pr.get("value") or not o.get("url"):
+            continue  # skips "free", "exchange" and price-on-request ads
+        m2 = olx_area_m2(params)
+        loc = o.get("location") or {}
+        geo = o.get("map") or {}
+        desc = re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", o.get("description") or ""))).strip()
+        out.append({
+            "source": "olx",
+            "country": cc,
+            "region": ", ".join(n for n in ((loc.get(k) or {}).get("name") for k in ("city", "region")) if n),
+            "title": o.get("title"),
+            "description": desc[:1500],
+            "price": pr["value"],
+            "currency": "USD" if pr.get("currency") == "UYE" else pr.get("currency"),  # UYE: Uzbek "conventional units" = US dollars
+            "acres": (m2 / ACRE_M2) if m2 else None,
+            "lat": geo.get("lat"), "lon": geo.get("lon"),
+            "url": o["url"],
+        })
+    return out
+
+
+def crawl_olx(fetch, store, countries, pages, rates):
+    for i, c in enumerate(countries, 1):
+        site, cat, cc, cur, usd_floor = OLX_SITES[c]
+        floor = int(usd_floor * rates.get(cur, 1))
+        total_new = 0
+        for p in range(min(pages, 25)):  # the API stops at 1,000 results
+            if STOP.is_set():
+                return
+            url = ("https://%s/api/v1/offers/?offset=%d&limit=40&category_id=%d"
+                   "&sort_by=filter_float_price:asc&filter_float_price:from=%d" % (site, p * 40, cat, floor))
+            if url in store.done:
+                continue
+            try:
+                data = json.loads(fetch.get(url) or "")
+            except ValueError:
+                break
+            recs = parse_olx(data, cc)
+            if not recs:
+                store.mark(url)
+                break
+            total_new += store.add(recs)
+            store.mark(url)
+            if not (data.get("links") or {}).get("next"):
+                break
+        log("olx        [%d/%d] %-28s +%d listings" % (i, len(countries), c, total_new))
+
+
+def meli_acres(attrs):
+    """'6.179 m² totales' or '10 ha totales' -> acres. Built area ('161 m² cubiertos') is skipped."""
+    for n, unit, kind in re.findall(r"([\d.,]+)\s*(m²|ha)\s*(\w*)", attrs):
+        if kind.lower().startswith(("cubiert", "constru", "útil", "util")):
+            continue
+        v = num(n.replace(".", "").replace(",", "."))
+        if v:
+            return v * 2.4710538 if unit == "ha" else v / ACRE_M2
+    return None
+
+
+def parse_meli(html, cc):
+    """Results embedded in a Mercado Libre search page -> (listings, page count); (None, 0) if there are none."""
+    i = html.find("_n.ctx.r=")
+    if i < 0:
+        return None, 0
+    try:
+        st = json.JSONDecoder().raw_decode(html, i + 9)[0]["appProps"]["pageProps"]["initialState"]
+    except Exception:
+        return None, 0
+    out = []
+    for res in st.get("results") or []:
+        pc = res.get("polycard") or {}
+        url = (pc.get("metadata") or {}).get("url")
+        comp = {c.get("type"): c.get(c.get("type")) or {} for c in pc.get("components") or []}
+        price = (comp.get("price") or {}).get("current_price") or {}
+        if not url or not price.get("value"):
+            continue
+        title = (comp.get("title") or {}).get("text") or ""
+        attrs = " | ".join((comp.get("attributes_list") or {}).get("texts") or [])
+        out.append({
+            "source": "mercadolibre",
+            "country": cc,
+            "region": (comp.get("location") or {}).get("text") or "",
+            "title": title,
+            "description": " | ".join(t for t in (title, attrs) if t),
+            "price": price["value"],
+            "currency": price.get("currency"),
+            "acres": meli_acres(attrs),
+            "lat": None, "lon": None,
+            "url": (url if url.startswith("http") else "https://" + url).split("#")[0],
+        })
+    return out, int((st.get("pagination") or {}).get("page_count") or 0)
+
+
+def crawl_meli(fetch, store, countries, pages, rates):
+    for i, c in enumerate(countries, 1):
+        base, cc, cur = MELI_SITES[c]
+        floor = int(MIN_PRICE * rates.get(cur, 1))
+        total_new = 0
+        for p in range(pages):
+            if STOP.is_set():
+                return
+            # cheapest first, above the floor (in local currency); page n starts at result 48*(n-1)+1
+            url = "%s%s_OrderId_PRICE_PriceRange_%d-0_NoIndex_True" % (base, "_Desde_%d" % (p * 48 + 1) if p else "", floor)
+            if url in store.done:
+                continue
+            recs, page_count = parse_meli(fetch.get(url) or "", cc)
+            if recs is None:
+                log("  mercadolibre %s: no results on the page (blocked, sign-in page or new layout)" % c)
+                break
+            if not recs:
+                store.mark(url)
+                break
+            total_new += store.add(recs)
+            store.mark(url)
+            if p + 1 >= page_count:
+                break
+        log("mercadolibre [%d/%d] %-26s +%d listings" % (i, len(countries), c, total_new))
 
 
 # ----------------------------------------------------------------------------- verification
@@ -709,11 +887,12 @@ def verify_cheapest(store, a, n=60, rounds=4):
             raw = {r["url"]: r for r in store.all()}
             recs = sorted((finalize(dict(r), rates) for r in raw.values()),
                           key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))
-            top = [r for r in recs if r["price_usd"] and r["flags"] in ("", "no land area listed")][:n]
-            todo = [r for r in top if r["source"] == "landwatch" and not (r.get("verified_at") or "").startswith(today)]
+            top = [r for r in recs if r["source"] == "landwatch" and r["price_usd"]
+                   and r["flags"] in ("", "no land area listed")][:n]
+            todo = [r for r in top if not (r.get("verified_at") or "").startswith(today)]
             if not todo:
                 break
-            log("verifying %d of the cheapest %d listings (round %d)" % (len(todo), n, rnd + 1))
+            log("verifying %d of the cheapest %d LandWatch listings (round %d)" % (len(todo), n, rnd + 1))
             if br is None:
                 br = Browser(headless=a.headless, delay=a.delay, slot=None)
             for r in todo:
@@ -809,7 +988,8 @@ SITE = os.path.join(HERE, "site")
 FLAG_CODES = [("price too low", "L"), ("payment plan", "P"), ("auction", "A"), ("wanted ad", "W"),
               ("no land area", "N"), ("under $10/acre", "C"), ("lease/rental", "R"), ("placeholder", "X"),
               ("per m2/acre", "U"), ("far below other", "O"),
-              ("mining claim", "M"), ("house listing", "H"), ("too low for Canada", "L")]
+              ("mining claim", "M"), ("house listing", "H"), ("too low for Canada", "L"),
+              ("share of a property", "S"), ("allotment garden", "S"), ("burial plot", "S"), ("wrong currency", "L")]
 
 
 def build_site(recs, fresh_days=3):
@@ -853,9 +1033,9 @@ def csv_list(s, default):
 
 def main():
     ap = argparse.ArgumentParser(description="Find the cheapest land listings worldwide.")
-    ap.add_argument("--sources", default="properstar,landwatch,kijiji")
-    ap.add_argument("--pages", type=int, default=10, help="pages per country/state/province (20-25 listings each)")
-    ap.add_argument("--countries", help="Properstar country slugs, comma-separated (default: all)")
+    ap.add_argument("--sources", default="properstar,landwatch,kijiji,olx,mercadolibre")
+    ap.add_argument("--pages", type=int, default=10, help="pages per country/state/province (20-48 listings each)")
+    ap.add_argument("--countries", help="country slugs for Properstar, OLX and Mercado Libre, comma-separated (default: all)")
     ap.add_argument("--states", help="US state slugs for LandWatch, e.g. new-mexico,arizona (default: all)")
     ap.add_argument("--provinces", help="Kijiji provinces, e.g. nova-scotia,saskatchewan (default: all)")
     ap.add_argument("--workers", type=int, default=4, help="Chrome windows scraping in parallel")
@@ -886,8 +1066,19 @@ def main():
             ",".join(sources), a.pages, len(store.urls)))
         br = None
         try:
+            rates = load_fx()
+            wanted = lambda sites: [c for c in sites if not a.countries or c in countries]
+            plain = []  # sites that answer plain HTTP requests: one thread each, running alongside the Chrome windows
             if "kijiji" in sources:
-                crawl_kijiji(Plain(delay=max(1.0, a.delay / 2)), store, provs, a.pages)
+                plain.append((crawl_kijiji, (provs, a.pages)))
+            if "olx" in sources:
+                plain.append((crawl_olx, (wanted(OLX_SITES), a.pages, rates)))
+            if "mercadolibre" in sources:
+                plain.append((crawl_meli, (wanted(MELI_SITES), a.pages, rates)))
+            threads = [threading.Thread(target=fn, args=(Plain(delay=max(1.0, a.delay / 2)), store) + args,
+                                        name="P%d" % (i + 1), daemon=True) for i, (fn, args) in enumerate(plain)]
+            for t in threads:
+                t.start()
             jobs = []
             lw = [("landwatch", st) for st in states] if "landwatch" in sources else []
             ps = [("properstar", c) for c in countries] if "properstar" in sources else []
@@ -896,6 +1087,9 @@ def main():
             if jobs:
                 log("%d browser jobs across %d Chrome windows" % (len(jobs), min(a.workers, len(jobs))))
                 run_pool(jobs, store, a)
+            while any(t.is_alive() for t in threads):
+                for t in threads:
+                    t.join(0.5)
             if a.verify and not STOP.is_set():
                 verify_cheapest(store, a, a.verify)
         except KeyboardInterrupt:

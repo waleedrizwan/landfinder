@@ -68,7 +68,7 @@ footer p{margin:4px 0}
     <label>Min acres<input id="facmin" type="number" min="0" step="any" inputmode="decimal" placeholder="Any"></label>
     <label>Max acres<input id="facmax" type="number" min="0" step="any" inputmode="decimal" placeholder="Any"></label>
     <label>Max price per acre ($)<input id="fppa" type="number" min="0" step="10" inputmode="numeric" placeholder="Any"></label>
-    <label>Source<select id="fsrc"><option value="">All sources</option><option value="properstar">Properstar</option><option value="landwatch">LandWatch</option><option value="kijiji">Kijiji</option></select></label>
+    <label>Source<select id="fsrc"><option value="">All sources</option><option value="properstar">Properstar</option><option value="landwatch">LandWatch</option><option value="kijiji">Kijiji</option><option value="olx">OLX</option><option value="mercadolibre">Mercado Libre</option></select></label>
     <label class="chk"><input id="farea" type="checkbox"> Area listed only</label>
     <label class="chk"><input id="fflag" type="checkbox"> Include flagged listings</label>
     <button class="reset" id="reset" type="button">Clear filters</button>
@@ -82,13 +82,13 @@ footer p{margin:4px 0}
 
   <section id="p-map" hidden>
     <div id="map"></div>
-    <p class="note">Where the matching listings are. US listings from LandWatch don't include coordinates, so they aren't on the map.</p>
+    <p class="note">Where the matching listings are. Listings from LandWatch and Mercado Libre don't include coordinates, so they aren't on the map.</p>
   </section>
 </main>
 
 <footer><div class="wrap">
   <p id="updated"></p>
-  <p>Prices converted to USD. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Kijiji.</p>
+  <p>Prices converted to USD. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Kijiji, OLX, Mercado Libre.</p>
 </div></footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -101,9 +101,10 @@ let regionNames; try { regionNames = new Intl.DisplayNames(["en"], {type:"region
 const cname = cc => { if (cc && cc.length === 2) { try { return regionNames.of(cc) || cc; } catch (e) {} } return (cc || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()); };
 const money = v => v == null ? "—" : "$" + (v < 10 ? v.toFixed(2) : Math.round(v).toLocaleString("en-US"));
 const acres = v => v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString("en-US");
-const srcName = s => ({properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji"})[s] || s;
+const srcName = s => ({properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji", olx:"OLX", mercadolibre:"Mercado Libre"})[s] || s;
 const PAGE = 60;
-const FLAGS = {L:"Price looks too low: may be a monthly payment or a per-m² price",
+const FLAGS = {L:"Price looks too low: may be a monthly payment, a per-m² price or in the wrong currency",
+  S:"Only a share, usage rights or a burial plot, not land you'd own outright",
   P:"May be a payment-plan price", A:"Auction or tender: price may be a minimum bid",
   C:"Under $10 an acre: double-check the listing", R:"Lease or rental, not a sale price",
   X:"Looks like a placeholder price", U:"Price may be per m², acre or hectare",

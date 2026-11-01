@@ -11,9 +11,17 @@ actually buy. Price per acre is shown too. Every row links to the live listing.
 | [Properstar](https://www.properstar.com) | ~150 countries, land plots | real Chrome via Playwright (site has a bot check) |
 | [LandWatch](https://www.landwatch.com) | all 50 US states | real Chrome via Playwright |
 | [Kijiji](https://www.kijiji.ca) | every Canadian province/territory | plain HTTP requests |
+| [OLX](https://www.olx.pl) | Poland, Ukraine, Romania, Portugal, Bulgaria, Kazakhstan, Uzbekistan | OLX's JSON search API |
+| [Mercado Libre](https://inmuebles.mercadolibre.com.ar) | Argentina, Mexico | plain HTTP requests |
 
-Each search is sorted cheapest first. Properstar results start at $1,500, because cheaper "prices" there
-are almost always per-m² figures or placeholders.
+Each search is sorted cheapest first. Properstar and Mercado Libre results start at $1,500, because cheaper
+"prices" there are almost always per-m² figures or placeholders. OLX searches start at $500 to $1,500 depending
+on the country (`OLX_SITES` in `landfinder.py`): real village plots in Bulgaria, Portugal and Kazakhstan sell for
+a few hundred dollars, while in Ukraine, Uzbekistan and Poland a price that low is nearly always per m² or per
+sotka (100 m²). Mercado Libre's other countries ask visitors to sign in, so they aren't included.
+
+The sites that answer plain HTTP requests (Kijiji, OLX, Mercado Libre) each run in their own thread alongside the
+Chrome windows, so adding one barely changes how long a run takes.
 
 ## Quick start (macOS)
 
@@ -35,7 +43,8 @@ reopens it. A full run (10 pages per country/state/province) takes under an hour
 ```sh
 ./run.sh                                         # everything, 10 pages each
 ./run.sh --sources properstar --pages 25         # go deeper on one source
-./run.sh --countries paraguay,bolivia,argentina  # only these Properstar countries
+./run.sh --countries paraguay,bolivia,argentina  # only these countries (Properstar, OLX, Mercado Libre)
+./run.sh --sources olx,mercadolibre              # only some sources
 ./run.sh --states new-mexico,arizona,nevada      # only these US states (LandWatch)
 ./run.sh --provinces nova-scotia,saskatchewan    # only these provinces (Kijiji)
 ./run.sh --report-only                           # rebuild outputs from saved data
@@ -76,9 +85,25 @@ The `flags` column marks listings to double-check:
 - `may be payment plan price`: the text mentions "/mo", "down", and so on
 - `auction/tender`: the price may be a minimum bid
 - `wanted ad`: someone looking to buy, not a listing
+- `share of a property`, `allotment garden`, `burial plot`: not a whole plot you'd own outright
+- `wrong currency`: the title gives a much higher US dollar price than the listed one
 - `no land area listed`: price per acre can't be computed
 
+The text checks cover English, French and Spanish plus the OLX languages (Polish, Ukrainian, Russian, Romanian,
+Bulgarian, Portuguese, Uzbek), e.g. leases, payment plans, auctions and prices per m² or per sotka.
+
 Exchange rates come from [open.er-api.com](https://open.er-api.com) and are cached daily.
+
+## Adding a source
+
+1. Write `parse_<site>()`, which turns one search page into listing dicts (`source`, `country`, `region`,
+   `title`, `description`, `price`, `currency`, `acres`, `lat`, `lon`, `url`), and `crawl_<site>()`, which walks
+   the pages cheapest first and saves them with `store.add()` / `store.mark()`. `crawl_olx` is a short example.
+2. Register it in `main()`: sites that answer plain HTTP requests go in the `plain` list (one thread each),
+   sites that need a real browser go in the `jobs` passed to `run_pool`.
+3. Add it to the default `--sources`, and to `srcName` and the Source filter in `site_template.html`.
+4. Run it alone first (`./run.sh --sources <site> --pages 2 --verify 0`) and look at the cheapest listings in
+   `results.csv`. New sites usually need a price floor or a few extra flags before their cheapest listings are real.
 
 ## Notes
 
