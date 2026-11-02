@@ -28,6 +28,8 @@ header h1{font-size:18px;margin:0}
 .bar{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 12px}
 .bar input,.bar select{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:9px 12px}
 .bar #q{flex:1 1 320px;min-width:0}
+.bar #fcity{max-width:220px}
+.bar #fcur{max-width:200px}
 .bar button{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:9px 14px;cursor:pointer}
 .bar button[aria-expanded="true"]{border-color:var(--fg)}
 .adv{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px}
@@ -39,6 +41,7 @@ header h1{font-size:18px;margin:0}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:4px}
 .card .p{font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card .p small{font-size:13px;font-weight:500;color:var(--muted)}
 .card .ty{font-size:12px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 9px;white-space:nowrap}
 .card .m{color:var(--muted);font-size:14px}
 .card .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -77,14 +80,16 @@ footer p{margin:4px 0}
   <div class="bar">
     <input id="q" type="search" placeholder="Search by town, region, country or title" aria-label="Search">
     <select id="fc" aria-label="Country"><option value="">All countries</option></select>
+    <select id="fcity" aria-label="City" hidden><option value="">All cities</option></select>
+    <select id="fcur" aria-label="Currency"></select>
     <button id="advbtn" type="button" aria-expanded="false" aria-controls="adv">Advanced filters</button>
   </div>
   <div class="adv" id="adv" hidden>
-    <label>Min price ($)<input id="fmin" type="number" min="0" step="100" inputmode="numeric" placeholder="Any"></label>
-    <label>Max price ($)<input id="fmax" type="number" min="0" step="100" inputmode="numeric" placeholder="Any"></label>
+    <label>Min price (<span class="cur">USD</span>)<input id="fmin" type="number" min="0" step="100" inputmode="numeric" placeholder="Any"></label>
+    <label>Max price (<span class="cur">USD</span>)<input id="fmax" type="number" min="0" step="100" inputmode="numeric" placeholder="Any"></label>
     <label>Min acres<input id="facmin" type="number" min="0" step="any" inputmode="decimal" placeholder="Any"></label>
     <label>Max acres<input id="facmax" type="number" min="0" step="any" inputmode="decimal" placeholder="Any"></label>
-    <label>Max price per acre ($)<input id="fppa" type="number" min="0" step="10" inputmode="numeric" placeholder="Any"></label>
+    <label>Max price per acre (<span class="cur">USD</span>)<input id="fppa" type="number" min="0" step="10" inputmode="numeric" placeholder="Any"></label>
     <label>Type<select id="ftype"><option value="">All types</option></select></label>
     <label>Source<select id="fsrc"><option value="">All sources</option><option value="properstar">Properstar</option><option value="landwatch">LandWatch</option><option value="kijiji">Kijiji</option><option value="olx">OLX</option><option value="mercadolibre">Mercado Libre</option></select></label>
     <label class="chk"><input id="farea" type="checkbox"> Area listed only</label>
@@ -101,26 +106,34 @@ footer p{margin:4px 0}
   <section id="p-map" hidden>
     <div class="count" id="mcount"></div>
     <div id="map"></div>
-    <p class="note">Click a group to zoom in and a price to see the listing. Pick a country above to jump to it.
+    <p class="note">Click a group to zoom in and a price to see the listing. Pick a country or city above to jump to it.
       LandWatch listings are pinned at their ZIP code's center. Mercado Libre listings have no location, so they aren't on the map.</p>
   </section>
 </main>
 
 <footer><div class="wrap">
   <p id="updated"></p>
-  <p>Prices converted to USD. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Kijiji, OLX, Mercado Libre.</p>
+  <p>Prices are converted at the exchange rates of the last update. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Kijiji, OLX, Mercado Libre.</p>
 </div></footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
-// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type]
-// title and region are in English; originalTitle is set when the title was translated; type is a TYPES key
+// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type, town, price, currency]
+// title and region are in English; originalTitle is set when the title was translated; type is a TYPES key;
+// town is "" when the listing doesn't say, and "Deming, NM" in the US and Canada; price is in the listing's own currency
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let regionNames; try { regionNames = new Intl.DisplayNames(["en"], {type:"region"}); } catch (e) {}
+let regionNames, currencyNames;
+try { regionNames = new Intl.DisplayNames(["en"], {type:"region"}); currencyNames = new Intl.DisplayNames(["en"], {type:"currency"}); } catch (e) {}
 const cname = cc => { if (cc && cc.length === 2) { try { return regionNames.of(cc) || cc; } catch (e) {} } return (cc || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()); };
-const money = v => v == null ? "—" : "$" + (v < 10 ? v.toFixed(2) : Math.round(v).toLocaleString("en-US"));
+// prices are kept in US dollars and shown in the picked currency; RATES[c] is what a dollar bought on the day the site was built
+let RATES = {USD: 1}, CUR = "USD", RATE = 1, SIGN = "$";
+const withCur = s => SIGN ? SIGN + s : s + " " + CUR;  // "$1,250", or "1,250 PLN" for currencies written with letters
+const digits = v => v < 10 ? v.toFixed(2) : Math.round(v).toLocaleString("en-US");
+const money = v => v == null ? "—" : withCur(digits(v));
+// a listing's price in the picked currency: its own price when it's listed in that currency, else converted from dollars
+const price = r => r[15] === CUR ? r[14] : r[1] * RATE;
 const acres = v => v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString("en-US");
 const srcName = s => ({properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji", olx:"OLX", mercadolibre:"Mercado Libre"})[s] || s;
 const PAGE = 60;
@@ -135,12 +148,12 @@ const FLAGS = {L:"Price looks too low: may be a monthly payment, a per-m² price
 const TYPES = {V:"Vacant land", L:"Building lot", F:"Farmland", T:"Forest", R:"Recreational", W:"Waterfront", C:"Commercial",
   G:"Dacha plot", B:"Land with house", H:"House"};
 for (const [k, v] of Object.entries(TYPES)) $("ftype").add(new Option(v, k));
-const FILTERS = ["q", "fc", "fmin", "fmax", "facmin", "facmax", "fppa", "ftype", "fsrc", "farea", "fflag"];
+const FILTERS = ["q", "fc", "fcity", "fmin", "fmax", "facmin", "facmax", "fppa", "ftype", "fsrc", "farea", "fflag"];
 
 // buyable at the listed price: no warning flags ("N" = no area listed is fine when ranking by total price)
 const clean = r => r[1] != null && (!r[7] || r[7] === "N");
 
-let ALL = [], VIEW = [], shown = PAGE, map, pins, mapCC = null, mapTimer;
+let ALL = [], VIEW = [], TOWNS = {}, townList = "", shown = PAGE, map, pins, mapAt = null, mapTimer;
 
 fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
   ALL = d.rows.filter(r => r[1] != null).sort((a, b) => a[1] - b[1]);
@@ -148,6 +161,23 @@ fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.js
   $("updated").textContent = `Updated ${new Date(d.generated).toLocaleString("en-US", {dateStyle:"medium", timeStyle:"short"})}.`;
   const cs = [...new Set(ALL.map(r => r[3]))].sort((a, b) => cname(a).localeCompare(cname(b)));
   for (const cc of cs) $("fc").add(new Option(cname(cc), cc));
+  for (const r of ALL) if (r[13]) (TOWNS[r[3]] ??= new Set()).add(r[13]);  // each country's towns, A to Z
+  const az = new Intl.Collator("en").compare;
+  for (const cc in TOWNS) TOWNS[cc] = [...TOWNS[cc]].sort(az);
+  RATES = d.rates || RATES;
+  for (const c of Object.keys(RATES).sort()) {  // every currency with a rate and an English name
+    const name = currencyNames ? currencyNames.of(c) : "";
+    if (name !== c) $("fcur").add(new Option(name ? `${c} · ${name}` : c, c));
+  }
+  let saved; try { saved = localStorage.getItem("currency"); } catch (e) {}
+  $("fcur").value = [...$("fcur").options].some(o => o.value === saved) ? saved : "USD";
+  setCurrency($("fcur").value);
+  $("fcur").addEventListener("input", () => {
+    setCurrency($("fcur").value);
+    try { localStorage.setItem("currency", CUR); } catch (e) {}
+    update();
+  });
+  $("fc").addEventListener("input", () => { $("fcity").value = ""; });  // a new country starts with all its towns
   for (const id of FILTERS) $(id).addEventListener("input", () => { shown = PAGE; update(); });
   update();
 }).catch(() => { $("count").textContent = "Couldn't load listings. Refresh to try again."; });
@@ -167,25 +197,57 @@ function tab(name){
 }
 
 function update(){
-  const q = $("q").value.trim().toLowerCase(), cc = $("fc").value, src = $("fsrc").value, ty = $("ftype").value,
-        num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
+  const q = $("q").value.trim().toLowerCase(), cc = $("fc").value, town = $("fcity").value, src = $("fsrc").value,
+        ty = $("ftype").value, num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
         amn = num("facmin"), amx = num("facmax"), ppa = num("fppa"),
         area = $("farea").checked, fl = $("fflag").checked;
   // picking "House" shows house listings, which the "house listing" flag otherwise hides
   const ok = r => fl || clean(r) || (ty === "H" && !r[7].replace(/[HN]/g, ""));
-  VIEW = ALL.filter(r => ok(r) && (!cc || r[3] === cc) && (!src || r[6] === src) && (!ty || r[12] === ty)
-    && (isNaN(mn) || r[1] >= mn) && (isNaN(mx) || r[1] <= mx)
+  // every filter but City
+  const pass = r => ok(r) && (!cc || r[3] === cc) && (!src || r[6] === src) && (!ty || r[12] === ty)
+    && (isNaN(mn) || price(r) >= mn) && (isNaN(mx) || price(r) <= mx)
     && (!area || r[2] != null)
     && (isNaN(amn) || (r[2] != null && r[2] >= amn)) && (isNaN(amx) || (r[2] != null && r[2] <= amx))
-    && (isNaN(ppa) || (r[0] != null && r[0] <= ppa))
-    && (!q || r.text.includes(q)));
+    && (isNaN(ppa) || (r[0] != null && r[0] * RATE <= ppa))
+    && (!q || r.text.includes(q));
+  const near = new Set([town]);  // towns with listings under the other filters, plus the one picked
+  VIEW = ALL.filter(r => {
+    if (!pass(r)) return false;
+    near.add(r[13]);
+    return !town || r[13] === town;
+  });
+  fillTowns(cc, town, near);
   renderGrid();
   if (map && !$("p-map").hidden) { clearTimeout(mapTimer); mapTimer = setTimeout(renderMap, 150); }
 }
 
+function setCurrency(c){
+  CUR = c; RATE = RATES[c];
+  let sign = c;
+  try {
+    sign = new Intl.NumberFormat("en-US", {style: "currency", currency: c, currencyDisplay: "narrowSymbol"})
+      .formatToParts(1).find(p => p.type === "currency").value;
+  } catch (e) {}
+  SIGN = /[^\p{L}]/u.test(sign) ? sign : "";  // "$", "€" and "R$" go before amounts; "zł", "kr" and bare codes don't
+  for (const el of document.querySelectorAll(".cur")) el.textContent = c;
+  for (const r of ALL) r.pin = null;  // map pins show prices too: make them again
+}
+
+// the City list: the picked country's towns that have listings under the other filters
+function fillTowns(cc, town, near){
+  const el = $("fcity"), list = (TOWNS[cc] || []).filter(t => near.has(t)), key = list.join("\n");
+  el.hidden = !TOWNS[cc];
+  if (key === townList) return;
+  townList = key;
+  el.length = 1;  // keeps "All cities"
+  for (const t of list) el.add(new Option(t, t));
+  el.value = town;
+}
+
 // listing details, shared by the grid cards and the map popups
-const details = r => `<div class="p">${money(r[1])}<span class="ty">${TYPES[r[12]] || "Land"}</span></div>
-    <div class="m">${r[2] != null ? acres(r[2]) + (r[2] === 1 ? " acre" : " acres") + " · " + money(r[0]) + "/acre" : "Area not listed"}</div>
+const details = r => `<div class="p"><span>${money(price(r))}${SIGN ? ` <small>${CUR}</small>` : ""}</span><span class="ty">${TYPES[r[12]] || "Land"}</span></div>
+    ${r[15] && r[15] !== CUR ? `<div class="m">Listed at ${digits(r[14])} ${r[15]}</div>` : ""}
+    <div class="m">${r[2] != null ? acres(r[2]) + (r[2] === 1 ? " acre" : " acres") + " · " + money(r[0] * RATE) + "/acre" : "Area not listed"}</div>
     <a class="t" href="${esc(r[8])}" target="_blank" rel="noopener"${r[11] ? ` title="Original: ${esc(r[11])}"` : ""}>${esc(r[5] || "View listing")}</a>
     <div class="m">${esc([r[4], cname(r[3])].filter(Boolean).join(", "))} · ${srcName(r[6])}</div>
     ${clean(r) ? "" : `<div class="w">${[...r[7]].map(f => FLAGS[f]).filter(Boolean).join(". ")}</div>`}`;
@@ -197,8 +259,8 @@ function renderGrid(){
 }
 
 // "$950", "$1.2k", "$35k", "$1.5M": short enough for a map pin
-const short = v => v < 1e3 ? "$" + Math.round(v) : v < 1e6 ? "$" + (v < 1e4 ? (v / 1e3).toFixed(1).replace(/\.0$/, "") : Math.round(v / 1e3)) + "k"
-  : "$" + (v / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+const short = v => withCur(v < 1e3 ? Math.round(v) : v < 1e6 ? (v < 1e4 ? (v / 1e3).toFixed(1).replace(/\.0$/, "") : Math.round(v / 1e3)) + "k"
+  : v < 1e9 ? (v / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : (v / 1e9).toFixed(1).replace(/\.0$/, "") + "B");
 
 function initMap(){
   if (map) return;
@@ -212,7 +274,7 @@ function initMap(){
       for (const m of c.getAllChildMarkers()) min = Math.min(min, m.options.row[1]);
       const n = c.getChildCount();
       return L.divIcon({className: "cl", iconSize: [0, 0],
-        html: `<div class="${n < 100 ? "" : n < 1000 ? "big" : "huge"}"><b>${n.toLocaleString("en-US")}</b> from ${short(min)}</div>`});
+        html: `<div class="${n < 100 ? "" : n < 1000 ? "big" : "huge"}"><b>${n.toLocaleString("en-US")}</b> from ${short(min * RATE)}</div>`});
     }}).addTo(map);
 }
 
@@ -223,7 +285,7 @@ function renderMap(){
     if (r[9] == null || r[10] == null || (r[9] === 0 && r[10] === 0)) continue;
     if (!r.pin) {  // made once per listing, reused as the filters change
       r.pin = L.marker([r[9], r[10]], {row: r, icon: L.divIcon({className: "pin", iconSize: [0, 0],
-        html: `<div class="${clean(r) ? "" : "flag"}">${short(r[1])}</div>`})});
+        html: `<div class="${clean(r) ? "" : "flag"}">${short(price(r))}</div>`})});
       r.pin.bindPopup(() => `<div class="card pop">${details(r)}${r[6] === "landwatch" ? `<div class="m">Pin shows the ZIP code area</div>` : ""}</div>`,
         {minWidth: 220, maxWidth: 280});
     }
@@ -233,14 +295,14 @@ function renderMap(){
   pins.addLayers(on);
   const off = VIEW.length - on.length;
   $("mcount").textContent = `${on.length.toLocaleString("en-US")} listings on the map` + (off ? ` · ${off.toLocaleString("en-US")} without a location` : "");
-  const cc = $("fc").value;
-  if (cc !== mapCC) {  // country changed: show the whole country, or the world for all countries
-    mapCC = cc;
+  const cc = $("fc").value, town = $("fcity").value;
+  if (cc + "|" + town !== mapAt) {  // place changed: show the whole country or town, or the world for all countries
+    mapAt = cc + "|" + town;
     if (cc && on.length) {
       // frame where most listings are: the outermost 5% (Alaska and Hawaii, mislocated pins) would zoom far out
       const span = v => { v.sort((a, b) => a - b); const k = Math.floor(v.length * .05); return [v[k], v[v.length - 1 - k]]; };
       const [s, n] = span(on.map(m => m.getLatLng().lat)), [w, e] = span(on.map(m => m.getLatLng().lng));
-      map.fitBounds(L.latLngBounds([[s, w], [n, e]]).pad(.1), {padding: [30, 30], maxZoom: 9, animate: false});
+      map.fitBounds(L.latLngBounds([[s, w], [n, e]]).pad(.1), {padding: [30, 30], maxZoom: town ? 12 : 9, animate: false});
     } else map.setView([25, 0], 2, {animate: false});
   }
 }

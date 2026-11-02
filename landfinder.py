@@ -21,6 +21,7 @@ Output (in this folder)
   data/         raw scraped records + progress, so a stopped run resumes where it left off
 """
 import argparse, csv, gzip, json, math, os, queue, random, re, shutil, subprocess, sys, threading, time, warnings
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from html import unescape
@@ -1200,7 +1201,7 @@ def build_outputs(store, english=True):
     html = tpl.replace("/*DATA*/[]", json.dumps(slim)).replace(
         "{{GENERATED}}", datetime.now().strftime("%Y-%m-%d %H:%M"))
     open(os.path.join(HERE, "report.html"), "w").write(html)
-    build_site(recs)
+    build_site(recs, rates)
     clean = [r for r in recs if r["price_usd"] and r["flags"] in ("", "no land area listed")]
     log("wrote %d listings (%d with a believable price) -> results.csv, report.html" % (len(recs), len(clean)))
     for r in clean[:15]:
@@ -1216,6 +1217,58 @@ FLAG_CODES = [("price too low", "L"), ("payment plan", "P"), ("auction", "A"), (
               ("share of a property", "S"), ("allotment garden", "S"), ("burial plot", "S"), ("wrong currency", "L")]
 TYPE_CODES = {"vacant land": "V", "building lot": "L", "farmland": "F", "forest": "T", "recreational": "R", "waterfront": "W",
               "commercial": "C", "dacha plot": "G", "land with house": "B", "house": "H"}  # labels are in site_template.html
+# where each site keeps the town: LandWatch in its address "[street, ]Deming, NM, 88030[, Luna County]", Kijiji before
+# the province or postal code, OLX before the region name ("Vila de Rei, Castelo Branco"), Mercado Libre before the
+# state ("Terranova Elite, Apodaca, Nuevo León"), Properstar on its own
+US_ADDRESS_RX = re.compile(r"^(?:[^,]+, )*?([^,]+), ([A-Z]{2}), \d{5}(?:, [^,]+)?$")
+CA_TOWN_RX = re.compile(r"([^,]+),\s*(?:(AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)\b|[A-Z]\d[A-Z] ?\d[A-Z]\d\b)")
+TOWN_PREFIX_RX = re.compile(r"^(?:vil\.|village(?: of)?|town(?: of)?)\s+", re.I)  # Bulgarian "с."/"гр." once translated
+
+
+def town(rec):
+    """(town, state or province code) of one listing. Only LandWatch and Kijiji addresses give the code."""
+    src, place, state = rec.get("source"), rec.get("region_en") or rec.get("region") or "", None
+    if src == "landwatch":  # the address is the title, or one of the " | " parts of the card text
+        parts = ((rec.get("title") or "") + " | " + (rec.get("description") or "")).split(" | ")
+        m = next((m for m in (US_ADDRESS_RX.match(p.strip()) for p in parts) if m), None)
+        name, state = m.groups() if m else ("", None)
+    elif src == "kijiji":
+        m = CA_TOWN_RX.search(place)
+        name, state = m.groups() if m else ("", None)
+    elif src == "olx":
+        name = place.rsplit(", ", 1)[0]
+    elif src == "mercadolibre":
+        parts = [p.strip() for p in place.split(",") if p.strip()]
+        name = parts[-2] if len(parts) > 1 else ""
+    else:
+        name = place
+    name = TOWN_PREFIX_RX.sub("", name.strip())
+    if name.isupper():  # "COME BY CHANCE"
+        name = re.sub(r"\w[\w']*", lambda m: m.group(0).capitalize(), name.lower())
+    return name, state
+
+
+def towns(recs):
+    """Town of each listing, for the site's City filter. In the US and Canada, where town names repeat from state to
+    state, it reads "Deming, NM"; listings whose address has no state (Properstar, a few Kijiji ads) take the state
+    of the nearest listing that has one. Spellings that differ only in case become the most common one."""
+    found = [town(r) for r in recs]
+    known = {}
+    for r, (name, st) in zip(recs, found):
+        if st and r.get("lat") is not None:
+            known.setdefault(r["country"].upper(), set()).add((r["lat"], r["lon"], st))
+    names = []
+    for r, (name, st) in zip(recs, found):
+        pts = known.get((r.get("country") or "").upper())
+        if name and not st and pts and r.get("lat") is not None:
+            k = math.cos(math.radians(r["lat"]))  # a degree of longitude shrinks away from the equator
+            st = min(pts, key=lambda p: (p[0] - r["lat"]) ** 2 + ((p[1] - r["lon"]) * k) ** 2)[2]
+        names.append("%s, %s" % (name, st) if name and st else name)
+    keys = [((r.get("country") or "").upper(), n.lower()) for r, n in zip(recs, names)]
+    spelling = {}
+    for (key, n), _ in Counter(zip(keys, names)).most_common():
+        spelling.setdefault(key, n)
+    return [spelling[key] for key in keys]
 
 
 def site_cutoff(recs, fresh_days=3):
@@ -1224,16 +1277,16 @@ def site_cutoff(recs, fresh_days=3):
     return (datetime.fromisoformat(max(stamps)) - timedelta(days=fresh_days)).isoformat() if stamps else None
 
 
-def build_site(recs):
-    """Write site/index.html + site/data.json: every listing seen in the last few days of runs."""
+def build_site(recs, rates):
+    """Write site/index.html + site/data.json: every listing seen in the last few days of runs, plus the
+    exchange rates its US dollar prices were converted with, for the site's Currency list."""
     os.makedirs(SITE, exist_ok=True)
     cutoff = site_cutoff(recs)
     if not cutoff:
         return
+    recs = [r for r in recs if (r.get("scraped_at") or "") >= cutoff and r.get("price_usd") is not None]
     rows, countries = [], set()
-    for r in recs:
-        if (r.get("scraped_at") or "") < cutoff or r.get("price_usd") is None:
-            continue
+    for r, place in zip(recs, towns(recs)):
         codes = "".join(c for txt, c in FLAG_CODES if txt in (r.get("flags") or ""))
         if "W" in codes:
             continue
@@ -1244,9 +1297,10 @@ def build_site(recs):
                      (r.get("region_en") or r.get("region") or "")[:60], (r.get("title_en") or r.get("title") or "")[:110],
                      r.get("source"), codes, r["url"], rnd(r.get("lat"), 4), rnd(r.get("lon"), 4),
                      r["title"][:110] if r.get("title_en") else None,  # the original title, when translated
-                     TYPE_CODES.get(r.get("type"), "V")])
+                     TYPE_CODES.get(r.get("type"), "V"), place,
+                     rnd(r.get("price"), 2), (r.get("currency") or "USD").upper()])  # the price in its own currency
     data = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "countries": len(countries), "rows": rows}
+            "countries": len(countries), "rows": rows, "rates": rates}
     with open(os.path.join(SITE, "data.json"), "w") as f:
         json.dump(data, f, separators=(",", ":"))
     with open(os.path.join(HERE, "site_template.html")) as f:

@@ -67,7 +67,17 @@ Stopping with Ctrl-C is safe: progress is saved in `data/`, and running the same
 Every run also builds a small static website in `site/`: every listing seen in the last 3 days, cheapest
 first, with search and filters, plus a map. On the map, nearby listings group into bubbles showing how many
 there are and the cheapest price; click one to zoom in, click a price pin to see the listing, or pick a
-country to jump to it. The live copy is at **https://cheapest-land.pages.dev**.
+country or city to jump to it. The live copy is at **https://cheapest-land.pages.dev**.
+
+Picking a country adds a City list: that country's towns that have listings under the other filters. The town comes
+from LandWatch's address, the place before the province or postal code on Kijiji, before the region on OLX and before
+the state on Mercado Libre, and Properstar's city. In the US and Canada, where town names repeat from state to state,
+towns read "Deming, NM"; Properstar listings there have no state, so they take the state of the nearest listing that has one.
+
+Prices show in US dollars until you pick another currency from the Currency list, which has every currency
+open.er-api.com gives a rate for. The browser remembers the choice, and the map pins and price filters switch with it.
+Each card names its currency, and a listing posted in a different currency also shows its own price ("Listed at
+16,500 CAD"). Prices are converted at the exchange rates from the day the site was built.
 
 Each card is tagged with the kind of property: vacant land, building lot, farmland, forest, recreational,
 waterfront, commercial, dacha plot, land with house, or house. The Type filter shows one kind. LandWatch tags come
