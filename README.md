@@ -76,8 +76,8 @@ towns read "Deming, NM"; Properstar listings there have no state, so they take t
 
 Prices show in US dollars until you pick another currency from the Currency list, which has every currency
 open.er-api.com gives a rate for. The browser remembers the choice, and the map pins and price filters switch with it.
-Each card names its currency, and a listing posted in a different currency also shows its own price ("Listed at
-16,500 CAD"). Prices are converted at the exchange rates from the day the site was built.
+Each card names its currency, and a listing posted in a different currency shows its own price under the converted
+one ("Converted from 16,500 CAD"). Prices are converted at the exchange rates from the day the site was built.
 
 Each card is tagged with the kind of property: vacant land, building lot, farmland, forest, recreational,
 waterfront, commercial, dacha plot, land with house, or house. The Type filter shows one kind. LandWatch tags come

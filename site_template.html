@@ -42,9 +42,12 @@ header h1{font-size:18px;margin:0}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:4px}
 .card .p{font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .card .p small{font-size:13px;font-weight:500;color:var(--muted)}
+.card .cv{color:var(--muted);font-size:13px;line-height:1.3}
+.grid.conv .card .hd{min-height:calc(20px * 1.45 + 13px * 1.3)}  /* room for a "Converted from" line on every card, so rows line up */
 .card .ty{font-size:12px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 9px;white-space:nowrap}
 .card .m{color:var(--muted);font-size:14px}
 .card .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .loc{margin-top:auto}  /* location and source sit at the bottom, level across a row */
 .card .w{color:var(--warn);font-size:13px}
 .more{display:block;margin:20px auto 40px;font:inherit;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:9px 18px;cursor:pointer}
 #map{height:calc(100vh - 210px);height:calc(100dvh - 210px);min-height:420px;border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
@@ -244,17 +247,21 @@ function fillTowns(cc, town, near){
   el.value = town;
 }
 
+// the listing is priced in another currency, so the big price was converted from its own
+const converted = r => r[15] && r[15] !== CUR;
 // listing details, shared by the grid cards and the map popups
-const details = r => `<div class="p"><span>${money(price(r))}${SIGN ? ` <small>${CUR}</small>` : ""}</span><span class="ty">${TYPES[r[12]] || "Land"}</span></div>
-    ${r[15] && r[15] !== CUR ? `<div class="m">Listed at ${digits(r[14])} ${r[15]}</div>` : ""}
+const details = r => `<div class="hd"><div class="p"><span>${money(price(r))}${SIGN ? ` <small>${CUR}</small>` : ""}</span><span class="ty">${TYPES[r[12]] || "Land"}</span></div>
+    ${converted(r) ? `<div class="cv">Converted from ${digits(r[14])} ${r[15]}</div>` : ""}</div>
     <div class="m">${r[2] != null ? acres(r[2]) + (r[2] === 1 ? " acre" : " acres") + " · " + money(r[0] * RATE) + "/acre" : "Area not listed"}</div>
     <a class="t" href="${esc(r[8])}" target="_blank" rel="noopener"${r[11] ? ` title="Original: ${esc(r[11])}"` : ""}>${esc(r[5] || "View listing")}</a>
-    <div class="m">${esc([r[4], cname(r[3])].filter(Boolean).join(", "))} · ${srcName(r[6])}</div>
+    <div class="m loc">${esc([r[4], cname(r[3])].filter(Boolean).join(", "))} · ${srcName(r[6])}</div>
     ${clean(r) ? "" : `<div class="w">${[...r[7]].map(f => FLAGS[f]).filter(Boolean).join(". ")}</div>`}`;
 
 function renderGrid(){
+  const page = VIEW.slice(0, shown);
   $("count").textContent = `${VIEW.length.toLocaleString("en-US")} listings, cheapest first`;
-  $("grid").innerHTML = VIEW.slice(0, shown).map(r => `<div class="card">${details(r)}</div>`).join("");
+  $("grid").classList.toggle("conv", page.some(converted));
+  $("grid").innerHTML = page.map(r => `<div class="card">${details(r)}</div>`).join("");
   $("more").hidden = shown >= VIEW.length;
 }
 
