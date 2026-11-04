@@ -29,6 +29,8 @@ button,input,select{font:inherit;color:inherit}
 header{display:flex;align-items:center;gap:28px;padding:0 28px;height:60px;border-bottom:1px solid var(--rule)}
 header h1{font-size:19px;font-weight:800;letter-spacing:-.01em;margin:0;white-space:nowrap}
 header h1 span{font-weight:400;color:var(--soft)}
+.brand{display:flex;flex-direction:column;justify-content:center;line-height:1.2}
+#visitors{font-size:12px;color:var(--soft);white-space:nowrap}
 .tabs{display:flex;gap:4px;margin-left:auto;align-self:stretch}
 .tabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--soft);font-weight:500;padding:0 10px;cursor:pointer}
 .tabs button[aria-selected="true"]{color:var(--ink);font-weight:700;border-bottom-color:var(--ink)}
@@ -140,7 +142,10 @@ footer p{margin:4px 0}
 </head>
 <body>
 <header>
-  <h1>Cheapest Land <span>worldwide</span></h1>
+  <div class="brand">
+    <h1>Cheapest Land <span>worldwide</span></h1>
+    <span id="visitors" hidden></span>
+  </div>
   <nav class="tabs" role="tablist">
     <button role="tab" id="t-list" aria-selected="true">List</button>
     <button role="tab" id="t-map" aria-selected="false">Map</button>
@@ -206,7 +211,7 @@ footer p{margin:4px 0}
     </section>
 
     <footer>
-      <p><span id="updated"></span> <span id="visitors" hidden></span></p>
+      <p><span id="updated"></span></p>
       <p>Prices are converted at the exchange rates of the last update. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Kijiji, OLX, Mercado Libre, Ieichiba. A free (¥0) Japanese house still costs transfer fees, registration and yearly property tax.</p>
     </footer>
   </main>
@@ -304,7 +309,7 @@ try { firstVisit = !localStorage.getItem("counted"); } catch (e) {}
 fetch("/api/visitors", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({first: firstVisit})})
   .then(r => r.ok ? r.json() : Promise.reject(r.status)).then(d => {
     try { localStorage.setItem("counted", "1"); } catch (e) {}
-    $("visitors").textContent = `${d.total.toLocaleString("en-US")} ${d.total === 1 ? "person has" : "people have"} visited.`;
+    $("visitors").textContent = `${d.total.toLocaleString("en-US")} ${d.total === 1 ? "visitor" : "visitors"} so far`;
     $("visitors").hidden = false;
   }).catch(() => {});  // no count (a local preview has no API): the line stays hidden
 
