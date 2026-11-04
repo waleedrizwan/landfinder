@@ -4,6 +4,7 @@ landfinder — scrape the cheapest land listings on earth and rank them by total
 
 Sources
   properstar  worldwide portal (~100+ countries), land plots sorted cheapest first
+  castles     Properstar's castle listings in the same countries (in the main ranking, plus their own site section)
   landwatch   all 50 US states, sorted cheapest first
   kijiji      every Canadian province, land-for-sale sorted cheapest first
 
@@ -83,7 +84,7 @@ OLX_AREA_M2 = {"m": 1.0, "area_de_terreno_m2": 1.0, "land_area": 100.0}
 ENCUENTRA24_COUNTRIES = {"CR": "costa-rica-en", "PA": "panama-en", "NI": "nicaragua-en", "HN": "honduras-en",
                          "GT": "guatemala-en", "SV": "el-salvador-en"}
 
-ALL_SOURCES = "properstar,landwatch,kijiji,olx,zillow,immobiliare,encuentra24"
+ALL_SOURCES = "properstar,castles,landwatch,kijiji,olx,zillow,immobiliare,encuentra24"
 
 AREA_TO_M2 = {"SquareMeter": 1.0, "SquareFoot": 0.09290304, "Hectare": 10000.0,
               "Acre": ACRE_M2, "SquareKilometer": 1e6, "SquareYard": 0.83612736}
@@ -485,11 +486,15 @@ def parse_properstar(html, slug):
         title = L.get("automaticTitle") or ""
         en = [t["text"] for t in (L.get("title") or []) if t.get("language") == "en"]
         pics = (((L.get("resources") or {}).get("pictures") or {}).get("items") or [{}])
+        castle = ((L.get("subType") or {}).get("id")) == "Castle"
+        name = (en[0] if en else "") or title
+        if castle and not CASTLE_RX.search(name):
+            name = "Castle: " + name  # Properstar titles castles "Home for sale in ..."
         out.append({
             "source": "properstar",
             "country": loc.get("countryISO") or slug,
             "region": loc.get("city") or "",
-            "title": (en[0] if en else "") or title,
+            "title": name,
             "description": title,
             "price": pv.get("value"),
             "currency": pv.get("currencyId"),
@@ -498,22 +503,32 @@ def parse_properstar(html, slug):
             "lon": loc.get("longitude"),
             "url": "https://www.properstar.com/listing/%s" % L.get("id"),
             "img": pics[0].get("url"),
+            "kind": "castle" if castle else None,
         })
     return out, int(res.get("total") or 0)
 
 
-def crawl_properstar_one(br, store, slug, pages):
+CASTLE_RX = re.compile(r"\b(castles?|ch[aâ]teaux?|castell[oi]|castillos?|burg|schloss|kasteel|zamek|castelo)\b", re.I)
+
+
+def properstar_url(slug, p, castles=False):
+    if castles:  # Properstar's castle subtype: /buy/castle on its own isn't a real search and lists everything
+        url = "https://www.properstar.com/%s/buy/house/castle/price-low-to-high" % slug
+        return url + ("?p=%d" % p if p > 1 else "")
+    # price.min skips the "EUR 5" listings that are really per-m2 prices or placeholders
+    url = "https://www.properstar.com/%s/buy/land-plot/price-low-to-high?price.min=%d" % (slug, MIN_PRICE)
+    return url + ("&p=%d" % p if p > 1 else "")
+
+
+def crawl_properstar_one(br, store, slug, pages, castles=False):
     total_new = 0
     for p in range(1, pages + 1):
         if STOP.is_set():
             break
-        # price.min skips the "EUR 5" listings that are really per-m2 prices or placeholders
-        url = "https://www.properstar.com/%s/buy/land-plot/price-low-to-high?price.min=%d" % (slug, MIN_PRICE)
-        if p > 1:
-            url += "&p=%d" % p
+        url = properstar_url(slug, p, castles)
         if url in store.done:
             continue
-        br.label = "%s  page %d  (properstar)" % (slug, p)
+        br.label = "%s  page %d  (%s)" % (slug, p, "castles" if castles else "properstar")
         html = br.get(url)
         if not html:
             break
@@ -656,6 +671,7 @@ def run_pool(jobs, store, a):
 
 BROWSER_CRAWLERS = {  # sources that need a real Chrome window: fn(browser, store, key, pages) -> new listings
     "properstar": lambda br, store, key, pages: crawl_properstar_one(br, store, key, pages),
+    "castles": lambda br, store, key, pages: crawl_properstar_one(br, store, key, pages, castles=True),
     "landwatch": lambda br, store, key, pages: crawl_landwatch_one(br, store, key, pages),
     "immobiliare": lambda br, store, key, pages: crawl_search(br, store, "immobiliare", key, pages,
                                                               immobiliare_url, parse_immobiliare),
@@ -1024,7 +1040,7 @@ def verify_cheapest(store, a, n=60, rounds=4):
 # ----------------------------------------------------------------------------- output
 
 COLS = ["price_usd", "usd_per_acre", "acres", "country", "region", "title", "price", "currency",
-        "source", "flags", "url", "lat", "lon", "scraped_at"]
+        "source", "flags", "url", "lat", "lon", "scraped_at", "kind"]
 
 
 KIJIJI_TITLE_MAX = 64  # Kijiji cuts titles off at this many characters
@@ -1056,7 +1072,7 @@ def build_outputs(store):
     # a "total" price that would only buy ~20 m2 at that country's typical price per m2 is a per-m2 price
     m2p = {}
     for r in recs:
-        if r["price_usd"] and r.get("acres") and not r["flags"]:
+        if r["price_usd"] and r.get("acres") and not r["flags"] and r.get("kind") != "castle":  # land prices only
             m2p.setdefault(r.get("country"), []).append(r["price_usd"] / (r["acres"] * ACRE_M2))
     med_m2 = {c: sorted(v)[len(v) // 2] for c, v in m2p.items() if len(v) >= 20}
     for r in recs:
@@ -1192,8 +1208,9 @@ def site_acres(v):
     return "<0.01" if v < .01 else "%.2f" % v if v < 1 else "%.1f" % v if v < 100 else format(int(round(v)), ",")
 
 
-# site/data.json row: [price_usd, acres, country, region, title, source, flag codes, url, lat, lon, image]
-PRICE, ACRES, CC, REGION, TITLE, SRC, FLAGS, URL, LAT, LON, IMG = range(11)
+# site/data.json row: [price_usd, acres, country, region, title, source, flag codes, url, lat, lon, image, kind]
+PRICE, ACRES, CC, REGION, TITLE, SRC, FLAGS, URL, LAT, LON, IMG, KIND = range(12)
+CASTLE_CARDS = 12
 FIRST_CARDS = 24  # listing cards written into index.html, so the top of the grid needs no JavaScript
 
 
@@ -1228,6 +1245,21 @@ def site_card(r, rank):
 def site_cards(rows, n=FIRST_CARDS):
     c = sorted((r for r in rows if site_clean(r)), key=lambda r: r[PRICE])[:n]
     return "\n      ".join(site_card(r, i) for i, r in enumerate(c, 1))
+
+
+def site_castles(rows, n=CASTLE_CARDS):
+    """The "Cheapest castles" section, or nothing when there are no castles."""
+    c = sorted((r for r in rows if len(r) > KIND and r[KIND] == "castle" and site_clean(r)), key=lambda r: r[PRICE])
+    if not c:
+        return ""
+    cards = "\n      ".join(site_card(r, i) for i, r in enumerate(c[:n], 1))
+    return (
+        '<section id="castles"><div class="wrap">\n'
+        '    <h2>Cheapest castles</h2>\n'
+        '    <p class="lede">The cheapest of %s castles for sale, by total asking price. They\'re in the main ranking too, '
+        'far down it.</p>\n'
+        '    <div class="grid">\n      %s\n    </div>\n'
+        '  </div></section>' % (format(len(c), ","), cards))
 
 
 def site_hero(rows):
@@ -1305,7 +1337,7 @@ def build_site(recs, fresh_days=3):
         countries.add(cc)
         rows.append([rnd(r["price_usd"], 0), rnd(r.get("acres"), 3), cc, (r.get("region") or "")[:60],
                      (r.get("title") or "")[:110], r.get("source"), codes, r["url"],
-                     rnd(r.get("lat"), 4), rnd(r.get("lon"), 4), r.get("img") or None])
+                     rnd(r.get("lat"), 4), rnd(r.get("lon"), 4), r.get("img") or None, r.get("kind")])
     stamp = datetime.now().astimezone()
     data = {"generated": stamp.isoformat(timespec="seconds"), "countries": len(countries), "rows": rows}
     with open(os.path.join(SITE, "data.json"), "w") as f:
@@ -1331,7 +1363,10 @@ def write_site(rows, countries, stamp):
         "The cheapest pieces of land you can actually buy anywhere in the world, ranked by total price and updated daily from live listings."
     with open(os.path.join(HERE, "site_template.html")) as f:
         page = f.read()
+    castles = site_castles(rows)
     for key, val in (("<!--HERO-->", hero), ("<!--CARDS-->", site_cards(rows)), ("<!--RANKS-->", site_ranks(rows)),
+                     ("<!--CASTLES-->", castles),
+                     ("<!--CASTLES_NAV-->", '<a href="#castles">Castles</a>' if castles else ""),
                      ("<!--COUNTRIES-->", options), ("<!--SOURCES-->", src_options),
                      ("{{SOURCE_LIST}}", html.escape(src_list)), ("{{SOURCE_COUNT}}", str(len(names))),
                      ("<!--UPDATED-->", html.escape(updated)), ("{{DESCRIPTION}}", html.escape(description, quote=True)),
@@ -1406,7 +1441,8 @@ def main():
             threads.append(threading.Thread(target=guarded, name=name, daemon=True))
             threads[-1].start()
         try:
-            per_source = {"landwatch": states, "properstar": countries, "immobiliare": ["italia"], "encuentra24": e24}
+            per_source = {"landwatch": states, "properstar": countries, "castles": countries,
+                          "immobiliare": ["italia"], "encuentra24": e24}
             lists = [[(src, key) for key in keys] for src, keys in per_source.items() if src in sources]
             jobs = []
             for i in range(max([len(l) for l in lists] or [0])):  # interleave so no single site gets every window

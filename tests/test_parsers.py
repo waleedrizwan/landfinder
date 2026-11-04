@@ -1,4 +1,6 @@
 """Per-source parsers, run against trimmed copies of real search pages (tests/fixtures/)."""
+import json
+
 import pytest
 
 import landfinder as lf
@@ -75,3 +77,38 @@ def test_kijiji_skips_non_fixed_prices():
 
 def test_kijiji_without_next_data():
     assert lf.parse_kijiji("<html><body></body></html>", "ontario") == []
+
+
+def castle_page(listings, total):
+    state = {"search": {"results": {"total": total, "listings": listings}}}
+    return "<script>window.__INITIAL_STATE__ = %s;</script>" % json.dumps(state)
+
+
+def castle_listing(i, title_en=None, auto="Home for sale in Ravières, France", sub="Castle"):
+    return {"id": i, "subType": {"id": sub, "name": sub}, "automaticTitle": auto,
+            "title": [{"language": "en", "text": title_en}] if title_en else [],
+            "price": {"show": True, "values": [{"type": "Original", "value": 105000, "currencyId": "EUR"}]},
+            "area": {"land": 400, "unit": {"id": "SquareMeter"}},
+            "location": {"countryISO": "FR", "city": "Ravières"}}
+
+
+def test_properstar_castles():
+    recs, total = lf.parse_properstar(castle_page([
+        castle_listing(1),                                         # generic title -> labelled
+        castle_listing(2, title_en="Château with moat and park"),  # already says so -> left alone
+        castle_listing(3, sub="Villa", auto="Home for sale in Nice, France"),
+    ], 705), "france")
+    assert total == 705
+    assert [r["kind"] for r in recs] == ["castle", "castle", None]
+    assert recs[0]["title"] == "Castle: Home for sale in Ravières, France"
+    assert recs[1]["title"] == "Château with moat and park"
+    assert recs[2]["title"] == "Home for sale in Nice, France"
+    assert recs[0]["acres"] == pytest.approx(400 / lf.ACRE_M2)
+
+
+def test_properstar_urls():
+    assert lf.properstar_url("france", 1, castles=True) == \
+        "https://www.properstar.com/france/buy/house/castle/price-low-to-high"
+    assert lf.properstar_url("france", 3, castles=True).endswith("/buy/house/castle/price-low-to-high?p=3")
+    assert lf.properstar_url("paraguay", 2) == \
+        "https://www.properstar.com/paraguay/buy/land-plot/price-low-to-high?price.min=%d&p=2" % lf.MIN_PRICE

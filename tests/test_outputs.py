@@ -171,3 +171,43 @@ def test_same_title():
     # the 64-character cut-off is a Kijiji thing only
     assert not lf.same_title(norm(cut), cut, norm(full), full, "properstar")
     assert lf.same_title("abc", "ABC", "abc", "abc", "properstar")
+
+
+def castle_records():
+    """Two French castles among 20 ordinary French plots."""
+    recs = [{"source": "properstar", "country": "FR", "region": "Bourgogne", "title": "Plot %d" % i, "description": "",
+             "price": 20000 + i * 500, "currency": "USD", "acres": 0.5,
+             "url": "https://www.properstar.com/listing/fr%d" % i} for i in range(20)]
+    for i, price in enumerate((150000, 105000)):
+        recs.append({"source": "properstar", "country": "FR", "region": "Ravières", "kind": "castle",
+                     "title": "Castle: Home for sale in Ravières, France", "description": "", "price": price,
+                     "currency": "USD", "acres": 0.1, "url": "https://www.properstar.com/listing/castle%d" % i})
+    return recs
+
+
+def test_castles_are_ranked_and_get_their_own_section(workdir):
+    recs = castle_records()
+    for r in recs:
+        r["scraped_at"] = stamp()
+    lf.build_outputs(FakeStore(recs))
+    data = json.loads((workdir / "site" / "data.json").read_text())
+    page = (workdir / "site" / "index.html").read_text()
+    castles = [r for r in data["rows"] if r[lf.KIND] == "castle"]
+    assert [r[lf.PRICE] for r in castles] == [105000, 150000]   # in the main data, cheapest first
+    assert all(r[lf.FLAGS] == "" for r in castles)              # a building's price/m2 doesn't flag them...
+    assert all(r[lf.FLAGS] == "" for r in data["rows"])         # ...nor skews the land check for the plots
+    assert '<section id="castles">' in page and '<a href="#castles">Castles</a>' in page
+    section = page.split('<section id="castles">')[1].split("</section>")[0]
+    assert section.count('class="card"') == 2
+    assert section.index("castle1") < section.index("castle0")  # $105,000 before $150,000
+    csv_rows = list(csv.DictReader(open(workdir / "results.csv")))
+    assert {r["url"].rsplit("/", 1)[1]: r["kind"] for r in csv_rows}["castle1"] == "castle"
+
+
+def test_no_castle_section_without_castles(workdir):
+    recs = castle_records()[:20]
+    for r in recs:
+        r["scraped_at"] = stamp()
+    lf.build_outputs(FakeStore(recs))
+    page = (workdir / "site" / "index.html").read_text()
+    assert 'id="castles"' not in page and 'href="#castles"' not in page
