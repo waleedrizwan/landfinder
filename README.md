@@ -8,7 +8,7 @@ actually buy. Price per acre is shown too. Every row links to the live listing.
 
 | Source | Coverage | How it's fetched |
 |---|---|---|
-| [Properstar](https://www.properstar.com) | ~150 countries, land plots | real Chrome via Playwright (site has a bot check) |
+| [Properstar](https://www.properstar.com) | ~150 countries, land plots and houses | real Chrome via Playwright (site has a bot check) |
 | [LandWatch](https://www.landwatch.com) | all 50 US states | real Chrome via Playwright |
 | [Kijiji](https://www.kijiji.ca) | every Canadian province/territory | plain HTTP requests |
 | [OLX](https://www.olx.pl) | Poland, Ukraine, Romania, Portugal, Bulgaria, Kazakhstan, Uzbekistan | OLX's JSON search API |
@@ -36,13 +36,13 @@ cd landfinder
 By default, 4 small Chrome windows open tiled on the right half of your screen. Each one scrapes a
 different country or state at the same time, and a banner at the top shows what it's working on. Pages
 are drawn at half size, so sites still serve their desktop layout. If a window gets closed, the script
-reopens it. A full run (10 pages per country/state/province) takes under an hour with 4 windows.
+reopens it. A full run takes about an hour with 4 windows.
 
 ## Usage
 
 ```sh
-./run.sh                                         # everything, 10 pages each
-./run.sh --sources properstar --pages 25         # go deeper on one source
+./run.sh                                         # everything: 250 believable listings per search
+./run.sh --sources properstar --listings 500     # go deeper on one source
 ./run.sh --countries paraguay,bolivia,argentina  # only these countries (Properstar, OLX, Mercado Libre)
 ./run.sh --sources olx,mercadolibre              # only some sources
 ./run.sh --states new-mexico,arizona,nevada      # only these US states (LandWatch)
@@ -53,12 +53,22 @@ reopens it. A full run (10 pages per country/state/province) takes under an hour
 ./run.sh --workers 6                             # more windows in parallel (default 4)
 ./run.sh --tile full                             # tile windows over the whole screen
 ./run.sh --hidden                                # no visible windows: minimized to the Dock
+./run.sh --pages 50                              # allow more pages per search (default 30)
 ```
 
-After scraping, landfinder opens the 60 cheapest believable listings and re-reads their full description,
-because search results cut it short. That catches sellers who enter a down payment or monthly payment as
-the price ("Only $2,700 cash! ... $380 down"). When the text gives the real cash price, that price is used;
-otherwise the listing is hidden. Use `--verify 0` to skip this step or `--verify-only` to run it alone.
+A search is one country, state or province on one site. It runs cheapest first until it has 250 believable
+listings (`--listings`): ones the site shows by default, with no flag except a missing land area, and not one
+exact low price repeated on many different-size plots. So when a seller fills the cheapest pages with a
+placeholder price, the search keeps going past them. It also stops when the results run out, or after 30 pages
+(`--pages`).
+
+After scraping, landfinder opens the 60 cheapest believable listings on LandWatch and on Kijiji and re-reads
+their full description, because search results cut it short. That catches sellers who enter a down payment or
+monthly payment as the price ("Only $2,700 cash! ... $380 down"). When the text gives the real cash price, that
+price is used; otherwise the listing is hidden. On Kijiji it catches rentals: real estate agents' REALTOR.ca
+listings include homes and land for rent, priced at the monthly rent, which land in Kijiji's land-for-sale
+section. Use `--verify 0` to skip this step or `--verify-only` to run it alone. It follows `--sources`, so
+`--verify-only --sources kijiji` checks Kijiji alone, without opening Chrome.
 
 Stopping with Ctrl-C is safe: progress is saved in `data/`, and running the same command again resumes.
 
@@ -73,6 +83,9 @@ Picking a country adds a City list: that country's towns that have listings unde
 from LandWatch's address, the place before the province or postal code on Kijiji, before the region on OLX and before
 the state on Mercado Libre, and Properstar's city. In the US and Canada, where town names repeat from state to state,
 towns read "Deming, NM"; Properstar listings there have no state, so they take the state of the nearest listing that has one.
+The list puts the biggest towns first. Populations come from [GeoNames](https://www.geonames.org) (CC BY 4.0): every
+place with 1,000+ people, matched by any of its names, kept in `geo/town_population.tsv.gz` (rebuild it with
+`tools/build_town_population.py`). Smaller towns, and the ones no name matches, follow A to Z.
 
 Prices show in US dollars until you pick another currency from the Currency list, which has every currency
 open.er-api.com gives a rate for. The browser remembers the choice, and the map pins and price filters switch with it.
@@ -85,7 +98,25 @@ from LandWatch's own category, or "land with house" when the card lists beds, ba
 sites, the tag comes from words in the title, its English translation and the description, in each site's languages.
 So the tag is a good guess, not a guarantee: "build your dream cottage" still counts as vacant land, and a house the
 seller doesn't mention goes unnoticed. Tagging makes no Claude calls. House listings stay hidden with the flagged ones
-unless you pick House in the Type filter.
+unless you pick House in the Type filter or one of the ruins and castles below.
+
+Besides land, every search also runs in the same site's houses-for-sale section, cheapest first: Properstar's houses,
+LandWatch's homes, Kijiji's houses for sale, OLX's houses and Mercado Libre's *casas*. The cheapest houses on earth are
+mostly ruins, abandoned farmhouses and fixer-uppers, which is what these searches are for. A house search stops at 60
+believable listings (`--house-listings`) instead of 250, so the house searches take much less time than the land ones. `--no-houses` searches land only.
+
+The list next to Country picks out special listings, found by keywords in the title, its English translation and the
+description, in each site's languages (no Claude calls):
+
+- **Ruins & fixer-uppers**: a ruin, an abandoned or derelict building, a house for demolition or one that needs a full
+  renovation ("ruína", "à rénover", "da ristrutturare", "do remontu", "под снос", "за събаряне", "空き家", "fixer-upper").
+- **Castles & manors**: castle, château, manoir, castelo, castillo, palácio, conac, замък. Places and streets named
+  after one ("New Castle, IN", "Viana do Castelo", "Chateau Drive") don't count.
+- **Churches & chapels**: a former, old or converted church or chapel, or one for sale ("former church building",
+  "antiga igreja"), not one nearby ("next to the old church") or a street ("Church Lane").
+
+A card can have more than one, and each shows as an orange tag. Castles and churches are rare at the cheap end:
+searches go up from the cheapest listing, so a $400,000 château only turns up in a country with few houses for sale.
 
 LandWatch listings come without coordinates, so they're pinned at their ZIP code's center, from the US Census
 ZIP code file in `geo/us_zip_centroids.csv.gz` (2024 ZCTA Gazetteer). Mercado Libre listings have no location
@@ -107,7 +138,14 @@ original; searching in the original language still works. `--no-translate` skips
 ## Output
 
 - **`report.html`**: open it in a browser for a sortable, filterable table of every listing.
-- **`results.csv`**: the same data, cheapest total price first. The `type` column is the property type shown on the site.
+- **`results.csv`**: the same data, cheapest total price first. The `type` column is the property type shown on the site,
+  and `tags` lists which of ruin, castle and church it is.
+- **`coverage.csv`**: one row per search, to show how much of each market the site covers: how many listings the
+  site itself reports (above our price floor, where the search has one), how many we fetched (`fetched_pct` of
+  them), how many believable ones the site shows, the price the cheapest-first crawl got up to (`reached_usd`, the
+  middle price on its last page) and why it stopped (`enough listings`, `end of results`, `page cap` or `fetch
+  failed`). The log sums it up per source and names the countries that rely on a single source or have under 10
+  believable listings, which is where to look for sources we're missing.
 - **`data/`**: raw scraped records, exchange rates and crawl progress.
 
 The `flags` column marks listings to double-check:
@@ -129,7 +167,9 @@ Exchange rates come from [open.er-api.com](https://open.er-api.com) and are cach
 
 1. Write `parse_<site>()`, which turns one search page into listing dicts (`source`, `country`, `region`,
    `title`, `description`, `price`, `currency`, `acres`, `lat`, `lon`, `url`), and `crawl_<site>()`, which walks
-   the pages cheapest first and saves them with `store.add()` / `store.mark()`. `crawl_olx` is a short example.
+   the page numbers `search_pages()` gives it (cheapest first, until there are enough believable listings) and
+   saves each page with `store.page()`, along with the site's own result count. It calls `store.stop()` when the
+   results run out or a fetch fails. `crawl_olx` is a short example.
 2. Register it in `main()`: sites that answer plain HTTP requests go in the `plain` list (one thread each),
    sites that need a real browser go in the `jobs` passed to `run_pool`.
 3. Add it to the default `--sources`, and to `srcName` and the Source filter in `site_template.html`.
