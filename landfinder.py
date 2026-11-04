@@ -4,6 +4,7 @@ landfinder — scrape the cheapest land listings on earth and rank them by total
 
 Sources
   properstar  worldwide portal (~100+ countries), land plots sorted cheapest first
+  homes       HOME'S akiya bank: land and empty houses for sale in all 47 Japanese prefectures (houses are flagged)
   castles     Properstar's castle listings in the same countries (in the main ranking, plus their own site section)
   landwatch   all 50 US states, sorted cheapest first
   kijiji      every Canadian province, land-for-sale sorted cheapest first
@@ -84,7 +85,18 @@ OLX_AREA_M2 = {"m": 1.0, "area_de_terreno_m2": 1.0, "land_area": 100.0}
 ENCUENTRA24_COUNTRIES = {"CR": "costa-rica-en", "PA": "panama-en", "NI": "nicaragua-en", "HN": "honduras-en",
                          "GT": "guatemala-en", "SV": "el-salvador-en"}
 
-ALL_SOURCES = "properstar,castles,landwatch,kijiji,olx,zillow,immobiliare,encuentra24"
+# LIFULL HOME'S akiya bank (homes.co.jp/akiyabank): municipal empty-house banks, one search per prefecture
+HOMES_PREFECTURES = """
+tohoku/hokkaido tohoku/aomori tohoku/iwate tohoku/miyagi tohoku/akita tohoku/yamagata tohoku/fukushima
+kanto/tokyo kanto/kanagawa kanto/saitama kanto/chiba kanto/ibaraki kanto/tochigi kanto/gunma
+hokuriku/niigata hokuriku/toyama hokuriku/ishikawa hokuriku/fukui hokuriku/yamanashi hokuriku/nagano
+tokai/aichi tokai/gifu tokai/shizuoka tokai/mie kinki/osaka kinki/hyogo kinki/kyoto kinki/shiga kinki/nara
+kinki/wakayama chugoku/tottori chugoku/shimane chugoku/okayama chugoku/hiroshima chugoku/yamaguchi
+chugoku/tokushima chugoku/kagawa chugoku/ehime chugoku/kochi kyushu/fukuoka kyushu/saga kyushu/nagasaki
+kyushu/kumamoto kyushu/oita kyushu/miyazaki kyushu/kagoshima kyushu/okinawa""".split()
+HOMES_CATEGORIES = {"land": "102", "house": "101"}  # for sale only; the 30x categories are rentals
+
+ALL_SOURCES = "properstar,castles,landwatch,kijiji,olx,zillow,immobiliare,encuentra24,homes"
 
 AREA_TO_M2 = {"SquareMeter": 1.0, "SquareFoot": 0.09290304, "Hectare": 10000.0,
               "Acre": ACRE_M2, "SquareKilometer": 1e6, "SquareYard": 0.83612736}
@@ -195,7 +207,7 @@ def flag(rec):
         f.append("may be payment plan price")
     if CLAIM_RX.search(text):
         f.append("mining claim/mineral rights/access deed - not land ownership")
-    if "homes-for-sale" in (rec.get("url") or ""):
+    if "homes-for-sale" in (rec.get("url") or "") or rec.get("kind") == "house":
         f.append("house listing - not vacant land")
     if rec.get("source") == "kijiji" and usd is not None and usd < 3000:
         f.append("price too low for Canada - likely a deposit, lease or placeholder")
@@ -677,6 +689,7 @@ BROWSER_CRAWLERS = {  # sources that need a real Chrome window: fn(browser, stor
                                                               immobiliare_url, parse_immobiliare),
     "encuentra24": lambda br, store, key, pages: crawl_search(br, store, "encuentra24", key, pages,
                                                               encuentra24_url, parse_encuentra24),
+    "homes": lambda br, store, key, pages: crawl_search(br, store, "homes", key, pages, homes_url, parse_homes),
 }
 
 
@@ -938,6 +951,75 @@ def parse_immobiliare(html, key):
     return out
 
 
+# ---- HOME'S akiya bank: Japan (real Chrome, at the normal slow pace)
+
+def homes_url(key, p):
+    """key = "region/prefecture:land" or "...:house". Cheapest first; GET parameters work as well as the form."""
+    pref, kind = key.split(":")
+    return "https://www.homes.co.jp/akiyabank/%s/?sort=price_asc&categories%%5B%%5D=%s%s" % (
+        pref, HOMES_CATEGORIES[kind], "&page=%d" % p if p > 1 else "")
+
+
+def yen(text):
+    """'200万円' -> 2000000, '1億2,000万円' -> 120000000, '35,000円' -> 35000; None for 応相談 etc."""
+    t = re.sub(r"[\s,]", "", text or "")
+    m = re.fullmatch(r"(?:([\d.]+)億)?(?:([\d.]+)万)?(\d+)?円", t)
+    if not m or not any(m.groups()):
+        return None
+    oku, man, en = (float(x) if x else 0 for x in m.groups())
+    return oku * 1e8 + man * 1e4 + en
+
+
+def homes_m2(text):
+    m = re.match(r"\s*([\d,.]+)\s*(m²|m2|㎡|坪)", text or "")
+    if not m:
+        return None
+    v = num(m.group(1))
+    return v * 3.305785 if (v and m.group(2) == "坪") else v
+
+
+def parse_homes(html, key):
+    soup = BeautifulSoup(html, "html.parser")
+    boxes = soup.select(".sec-resultList .mod-result-bukkenBox")
+    if not boxes:
+        title = soup.title.get_text() if soup.title else ""
+        return [] if "空き家バンク" in title else None  # a real page with no results, or a block page
+    kind = key.split(":")[1]
+    out = []
+    for b in boxes:
+        a = b.select_one('a[href*="/akiyabank/b-"]')
+        if not a:
+            continue
+        spec = {dt.get_text(strip=True).lstrip("・"): dd.get_text(" ", strip=True)
+                for dt, dd in zip(b.select(".specText dt"), b.select(".specText dd"))}
+        price = yen(spec.get("価格"))
+        if price is None:
+            continue
+        cat = b.select_one(".categoryTag")
+        addr = b.select_one(".bukkenTitle .address")
+        point = b.select_one(".pointText p")
+        m2 = homes_m2(spec.get("土地面積"))
+        img = b.select_one(".bukkenPhoto img")
+        name = addr.get_text(" ", strip=True) if addr else ""
+        out.append({
+            "source": "homes",
+            "country": "JP",
+            "region": spec.get("所在地", ""),
+            "title": ("House: " if kind == "house" else "Land: ") + (name or spec.get("所在地", "")),
+            "description": " | ".join(x for x in ((cat.get_text(strip=True) if cat else ""),
+                                                  (point.get_text(" ", strip=True).replace("Point", "", 1).strip()
+                                                   if point else "")) if x),
+            "price": price,
+            "currency": "JPY",
+            "acres": (m2 / ACRE_M2) if m2 else None,
+            "lat": None, "lon": None,
+            "url": a["href"].split("?")[0],
+            "img": (img.get("src") or img.get("data-src")) if img else None,
+            "kind": kind,
+        })
+    return out
+
+
 # ---- Encuentra24: Central America (real Chrome; Cloudflare blocks plain requests)
 
 E24_CURRENCY = [("C$", "NIO"), ("₡", "CRC"), ("US$", "USD"), ("$", "USD"), ("Q", "GTQ"), ("L", "HNL")]
@@ -1127,7 +1209,8 @@ def site_codes(flags):
 
 
 SOURCE_NAMES = {"properstar": "Properstar", "landwatch": "LandWatch", "kijiji": "Kijiji", "olx": "OLX",
-                "zillow": "Zillow", "immobiliare": "Immobiliare.it", "encuentra24": "Encuentra24"}
+                "zillow": "Zillow", "immobiliare": "Immobiliare.it", "encuentra24": "Encuentra24",
+                "homes": "HOME'S Akiya Bank"}
 COUNTRY_NAMES = {
     "AD": "Andorra", "AE": "United Arab Emirates", "AF": "Afghanistan", "AG": "Antigua & Barbuda",
     "AI": "Anguilla", "AL": "Albania", "AM": "Armenia", "AO": "Angola", "AQ": "Antarctica",
@@ -1392,6 +1475,7 @@ def main():
     ap.add_argument("--states", help="US state slugs for LandWatch and Zillow, e.g. new-mexico,arizona (default: all)")
     ap.add_argument("--olx", help="OLX countries, e.g. PL,RO (default: %s)" % ",".join(OLX_SITES))
     ap.add_argument("--central-america", help="Encuentra24 countries, e.g. CR,PA (default: %s)" % ",".join(ENCUENTRA24_COUNTRIES))
+    ap.add_argument("--prefectures", help="Japanese prefectures for HOME'S akiya bank, e.g. nagano,shimane (default: all)")
     ap.add_argument("--provinces", help="Kijiji provinces, e.g. nova-scotia,saskatchewan (default: all)")
     ap.add_argument("--workers", type=int, default=4, help="Chrome windows scraping in parallel")
     ap.add_argument("--tile", choices=["right", "full"], default="right",
@@ -1441,8 +1525,11 @@ def main():
             threads.append(threading.Thread(target=guarded, name=name, daemon=True))
             threads[-1].start()
         try:
+            prefs = csv_list(a.prefectures, HOMES_PREFECTURES)
+            prefs = [next((h for h in HOMES_PREFECTURES if h.endswith("/" + x)), x) for x in prefs]  # "nagano" ok
             per_source = {"landwatch": states, "properstar": countries, "castles": countries,
-                          "immobiliare": ["italia"], "encuentra24": e24}
+                          "immobiliare": ["italia"], "encuentra24": e24,
+                          "homes": ["%s:%s" % (pf, k) for pf in prefs for k in HOMES_CATEGORIES]}
             lists = [[(src, key) for key in keys] for src, keys in per_source.items() if src in sources]
             jobs = []
             for i in range(max([len(l) for l in lists] or [0])):  # interleave so no single site gets every window

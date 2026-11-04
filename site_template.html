@@ -188,7 +188,7 @@ footer p{max-width:68ch}
 
   <section id="map-sec"><div class="wrap">
     <h2>Where it is</h2>
-    <p class="lede">Every listing with a known location. LandWatch and Encuentra24 don't publish coordinates, so their listings appear only in the grid.</p>
+    <p class="lede">Every listing with a known location. LandWatch, Encuentra24 and HOME'S Akiya Bank don't publish coordinates, so their listings appear only in the grid.</p>
     <div id="map" role="region" aria-label="Map of listings"></div>
     <div class="legend" id="legend"></div>
   </div></section>
@@ -211,7 +211,7 @@ const FLAGS = {L:"Price looks too low: may be a monthly payment or a per-m² pri
   U:"Price may be per m², acre or hectare",
   M:"Mining claim, mineral rights or access deed: you don't own the land", H:"A house listing, not vacant land"};
 const SOURCES = {properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji", olx:"OLX", zillow:"Zillow",
-  immobiliare:"Immobiliare.it", encuentra24:"Encuentra24"};
+  immobiliare:"Immobiliare.it", encuentra24:"Encuentra24", homes:"HOME'S Akiya Bank"};
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let regionNames; try { regionNames = new Intl.DisplayNames(["en"], {type:"region"}); } catch (e) {}

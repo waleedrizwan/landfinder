@@ -9,7 +9,7 @@ import landfinder as lf  # noqa: E402
 FIXTURES = os.path.join(ROOT, "tests", "fixtures")
 
 # Fixed exchange rates (units per USD, like open.er-api.com) so tests never touch the network.
-RATES = {"USD": 1.0, "CAD": 1.4, "EUR": 0.9, "PYG": 7500.0, "PLN": 4.0}
+RATES = {"USD": 1.0, "CAD": 1.4, "EUR": 0.9, "PYG": 7500.0, "PLN": 4.0, "JPY": 150.0}
 
 
 def fixture_html(name):

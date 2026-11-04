@@ -112,3 +112,42 @@ def test_properstar_urls():
     assert lf.properstar_url("france", 3, castles=True).endswith("/buy/house/castle/price-low-to-high?p=3")
     assert lf.properstar_url("paraguay", 2) == \
         "https://www.properstar.com/paraguay/buy/land-plot/price-low-to-high?price.min=%d&p=2" % lf.MIN_PRICE
+
+
+def test_homes_land():
+    recs = lf.parse_homes(fixture_html("homes_search.html"), "hokuriku/nagano:land")
+    assert len(recs) == 2  # 応相談 (price on request) is skipped
+    r = recs[0]
+    assert (r["source"], r["country"], r["currency"], r["kind"]) == ("homes", "JP", "JPY", "land")
+    assert r["price"] == 2_000_000
+    assert r["acres"] == pytest.approx(138.13 / lf.ACRE_M2)
+    assert r["title"] == "Land: 本町通り"
+    assert r["region"] == "長野県 木曽郡上松町"
+    assert "JR上松駅" in r["description"] and "Point" not in r["description"]
+    assert r["url"] == "https://www.homes.co.jp/akiyabank/b-38871/"
+    assert r["img"].startswith("https://akiyabank-image.")
+    assert recs[1]["price"] == 12_005_000
+    assert recs[1]["acres"] == pytest.approx(300 * 3.305785 / lf.ACRE_M2)  # tsubo
+    assert recs[1]["url"] == "https://www.homes.co.jp/akiyabank/b-30666/"
+    assert recs[1]["img"] is None
+
+
+def test_homes_house_kind_and_empty_or_blocked_pages():
+    assert {r["kind"] for r in lf.parse_homes(fixture_html("homes_search.html"), "kyushu/oita:house")} == {"house"}
+    assert lf.parse_homes("<title>【ホームズ】空き家バンク</title><p>0件</p>", "tohoku/akita:land") == []
+    assert lf.parse_homes("<title>Access Denied</title>", "tohoku/akita:land") is None
+
+
+@pytest.mark.parametrize("text, value", [
+    ("200万円", 2_000_000), (" 200.52万円 ", 2_005_200), ("1億2,000万円", 120_000_000), ("35,000円", 35_000),
+    ("0円", 0), ("応相談", None), ("", None), (None, None),
+])
+def test_yen(text, value):
+    assert lf.yen(text) == value
+
+
+def test_homes_url():
+    assert lf.homes_url("hokuriku/nagano:land", 1) == \
+        "https://www.homes.co.jp/akiyabank/hokuriku/nagano/?sort=price_asc&categories%5B%5D=102"
+    assert lf.homes_url("kyushu/oita:house", 3).endswith("/kyushu/oita/?sort=price_asc&categories%5B%5D=101&page=3")
+    assert len(lf.HOMES_PREFECTURES) == 47
