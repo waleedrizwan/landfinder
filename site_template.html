@@ -68,6 +68,9 @@ header h1{font-size:18px;margin:0}
 .card .w{color:var(--warn);font-size:13px}
 .more{display:block;margin:20px auto 40px;font:inherit;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:9px 18px;cursor:pointer}
 #map{height:calc(100vh - 210px);height:calc(100dvh - 210px);min-height:420px;border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
+#map.full{position:fixed!important;inset:0;z-index:1000;height:auto;min-height:0;border:0;border-radius:0;margin:0}  /* full screen map */
+body.mapfull{overflow:hidden}
+.fsbtn a{display:flex;align-items:center;justify-content:center;width:auto!important;padding:0 10px;font:600 13px/30px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#222;cursor:pointer;white-space:nowrap}
 @media (prefers-color-scheme:dark){#map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}}
 .pin div,.cl div{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:999px;cursor:pointer;font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 .pin div{background:var(--card);color:var(--fg);border:1px solid var(--line);padding:5px 8px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
@@ -405,6 +408,23 @@ function initMap(){
   map = L.map("map", {worldCopyJump: true, minZoom: 2}).setView([25, 0], 2);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     {maxZoom: 18, attribution: "&copy; OpenStreetMap contributors"}).addTo(map);
+  // a button that fills the whole window with the map; Esc or the button again brings the page back
+  const fs = L.control({position: "topright"});
+  fs.onAdd = () => {
+    const box = L.DomUtil.create("div", "leaflet-bar fsbtn"), a = L.DomUtil.create("a", "", box);
+    a.href = "#"; a.setAttribute("role", "button");
+    const set = on => {
+      $("map").classList.toggle("full", on); document.body.classList.toggle("mapfull", on);
+      a.textContent = on ? "✕ Exit full screen" : "⛶ Full screen"; a.title = on ? "Exit full screen (Esc)" : "Show the map full screen";
+      map.invalidateSize();
+    };
+    set(false);
+    L.DomEvent.disableClickPropagation(box);
+    L.DomEvent.on(a, "click", e => { L.DomEvent.preventDefault(e); set(!$("map").classList.contains("full")); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && $("map").classList.contains("full")) set(false); });
+    return box;
+  };
+  fs.addTo(map);
   // nearby listings group into one bubble with their count and cheapest price; click it to zoom in
   pins = L.markerClusterGroup({chunkedLoading: true, showCoverageOnHover: false, maxClusterRadius: z => z <= 3 ? 110 : z <= 6 ? 80 : 60,
     iconCreateFunction: c => {
