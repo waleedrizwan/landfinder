@@ -1,0 +1,11 @@
+# Cloudflare Pages settings for the "cheapest-land" project (deployed by publish.sh).
+# With this file, these settings come from here rather than the Cloudflare dashboard.
+name = "cheapest-land"
+pages_build_output_dir = "site"
+compatibility_date = "2026-10-22"
+
+# the visitor count (functions/api/visitors.js)
+[[d1_databases]]
+binding = "DB"
+database_name = "cheapest-land-visitors"
+database_id = "77f6fd26-3380-4bbb-9671-1db93de28ed8"

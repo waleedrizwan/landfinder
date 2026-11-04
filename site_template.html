@@ -206,7 +206,7 @@ footer p{margin:4px 0}
     </section>
 
     <footer>
-      <p id="updated"></p>
+      <p><span id="updated"></span> <span id="visitors" hidden></span></p>
       <p>Prices are converted at the exchange rates of the last update. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Kijiji, OLX, Mercado Libre, Ieichiba. A free (¥0) Japanese house still costs transfer fees, registration and yearly property tax.</p>
     </footer>
   </main>
@@ -297,6 +297,16 @@ fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.js
   for (const id of FILTERS) $(id).addEventListener("input", refilter);
   update();
 }).catch(() => { $("count").textContent = "Couldn't load listings"; $("sub").textContent = "Refresh the page to try again."; });
+
+// the visitor count (functions/api/visitors.js): a browser's first visit adds one, later visits just read it
+let firstVisit = false;
+try { firstVisit = !localStorage.getItem("counted"); } catch (e) {}
+fetch("/api/visitors", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({first: firstVisit})})
+  .then(r => r.ok ? r.json() : Promise.reject(r.status)).then(d => {
+    try { localStorage.setItem("counted", "1"); } catch (e) {}
+    $("visitors").textContent = `${d.total.toLocaleString("en-US")} ${d.total === 1 ? "person has" : "people have"} visited.`;
+    $("visitors").hidden = false;
+  }).catch(() => {});  // no count (a local preview has no API): the line stays hidden
 
 $("more").onclick = () => { shown += PAGE; renderList(); };
 const openSide = open => { $("side").classList.toggle("open", open); $("fbtn").setAttribute("aria-expanded", open); };
