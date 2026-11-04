@@ -63,6 +63,28 @@ KIJIJI_PROVINCES = {
     "quebec": "l9001", "saskatchewan": "l9009", "territories": "l9010",
 }
 
+US_STATE_CODES = dict(zip(US_STATES, """
+AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR
+PA RI SC SD TN TX UT VT VA WA WV WI WY""".split()))
+
+# OLX runs the same classifieds platform in several countries: (land-for-sale search, minimum price in the
+# site's currency, roughly US$500). Below that, OLX is mostly per-m² prices typed into the total price box.
+OLX_SITES = {
+    "PL": ("https://www.olx.pl/nieruchomosci/dzialki/sprzedaz/", 2000),
+    "PT": ("https://www.olx.pt/imoveis/terrenos-quintas/", 500),
+    "RO": ("https://www.olx.ro/imobiliare/terenuri/", 500),
+    "UA": ("https://www.olx.ua/uk/nedvizhimost/zemlya/prodazha-zemli/", 20000),
+    "KZ": ("https://www.olx.kz/nedvizhimost/zemlya/prodazha/", 250000),
+}
+# OLX area fields, in m² per unit. Ukraine and Kazakhstan list land in sotky (1 sotka = 100 m²).
+OLX_AREA_M2 = {"m": 1.0, "area_de_terreno_m2": 1.0, "land_area": 100.0}
+
+# Encuentra24 country sites (Central America), in English
+ENCUENTRA24_COUNTRIES = {"CR": "costa-rica-en", "PA": "panama-en", "NI": "nicaragua-en", "HN": "honduras-en",
+                         "GT": "guatemala-en", "SV": "el-salvador-en"}
+
+ALL_SOURCES = "properstar,landwatch,kijiji,olx,zillow,immobiliare,encuentra24"
+
 AREA_TO_M2 = {"SquareMeter": 1.0, "SquareFoot": 0.09290304, "Hectare": 10000.0,
               "Acre": ACRE_M2, "SquareKilometer": 1e6, "SquareYard": 0.83612736}
 
@@ -145,7 +167,8 @@ WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of)", re.I)
 MIN_PRICE = 1500  # USD-ish floor for Properstar searches; cheaper "prices" there are per-m2 or placeholders
 TILE_SCALE = 0.5  # tiled windows draw pages at half size
 CLAIM_RX = re.compile(r"\b(access deeds?|membership|timeshare|mining claims?|lode claims?|placer claims?|gold claims?|mineral claims?|mineral rights?|unpatented|lode gold|mining|prospecting)\b", re.I)
-LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\blease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenant\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b)", re.I)
+LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\blease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenant\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b"
+                      r"|\barrenda|\bdzierżaw|\bwynajm|\bînchiri|\binchiri|\bоренд|\bаренд|\bin affitto\b|\baffittasi\b)", re.I)
 PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|hect|ha\b)", re.I)
 
 
@@ -156,7 +179,7 @@ def placeholder_price(p):
     return p <= 100 or (len(d) >= 3 and len(set(d)) == 1) or d in ("1234", "12345", "123456")
 
 
-AUCTION_RX = re.compile(r"\b(auction|tender|bid|starting bid)\b", re.I)
+AUCTION_RX = re.compile(r"\b(auction|tender|bid|starting bid|all'asta|asta giudiziaria|subasta|leilão|leilao|licytacj\w*|przetarg\w*|licitați\w*|licitatie|аукціон\w*|аукцион\w*)\b", re.I)
 
 
 def flag(rec):
@@ -187,8 +210,7 @@ def flag(rec):
         f.append("auction/tender - price may be a minimum bid")
     if not acres:
         f.append("no land area listed")
-    elif rec.get("usd_per_acre") is not None and rec["usd_per_acre"] < 10 and not f:
-        f.append("check: under $10/acre")
+    # No per-acre checks: listings are ranked by what you pay. A wrong area doesn't change the price.
     return "; ".join(f)
 
 
@@ -301,7 +323,7 @@ class Browser:
     browsers, so by default a visible Chrome window opens and is reused for every page."""
 
     BLOCK_TITLES = ("access denied", "service unavailable", "just a moment", "attention required",
-                    "are you a robot", "pardon our interruption")
+                    "are you a robot", "pardon our interruption", "azure waf", "verification required")
 
     def __init__(self, headless=False, delay=2.5, slot=None):
         """slot = (x, y, w, h) to show a small tiled window; None = off-screen and minimized."""
@@ -357,6 +379,13 @@ class Browser:
                 except Exception:
                     pass
                 title = (self.page.title() or "").lower()
+                # JavaScript bot checks (Azure WAF on Properstar, Cloudflare) usually pass on their own
+                # within a few seconds and then load the real page
+                for _ in range(8):
+                    if not any(b in title for b in self.BLOCK_TITLES):
+                        break
+                    self.page.wait_for_timeout(2500)
+                    title = (self.page.title() or "").lower()
                 if any(b in title for b in self.BLOCK_TITLES):
                     wait = 20 * (attempt + 1)
                     log("  blocked (%r), waiting %ds then retrying" % (title[:40], wait))
@@ -455,6 +484,7 @@ def parse_properstar(html, slug):
         loc = L.get("location") or {}
         title = L.get("automaticTitle") or ""
         en = [t["text"] for t in (L.get("title") or []) if t.get("language") == "en"]
+        pics = (((L.get("resources") or {}).get("pictures") or {}).get("items") or [{}])
         out.append({
             "source": "properstar",
             "country": loc.get("countryISO") or slug,
@@ -467,6 +497,7 @@ def parse_properstar(html, slug):
             "lat": loc.get("latitude"),
             "lon": loc.get("longitude"),
             "url": "https://www.properstar.com/listing/%s" % L.get("id"),
+            "img": pics[0].get("url"),
         })
     return out, int(res.get("total") or 0)
 
@@ -520,6 +551,7 @@ def parse_landwatch(html, state):
             addr = next((x for x in rest if x.strip() and not re.match(r"^[\d.,]+\s*(beds?|baths?|sq\.? ?ft|sqft)\b", x.strip(), re.I)), "")
         if len(text) > len(desc):
             desc = (desc + " | " + text) if desc else text
+        img = card.find("img", src=re.compile(r"^https://"))
         out.append({
             "source": "landwatch",
             "country": "US",
@@ -531,6 +563,7 @@ def parse_landwatch(html, state):
             "acres": num(am.group(1)) if am else None,
             "lat": None, "lon": None,
             "url": "https://www.landwatch.com" + a["href"].split("#")[0],
+            "img": img["src"] if img else None,
         })
     return out
 
@@ -600,7 +633,7 @@ def run_pool(jobs, store, a):
                     src, key = q.get_nowait()
                 except queue.Empty:
                     break
-                fn = crawl_properstar_one if src == "properstar" else crawl_landwatch_one
+                fn = BROWSER_CRAWLERS[src]
                 try:
                     new = fn(br, store, key, a.pages)
                 except Exception as e:
@@ -619,6 +652,16 @@ def run_pool(jobs, store, a):
     while any(t.is_alive() for t in threads):
         for t in threads:
             t.join(0.5)
+
+
+BROWSER_CRAWLERS = {  # sources that need a real Chrome window: fn(browser, store, key, pages) -> new listings
+    "properstar": lambda br, store, key, pages: crawl_properstar_one(br, store, key, pages),
+    "landwatch": lambda br, store, key, pages: crawl_landwatch_one(br, store, key, pages),
+    "immobiliare": lambda br, store, key, pages: crawl_search(br, store, "immobiliare", key, pages,
+                                                              immobiliare_url, parse_immobiliare),
+    "encuentra24": lambda br, store, key, pages: crawl_search(br, store, "encuentra24", key, pages,
+                                                              encuentra24_url, parse_encuentra24),
+}
 
 
 def parse_kijiji(html, prov):
@@ -657,6 +700,7 @@ def parse_kijiji(html, prov):
             "acres": acres,
             "lat": coords.get("latitude"), "lon": coords.get("longitude"),
             "url": v["url"],
+            "img": (v.get("imageUrls") or [None])[0],
         })
     return out
 
@@ -665,6 +709,8 @@ def crawl_kijiji(fetch, store, provinces, pages):
     for pi, (prov, loc) in enumerate(provinces.items(), 1):
         total_new = 0
         for p in range(1, pages + 1):
+            if STOP.is_set():
+                return
             seg = "" if p == 1 else "page-%d/" % p
             url = "https://www.kijiji.ca/b-land-for-sale/%s/%sc641%s?sort=priceAsc" % (prov, seg, loc)
             if url in store.done:
@@ -682,6 +728,247 @@ def crawl_kijiji(fetch, store, provinces, pages):
             if n == 0 and p > 1:   # Kijiji repeats the last page past the end
                 break
         log("kijiji     [%d/%d] %-28s +%d listings" % (pi, len(provinces), prov, total_new))
+
+
+def crawl_search(fetch, store, src, key, pages, url_for, parse):
+    """Page through one cheapest-first search. parse(html, key) returns a list of records, or None when the page
+    isn't a results page at all (a bot check or an error page): that page is left unmarked so a rerun retries it."""
+    total_new, seen = 0, set()
+    for p in range(1, pages + 1):
+        if STOP.is_set():
+            break
+        url = url_for(key, p)
+        if url in store.done:
+            continue
+        fetch.label = "%s  page %d  (%s)" % (key, p, src)
+        html = fetch.get(url)
+        if not html:
+            break
+        recs = parse(html, key)
+        if recs is None:
+            log("%s %s page %d: no results data on the page (blocked?), skipping the rest" % (src, key, p))
+            break
+        urls = {r["url"] for r in recs if r.get("url")}
+        if not recs or urls <= seen:  # empty, or the site repeats its last page past the end
+            store.mark(url)
+            break
+        seen |= urls
+        total_new += store.add(recs)
+        store.mark(url)
+    return total_new
+
+
+def strip_tags(s):
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", s or "")).strip()
+
+
+def eu_number(s):
+    """'10.000' or '1.335,5' (European thousands dots / decimal comma) -> float."""
+    s = (s or "").strip()
+    if re.fullmatch(r"\d{1,3}(\.\d{3})+(,\d+)?", s) or "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    return num(s)
+
+
+# ---- OLX: Poland, Portugal, Romania, Ukraine, Kazakhstan (plain HTTP; listings are JSON in the page)
+
+def olx_url(cc, p):
+    base, floor = OLX_SITES[cc]
+    q = "search%5Border%5D=filter_float_price:asc&search%5Bfilter_float_price:from%5D=" + str(floor)
+    return base + "?" + ("page=%d&" % p if p > 1 else "") + q
+
+
+def parse_olx(html, cc):
+    m = re.search(r'window\.__PRERENDERED_STATE__\s*=\s*("(?:[^"\\]|\\.)*")', html)
+    if not m:
+        return None
+    try:
+        ads = json.loads(json.loads(m.group(1)))["listing"]["listing"]["ads"]
+    except Exception:
+        return None
+    out = []
+    for a in ads:
+        rp = (a.get("price") or {}).get("regularPrice") or {}
+        if not rp.get("value") or not a.get("url"):
+            continue
+        desc = strip_tags(a.get("description"))[:1500]
+        m2 = None
+        for prm in a.get("params") or []:
+            if prm.get("key") in OLX_AREA_M2 and num(prm.get("normalizedValue")):
+                m2 = num(prm["normalizedValue"]) * OLX_AREA_M2[prm["key"]]
+                break
+        loc, mp = a.get("location") or {}, a.get("map") or {}
+        out.append({
+            "source": "olx",
+            "country": cc,
+            "region": ", ".join(x for x in (loc.get("cityName"), loc.get("regionName")) if x),
+            "title": a.get("title"),
+            "description": desc,
+            "price": float(rp["value"]),
+            "currency": rp.get("currencyCode"),
+            "acres": (m2 / ACRE_M2) if m2 else (acres_from_text(a.get("title")) or acres_from_text(desc)),
+            "lat": mp.get("lat"), "lon": mp.get("lon"),
+            "url": a["url"].split("?")[0],
+            "img": (a.get("photos") or [None])[0],
+        })
+    return out
+
+
+def crawl_olx(fetch, store, countries, pages):
+    for i, cc in enumerate(countries, 1):
+        if STOP.is_set():
+            break
+        n = crawl_search(fetch, store, "olx", cc, pages, olx_url, parse_olx)
+        log("olx        [%d/%d] %-28s +%d listings" % (i, len(countries), site_country(cc), n))
+
+
+# ---- Zillow: lots and land in every US state (plain HTTP; results are JSON in __NEXT_DATA__)
+
+def zillow_url(state, p):
+    fs = {k: {"value": False} for k in ("sf", "tow", "mf", "con", "apa", "manu", "apco")}  # land only
+    fs.update({"sort": {"value": "pricea"}, "price": {"min": 1000}})
+    sq = {"pagination": {"currentPage": p} if p > 1 else {}, "isMapVisible": False, "isListVisible": True,
+          "filterState": fs}
+    return "https://www.zillow.com/%s/land/%s?searchQueryState=%s" % (
+        US_STATE_CODES[state].lower(), "%d_p/" % p if p > 1 else "",
+        requests.utils.quote(json.dumps(sq, separators=(",", ":")), safe=""))
+
+
+def parse_zillow(html, state):
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+    if not m:
+        return None
+    try:
+        res = json.loads(m.group(1))["props"]["pageProps"]["searchPageState"]["cat1"]["searchResults"]["listResults"]
+    except Exception:
+        return None
+    out = []
+    for L in res:
+        info = (L.get("hdpData") or {}).get("homeInfo") or {}
+        if info.get("homeType", "LOT") != "LOT" or not L.get("unformattedPrice") or not L.get("detailUrl"):
+            continue
+        ll = L.get("latLong") or {}
+        url = L["detailUrl"]
+        out.append({
+            "source": "zillow",
+            "country": "US",
+            "region": ", ".join(x for x in (L.get("addressCity"), L.get("addressState")) if x) or state.replace("-", " ").title(),
+            "title": L.get("address") or "",
+            "description": " | ".join(x for x in (L.get("statusText"), L.get("flexFieldText"), L.get("lotAreaString")) if x),
+            "price": float(L["unformattedPrice"]),
+            "currency": "USD",
+            "acres": acres_from_text(L.get("lotAreaString")),
+            "lat": ll.get("latitude"), "lon": ll.get("longitude"),
+            "url": url if url.startswith("http") else "https://www.zillow.com" + url,
+            "img": L.get("imgSrc"),
+        })
+    return out
+
+
+def crawl_zillow(fetch, store, states, pages):
+    for i, st in enumerate(states, 1):
+        if STOP.is_set():
+            break
+        n = crawl_search(fetch, store, "zillow", st, pages, zillow_url, parse_zillow)
+        log("zillow     [%d/%d] %-28s +%d listings" % (i, len(states), st, n))
+
+
+# ---- Immobiliare.it: all of Italy (real Chrome; results are JSON in __NEXT_DATA__)
+
+def immobiliare_url(key, p):
+    # under €1,000 is almost all "price on request" placeholders and €1 auction lots
+    return "https://www.immobiliare.it/vendita-terreni/%s/?criterio=prezzo&ordine=asc&prezzoMinimo=1000%s" % (
+        key, "&pag=%d" % p if p > 1 else "")
+
+
+def parse_immobiliare(html, key):
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))["props"]["pageProps"]["dehydratedState"]["queries"][0]["state"]["data"]
+        res = data["results"]
+    except Exception:
+        return None
+    out = []
+    for r in res:
+        e = r.get("realEstate") or {}
+        price = (e.get("price") or {}).get("value")
+        url = (r.get("seo") or {}).get("url")
+        if not price or not url:
+            continue
+        p = (e.get("properties") or [{}])[0]
+        loc = p.get("location") or {}
+        sm = re.match(r"\s*([\d.,]+)\s*(m²|m2|ha)", p.get("surface") or "")
+        m2 = eu_number(sm.group(1)) * (10000 if sm.group(2) == "ha" else 1) if sm else None
+        photos = (p.get("multimedia") or {}).get("photos") or []
+        img = ((photos[0].get("urls") or {}).get("small") or "").replace("/xxs-c.jpg", "/m-c.jpg") if photos else None
+        desc = strip_tags(p.get("description") or p.get("caption") or "")[:1500]
+        if e.get("contract") == "auction":
+            desc = "Auction. " + desc
+        out.append({
+            "source": "immobiliare",
+            "country": "IT",
+            "region": ", ".join(x for x in (loc.get("city"), loc.get("region")) if x),
+            "title": e.get("title") or "",
+            "description": desc,
+            "price": float(price),
+            "currency": "EUR",
+            "acres": (m2 / ACRE_M2) if m2 else None,
+            "lat": loc.get("latitude"), "lon": loc.get("longitude"),
+            "url": url,
+            "img": img or None,
+        })
+    return out
+
+
+# ---- Encuentra24: Central America (real Chrome; Cloudflare blocks plain requests)
+
+E24_CURRENCY = [("C$", "NIO"), ("₡", "CRC"), ("US$", "USD"), ("$", "USD"), ("Q", "GTQ"), ("L", "HNL")]
+
+
+def encuentra24_url(cc, p):
+    return "https://www.encuentra24.com/%s/real-estate-for-sale-lots-land%s?sort=f_price&dir=asc" % (
+        ENCUENTRA24_COUNTRIES[cc], ".%d" % p if p > 1 else "")
+
+
+def parse_encuentra24(html, cc):
+    soup = BeautifulSoup(html, "lxml")
+    tiles = soup.select("div.d3-ad-tile")
+    if not tiles and not soup.select_one(".d3-category-list__wrapper"):
+        return None
+    out = []
+    for t in tiles:
+        a = t.find("a", href=re.compile(r"/real-estate-for-sale-lots-land/[^/?]+/\d+$"))
+        pr = t.select_one(".d3-ad-tile__price")
+        txt = pr.get_text(" ", strip=True) if pr else ""
+        pm = re.search(r"([\d][\d,]*(?:\.\d+)?)", txt)
+        if not a or not pm:
+            continue
+        cur = next((c for sym, c in E24_CURRENCY if txt.lstrip().startswith(sym)), "USD")
+        area = None
+        for d in t.select(".d3-ad-tile__details-item"):
+            dm = re.search(r"([\d][\d,]*(?:\.\d+)?)\s*m\s*2", d.get_text(" ", strip=True))
+            if dm:
+                area = num(dm.group(1)) / ACRE_M2
+                break
+        get = lambda sel: (t.select_one(sel).get_text(" ", strip=True) if t.select_one(sel) else "")
+        img = t.select_one("img.d3-ad-tile__photo")
+        src = (img.get("data-original") or img.get("src")) if img else None
+        out.append({
+            "source": "encuentra24",
+            "country": cc,
+            "region": get(".d3-ad-tile__location"),
+            "title": get(".d3-ad-tile__title"),
+            "description": get(".d3-ad-tile__short-description")[:1500],
+            "price": num(pm.group(1)),
+            "currency": cur,
+            "acres": area,
+            "lat": None, "lon": None,
+            "url": "https://www.encuentra24.com" + a["href"],
+            "img": src if src and "no-image" not in src else None,
+        })
+    return out
 
 
 # ----------------------------------------------------------------------------- verification
@@ -776,16 +1063,6 @@ def build_outputs(store):
         m = med_m2.get(r.get("country"))
         if m and r["price_usd"] and r["price_usd"] < 20 * m:
             r["flags"] = "; ".join(x for x in (r["flags"], "price may be per m2 (would buy under 20 m2 at local prices)") if x)
-    # far below everything else in the same country -> usually a wrong area or a per-m2 price
-    by = {}
-    for r in recs:
-        if r["usd_per_acre"] and not r["flags"]:
-            by.setdefault(r.get("country"), []).append(r["usd_per_acre"])
-    med = {c: sorted(v)[len(v) // 2] for c, v in by.items() if len(v) >= 20}
-    for r in recs:
-        m = med.get(r.get("country"))
-        if m and r["usd_per_acre"] and r["usd_per_acre"] < m / 250:
-            r["flags"] = "; ".join(x for x in (r["flags"], "far below other listings in this country") if x)
     recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # cheapest total price first
     # same parcel reposted under a new URL ("Lot (PID 123) X" vs "(PID 123) X") -> keep one
     seen, uniq = {}, []
@@ -823,8 +1100,8 @@ def build_outputs(store):
 
 SITE = os.path.join(HERE, "site")
 FLAG_CODES = [("price too low", "L"), ("payment plan", "P"), ("auction", "A"), ("wanted ad", "W"),
-              ("no land area", "N"), ("under $10/acre", "C"), ("lease/rental", "R"), ("placeholder", "X"),
-              ("per m2/acre", "U"), ("price may be per m2", "U"), ("far below other", "O"),
+              ("no land area", "N"), ("lease/rental", "R"), ("placeholder", "X"),
+              ("per m2/acre", "U"), ("price may be per m2", "U"),
               ("mining claim", "M"), ("house listing", "H"), ("too low for Canada", "L")]
 
 
@@ -833,7 +1110,8 @@ def site_codes(flags):
     return "".join(dict.fromkeys(c for txt, c in FLAG_CODES if txt in (flags or "")))
 
 
-SOURCE_NAMES = {"properstar": "Properstar", "landwatch": "LandWatch", "kijiji": "Kijiji"}
+SOURCE_NAMES = {"properstar": "Properstar", "landwatch": "LandWatch", "kijiji": "Kijiji", "olx": "OLX",
+                "zillow": "Zillow", "immobiliare": "Immobiliare.it", "encuentra24": "Encuentra24"}
 COUNTRY_NAMES = {
     "AD": "Andorra", "AE": "United Arab Emirates", "AF": "Afghanistan", "AG": "Antigua & Barbuda",
     "AI": "Anguilla", "AL": "Albania", "AM": "Armenia", "AO": "Angola", "AQ": "Antarctica",
@@ -914,71 +1192,96 @@ def site_acres(v):
     return "<0.01" if v < .01 else "%.2f" % v if v < 1 else "%.1f" % v if v < 100 else format(int(round(v)), ",")
 
 
+# site/data.json row: [price_usd, acres, country, region, title, source, flag codes, url, lat, lon, image]
+PRICE, ACRES, CC, REGION, TITLE, SRC, FLAGS, URL, LAT, LON, IMG = range(11)
+FIRST_CARDS = 24  # listing cards written into index.html, so the top of the grid needs no JavaScript
+
+
 def site_clean(row):
     """Buyable at the listed price: no warning flags ('N' = no area listed is fine for a total-price ranking)."""
-    return row[1] is not None and row[7] in ("", "N")
+    return row[PRICE] is not None and row[FLAGS] in ("", "N")
+
+
+def site_size(v):
+    return "Size not listed" if v is None else "%s %s" % (site_acres(v), "acre" if v == 1 else "acres")
+
+
+def site_card(r, rank):
+    """One listing card. The page's JavaScript card() builds the same markup."""
+    e = html.escape
+    url = e(r[URL])
+    img = ('<img src="%s" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">'
+           % e(r[IMG])) if r[IMG] else ""
+    place = ", ".join(x for x in (r[REGION], site_country(r[CC])) if x)
+    title = r[TITLE] or "Land in " + place
+    return (
+        '<article class="card"><a class="ph" href="%s" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">'
+        '%s<span class="rk">#%d</span></a>'
+        '<div class="bd"><p class="pr">%s</p><p class="sz">%s</p>'
+        '<h3><a href="%s" target="_blank" rel="noopener">%s</a></h3>'
+        '<p class="pl"><span aria-hidden="true">%s</span> %s</p>'
+        '<p class="src">%s</p></div></article>'
+    ) % (url, img, rank, site_money(r[PRICE]), site_size(r[ACRES]), url, e(title), site_flag(r[CC]), e(place),
+         e(SOURCE_NAMES.get(r[SRC], r[SRC] or "")))
+
+
+def site_cards(rows, n=FIRST_CARDS):
+    c = sorted((r for r in rows if site_clean(r)), key=lambda r: r[PRICE])[:n]
+    return "\n      ".join(site_card(r, i) for i, r in enumerate(c, 1))
 
 
 def site_hero(rows):
     """HTML for the hero: cheapest believable listing, plus the next five."""
-    c = sorted((r for r in rows if site_clean(r)), key=lambda r: r[1])
+    c = sorted((r for r in rows if site_clean(r)), key=lambda r: r[PRICE])
     if not c:
         return '<p class="kicker">No listings yet.</p>', "", ""
     top = c[0]
     e = html.escape
-    place = ", ".join(x for x in (top[4], site_country(top[3])) if x)
-    size = ("%s %s in " % (site_acres(top[2]), "acre" if top[2] == 1 else "acres")) if top[2] is not None else "A plot in "
-    per = (site_money(top[0]) + " an acre \u00b7 ") if top[0] is not None else ""
+    place = ", ".join(x for x in (top[REGION], site_country(top[CC])) if x)
+    size = ("%s %s in " % (site_acres(top[ACRES]), "acre" if top[ACRES] == 1 else "acres")) if top[ACRES] is not None else "A plot in "
     runners = []
     for r in c[1:6]:
-        parts = (r[4] or "").split(",")
-        if r[3] in ("US", "CA"):
-            label = parts[-2].strip() if len(parts) >= 2 and parts[-2].strip() else (r[4] or site_country(r[3]))
+        parts = (r[REGION] or "").split(",")
+        if r[CC] in ("US", "CA"):
+            label = parts[-2].strip() if len(parts) >= 2 and parts[-2].strip() else (r[REGION] or site_country(r[CC]))
         else:
-            label = site_country(r[3])
-        ac = (", %s ac" % site_acres(r[2])) if r[2] is not None else ""
+            label = site_country(r[CC])
+        ac = (", %s ac" % site_acres(r[ACRES])) if r[ACRES] is not None else ""
         runners.append('<a href="%s" target="_blank" rel="noopener"><b>%s</b> %s %s%s</a>' % (
-            e(r[8]), site_money(r[1]), site_flag(r[3]), e(label), e(ac)))
+            e(r[URL]), site_money(r[PRICE]), site_flag(r[CC]), e(label), e(ac)))
     body = (
         '<p class="kicker">The cheapest land you can buy on earth right now</p>\n'
         '    <h1 class="price"><span class="sign">%s</span><span class="per">total</span></h1>\n'
         '    <p class="where">%s%s %s</p>\n'
-        '    <p class="facts">%slisted on %s</p>\n'
+        '    <p class="facts">Listed on %s</p>\n'
         '    <a class="btn" href="%s" target="_blank" rel="noopener">Open the listing</a>\n'
         '    <div class="runnersup">%s</div>'
-    ) % (site_money(top[1]), e(size), e(place), site_flag(top[3]), per, SOURCE_NAMES.get(top[6], top[6]),
-         e(top[8]), "".join(runners))
-    headline = "%s buys %s%s" % (site_money(top[1]), size if top[2] is not None else "a plot in ", place)
+    ) % (site_money(top[PRICE]), e(size), e(place), site_flag(top[CC]), SOURCE_NAMES.get(top[SRC], top[SRC]),
+         e(top[URL]), "".join(runners))
+    headline = "%s buys %s%s" % (site_money(top[PRICE]), size if top[ACRES] is not None else "a plot in ", place)
     return body, headline, place
 
 
 def site_ranks(rows, limit=30):
-    """HTML for the by-country ranking: cheapest believable listing per country, cheapest country first."""
+    """HTML for the by-country grid: cheapest believable listing per country, cheapest country first."""
     by = {}
     for r in rows:
         if not site_clean(r):
             continue
-        b = by.setdefault(r[3], {"min": r, "n": 0})
+        b = by.setdefault(r[CC], {"min": r, "n": 0})
         b["n"] += 1
-        if r[1] < b["min"][1]:
+        if r[PRICE] < b["min"][PRICE]:
             b["min"] = r
-    items = sorted(by.items(), key=lambda kv: kv[1]["min"][1])[:limit]
-    if not items:
-        return ""
-    lo = math.log10(max(1, items[0][1]["min"][1]))
-    hi = math.log10(max(10, items[-1][1]["min"][1]))
+    items = sorted(by.items(), key=lambda kv: kv[1]["min"][PRICE])[:limit]
     out = []
-    for cc, b in items:
+    for i, (cc, b) in enumerate(items, 1):
         m = b["min"]
-        w = 8 + 92 * (math.log10(max(1, m[1])) - lo) / max(.01, hi - lo)
-        ac = ('<small style="display:block;font-weight:400;color:var(--ink-2);font-size:13px">%s ac</small>'
-              % site_acres(m[2])) if m[2] is not None else ""
         out.append(
-            '<button class="rank" type="button" data-cc="%s"><span class="fl">%s</span>\n'
-            '      <span class="cn">%s<small>%s listings</small></span>\n'
-            '      <span class="v">%s%s</span><span class="bar"><i style="width:%.1f%%"></i></span></button>'
-            % (html.escape(cc), site_flag(cc), html.escape(site_country(cc)), format(b["n"], ","),
-               site_money(m[1]), ac, w))
+            '<button class="rank" type="button" data-cc="%s"><span class="ri">%d</span>'
+            '<span class="fl" aria-hidden="true">%s</span><span class="cn">%s</span>'
+            '<span class="v">%s</span><span class="meta">%s · %s listings</span></button>'
+            % (html.escape(cc), i, site_flag(cc), html.escape(site_country(cc)), site_money(m[PRICE]),
+               html.escape(site_size(m[ACRES])), format(b["n"], ",")))
     return "\n    ".join(out)
 
 
@@ -1000,9 +1303,9 @@ def build_site(recs, fresh_days=3):
         rnd = lambda v, d: None if v is None else round(v, d)
         cc = (r.get("country") or "").upper() if len(r.get("country") or "") == 2 else (r.get("country") or "")
         countries.add(cc)
-        rows.append([rnd(r.get("usd_per_acre"), 2), rnd(r["price_usd"], 0), rnd(r.get("acres"), 3), cc,
-                     (r.get("region") or "")[:60], (r.get("title") or "")[:110], r.get("source"), codes, r["url"],
-                     rnd(r.get("lat"), 4), rnd(r.get("lon"), 4)])
+        rows.append([rnd(r["price_usd"], 0), rnd(r.get("acres"), 3), cc, (r.get("region") or "")[:60],
+                     (r.get("title") or "")[:110], r.get("source"), codes, r["url"],
+                     rnd(r.get("lat"), 4), rnd(r.get("lon"), 4), r.get("img") or None])
     stamp = datetime.now().astimezone()
     data = {"generated": stamp.isoformat(timespec="seconds"), "countries": len(countries), "rows": rows}
     with open(os.path.join(SITE, "data.json"), "w") as f:
@@ -1012,10 +1315,15 @@ def build_site(recs, fresh_days=3):
 
 
 def write_site(rows, countries, stamp):
-    """Fill site_template.html with the hero, country ranking and filter options -> site/index.html."""
+    """Fill site_template.html with the hero, first listing cards, country grid and filters -> site/index.html."""
     hero, headline, place = site_hero(rows)
     options = "".join('<option value="%s">%s %s</option>' % (html.escape(cc), site_flag(cc), html.escape(site_country(cc)))
                       for cc in sorted(countries, key=site_country))
+    srcs = sorted({r[SRC] for r in rows if r[SRC]}, key=lambda s: SOURCE_NAMES.get(s, s).lower())
+    src_options = "".join('<option value="%s">%s</option>' % (html.escape(s), html.escape(SOURCE_NAMES.get(s, s)))
+                          for s in srcs)
+    names = [SOURCE_NAMES.get(s, s) for s in srcs] or list(SOURCE_NAMES.values())
+    src_list = ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else names[0]
     updated = "Updated %s from %s live listings in %d countries." % (
         stamp.strftime("%B %-d, %Y at %-I:%M %p"), format(len(rows), ","), len(countries))
     description = ("Today's cheapest land on earth: %s. Every cheap plot for sale worldwide, "
@@ -1023,7 +1331,9 @@ def write_site(rows, countries, stamp):
         "The cheapest pieces of land you can actually buy anywhere in the world, ranked by total price and updated daily from live listings."
     with open(os.path.join(HERE, "site_template.html")) as f:
         page = f.read()
-    for key, val in (("<!--HERO-->", hero), ("<!--RANKS-->", site_ranks(rows)), ("<!--COUNTRIES-->", options),
+    for key, val in (("<!--HERO-->", hero), ("<!--CARDS-->", site_cards(rows)), ("<!--RANKS-->", site_ranks(rows)),
+                     ("<!--COUNTRIES-->", options), ("<!--SOURCES-->", src_options),
+                     ("{{SOURCE_LIST}}", html.escape(src_list)), ("{{SOURCE_COUNT}}", str(len(names))),
                      ("<!--UPDATED-->", html.escape(updated)), ("{{DESCRIPTION}}", html.escape(description, quote=True)),
                      ("{{ROWS}}", format(len(rows), ","))):
         assert key in page, "site_template.html is missing " + key
@@ -1041,10 +1351,12 @@ def csv_list(s, default):
 
 def main():
     ap = argparse.ArgumentParser(description="Find the cheapest land listings worldwide.")
-    ap.add_argument("--sources", default="properstar,landwatch,kijiji")
+    ap.add_argument("--sources", default=ALL_SOURCES, help="comma-separated, default: " + ALL_SOURCES)
     ap.add_argument("--pages", type=int, default=10, help="pages per country/state/province (20-25 listings each)")
     ap.add_argument("--countries", help="Properstar country slugs, comma-separated (default: all)")
-    ap.add_argument("--states", help="US state slugs for LandWatch, e.g. new-mexico,arizona (default: all)")
+    ap.add_argument("--states", help="US state slugs for LandWatch and Zillow, e.g. new-mexico,arizona (default: all)")
+    ap.add_argument("--olx", help="OLX countries, e.g. PL,RO (default: %s)" % ",".join(OLX_SITES))
+    ap.add_argument("--central-america", help="Encuentra24 countries, e.g. CR,PA (default: %s)" % ",".join(ENCUENTRA24_COUNTRIES))
     ap.add_argument("--provinces", help="Kijiji provinces, e.g. nova-scotia,saskatchewan (default: all)")
     ap.add_argument("--workers", type=int, default=4, help="Chrome windows scraping in parallel")
     ap.add_argument("--tile", choices=["right", "full"], default="right",
@@ -1072,26 +1384,45 @@ def main():
         provs = {p: KIJIJI_PROVINCES[p] for p in csv_list(a.provinces, list(KIJIJI_PROVINCES))}
         log("starting: sources=%s pages=%d (%d already-scraped listings on disk)" % (
             ",".join(sources), a.pages, len(store.urls)))
-        br = None
+        olx = [c.upper() for c in csv_list(a.olx, list(OLX_SITES))]
+        e24 = [c.upper() for c in csv_list(a.central_america, list(ENCUENTRA24_COUNTRIES))]
+        unknown = set(sources) - set(ALL_SOURCES.split(","))
+        if unknown:
+            ap.error("unknown source(s): %s (choose from %s)" % (",".join(sorted(unknown)), ALL_SOURCES))
+        plain = []  # sites that answer plain HTTP requests: one background thread each, beside the Chrome windows
+        if "kijiji" in sources:
+            plain.append(("kijiji", lambda: crawl_kijiji(Plain(delay=max(1.0, a.delay / 2)), store, provs, a.pages)))
+        if "olx" in sources:
+            plain.append(("olx", lambda: crawl_olx(Plain(delay=max(1.0, a.delay / 2)), store, olx, a.pages)))
+        if "zillow" in sources:
+            plain.append(("zillow", lambda: crawl_zillow(Plain(delay=a.delay), store, states, a.pages)))
+        threads = []
+        for name, fn in plain:
+            def guarded(fn=fn, name=name):
+                try:
+                    fn()
+                except Exception as e:
+                    log("%s failed: %s" % (name, str(e)[:160]))
+            threads.append(threading.Thread(target=guarded, name=name, daemon=True))
+            threads[-1].start()
         try:
-            if "kijiji" in sources:
-                crawl_kijiji(Plain(delay=max(1.0, a.delay / 2)), store, provs, a.pages)
+            per_source = {"landwatch": states, "properstar": countries, "immobiliare": ["italia"], "encuentra24": e24}
+            lists = [[(src, key) for key in keys] for src, keys in per_source.items() if src in sources]
             jobs = []
-            lw = [("landwatch", st) for st in states] if "landwatch" in sources else []
-            ps = [("properstar", c) for c in countries] if "properstar" in sources else []
-            for i in range(max(len(lw), len(ps))):  # interleave so no single site gets every window at once
-                jobs += lw[i:i + 1] + ps[i:i + 1]
+            for i in range(max([len(l) for l in lists] or [0])):  # interleave so no single site gets every window
+                for l in lists:
+                    jobs += l[i:i + 1]
             if jobs:
                 log("%d browser jobs across %d Chrome windows" % (len(jobs), min(a.workers, len(jobs))))
                 run_pool(jobs, store, a)
+            while any(t.is_alive() for t in threads):
+                for t in threads:
+                    t.join(0.5)
             if a.verify and not STOP.is_set():
                 verify_cheapest(store, a, a.verify)
         except KeyboardInterrupt:
             STOP.set()
             log("stopped by user - progress is saved; rerun the same command to resume")
-        finally:
-            if br:
-                br.close()
     build_outputs(store)
 
 
