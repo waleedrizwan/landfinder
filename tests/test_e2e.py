@@ -1,7 +1,7 @@
 """Browser smoke tests: build the site from fixture listings, load it in headless Chromium, check it renders.
 Files are served through Playwright request routing on a fake origin, so no port is opened and nothing
 outside the page itself (fonts, Leaflet, map tiles) is fetched. Skip with: pytest -m "not e2e"."""
-import glob, mimetypes, os
+import glob, json, mimetypes, os
 from datetime import datetime
 
 import pytest
@@ -68,9 +68,14 @@ def site(workdir):
     return str(workdir / "site")
 
 
-def wait_for_table(page):
+def wait_for_data(page):
+    """Scroll to the listings so the page fetches data.json, then wait until the grid is drawn from it."""
     page.locator("#all").scroll_into_view_if_needed()
-    page.wait_for_function("document.querySelectorAll('#tb tr').length > 0", timeout=15000)
+    page.wait_for_function("!document.getElementById('count').textContent.startsWith('The cheapest')", timeout=15000)
+
+
+def first_price(page):
+    return page.inner_text("#grid .card:first-child .pr")
 
 
 def test_desktop(browser, site):
@@ -80,40 +85,45 @@ def test_desktop(browser, site):
     assert "New Mexico, United States" in page.inner_text("#hero .where")
     assert page.locator("#hero .runnersup a").count() == 5
     assert page.locator(".rank").count() == 3  # US, Paraguay, Canada
+    assert page.locator("#grid .card").count() > 0  # the first cards are built into the page
+    assert first_price(page) == "$749"
     assert page.locator("#more").is_hidden()  # nothing to page through before the data loads
 
-    wait_for_table(page)
+    wait_for_data(page)
     total = page.inner_text("#count")
     assert total.endswith(" listings") and not total.startswith("0 ")
-    assert "$749" in page.inner_text("#tb tr:first-child")
+    assert first_price(page) == "$749"
+    page.locator("#map-sec").scroll_into_view_if_needed()  # the map is built when it comes into view
+    page.wait_for_function("document.getElementById('map').textContent !== ''", timeout=15000)
     assert page.inner_text("#map") == "The map couldn't load."  # Leaflet is blocked in this test
+    page.locator("#all").scroll_into_view_if_needed()
 
     page.select_option("#fc", "PY")
     assert page.inner_text("#count") == "3 listings"
     page.select_option("#fc", "")
     page.fill("#q", "no such place anywhere")
     assert page.inner_text("#count") == "0 listings"
-    assert "No listings match these filters." in page.inner_text("#tb")
+    assert "No listings match these filters." in page.inner_text("#grid")
     assert page.locator("#more").is_hidden()
-    page.click("td.empty button")
+    page.click("#grid .empty button")
     assert page.inner_text("#count") == total
 
-    page.click('th button[data-k="1"]')  # price, now most expensive first
-    assert page.locator('th button[data-k="1"]').get_attribute("aria-sort") == "descending"
-    assert "$749" not in page.inner_text("#tb tr:first-child")
+    page.select_option("#fs", "price-desc")
+    assert first_price(page) != "$749"
+    page.select_option("#fs", "price-asc")
+    assert first_price(page) == "$749"
     assert errors == []
 
 
 def test_phone(browser, site):
     page, errors = open_page(browser, site, {"width": 390, "height": 844})
     assert page.evaluate("document.documentElement.scrollWidth") <= 390
-    wait_for_table(page)
-    assert page.locator("thead").is_hidden()
-    assert page.locator("#fs").is_visible()  # phones sort with a menu instead of the header row
-    page.select_option("#fs", "1,0")
-    assert "$749" not in page.inner_text("#tb tr:first-child")
-    page.select_option("#fs", "1,1")
-    assert "$749" in page.inner_text("#tb tr:first-child")
+    wait_for_data(page)
+    assert page.locator("#fs").is_visible()
+    page.select_option("#fs", "price-desc")
+    assert first_price(page) != "$749"
+    page.select_option("#fs", "price-asc")
+    assert first_price(page) == "$749"
     assert page.evaluate("document.documentElement.scrollWidth") <= 390
     assert errors == []
 
@@ -128,13 +138,23 @@ def test_error_state_when_data_fails(browser, site):
     assert errors == []
 
 
-@pytest.mark.skipif(not os.path.exists(os.path.join(ROOT, "site", "data.json")), reason="no site/ build here")
+def real_build_is_current():
+    """site/ is rebuilt by every run; one from before the current row format can't match the page."""
+    try:
+        with open(os.path.join(ROOT, "site", "data.json")) as f:
+            rows = json.load(f)["rows"]
+    except (OSError, ValueError, KeyError):
+        return False
+    return bool(rows) and len(rows[0]) == lf.KIND + 1
+
+
+@pytest.mark.skipif(not real_build_is_current(), reason="no site/ build in the current format here")
 def test_real_site_build(browser):
     """The site/ folder from the last real run, if there is one."""
     page, errors = open_page(browser, os.path.join(ROOT, "site"), {"width": 1440, "height": 900})
     assert page.inner_text("#hero .sign").startswith("$")
     assert page.locator(".rank").count() > 5
-    wait_for_table(page)
-    assert page.locator("#tb tr").count() == 50
+    wait_for_data(page)
+    assert page.locator("#grid .card").count() == 48
     assert page.locator("#more").is_visible()
     assert errors == []

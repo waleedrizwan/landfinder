@@ -58,7 +58,7 @@ def built(workdir):
     with open(workdir / "results.csv") as f:
         rows = list(csv.DictReader(f))
     return {"dir": workdir, "data": data, "page": page, "csv": rows,
-            "by_url": {r[8]: r for r in data["rows"]}, "csv_by_url": {r["url"]: r for r in rows}}
+            "by_url": {r[lf.URL]: r for r in data["rows"]}, "csv_by_url": {r["url"]: r for r in rows}}
 
 
 def test_writes_all_outputs(built):
@@ -82,14 +82,14 @@ def test_reposted_parcel_is_kept_once(built):
 def test_per_m2_price_is_flagged_and_hidden_on_site(built):
     r = built["csv_by_url"]["https://www.properstar.com/listing/ch-per-m2"]
     assert "price may be per m2 (would buy under 20 m2" in r["flags"]
-    assert "U" in built["by_url"]["https://www.properstar.com/listing/ch-per-m2"][7]
+    assert "U" in built["by_url"]["https://www.properstar.com/listing/ch-per-m2"][lf.FLAGS]
 
 
 def test_same_price_on_many_plots_is_a_placeholder(built):
     for i in range(5):
         r = built["csv_by_url"]["https://www.properstar.com/listing/bg%d" % i]
         assert "same price on many different-size plots" in r["flags"]
-        assert "X" in built["by_url"][r["url"]][7]
+        assert "X" in built["by_url"][r["url"]][lf.FLAGS]
 
 
 def test_site_rows(built):
@@ -98,11 +98,11 @@ def test_site_rows(built):
     assert "https://www.kijiji.ca/v-land-for-sale/wanted" not in urls  # wanted ads are dropped
     assert "https://www.landwatch.com/old/pid/1" not in urls  # not seen in the last 3 days
     assert "https://www.landwatch.com/old/pid/1" in built["csv_by_url"]  # ...but still in results.csv
-    assert data["countries"] == len({r[3] for r in data["rows"]}) == 5
+    assert data["countries"] == len({r[lf.CC] for r in data["rows"]}) == 5
     for r in data["rows"]:
-        assert len(r) == 11
-        assert r[1] is not None
-    assert built["by_url"]["https://www.properstar.com/listing/114526942"][1] == 4400  # 33,000,000 PYG
+        assert len(r) == lf.KIND + 1
+        assert r[lf.PRICE] is not None
+    assert built["by_url"]["https://www.properstar.com/listing/114526942"][lf.PRICE] == 4400  # 33,000,000 PYG
 
 
 def test_hero_is_cheapest_believable_listing(built):

@@ -41,14 +41,14 @@ def test_no_area(rates):
     ({"title": "Lote 500 m2, precio por m2"}, "per m2/acre/hectare"),
     ({"description": "Sold at auction, starting bid $5,000"}, "auction/tender"),
     ({"title": "WANTED: 5 acres near Calgary"}, "wanted ad"),
-    ({"price": 4000, "acres": 1000.0}, "check: under $10/acre"),
 ])
 def test_flags(rates, kw, expected):
     assert expected in flags_for(rates, **kw)
 
 
-def test_under_10_an_acre_only_when_nothing_else_is_wrong(rates):
-    assert "under $10/acre" not in flags_for(rates, price=4000, acres=1000.0, title="Farmland for lease")
+def test_no_per_acre_flag(rates):
+    # listings are ranked by total price, so a very low price per acre (often a wrong area) isn't a warning
+    assert flags_for(rates, price=4000, acres=1000.0) == ""
 
 
 def test_kijiji_reparses_area_from_text(rates):
@@ -99,7 +99,6 @@ def test_real_monthly_price_listing_is_never_shown_at_the_monthly_price(rates):
     ("price may be per m2/acre/hectare", "U"),
     ("price may be per m2 (would buy under 20 m2 at local prices)", "U"),
     ("placeholder price - same price on many different-size plots", "X"),
-    ("far below other listings in this country", "O"),
     ("may be payment plan price - listed price is the down payment", "P"),
     ("wanted ad - not a listing", "W"),
 ])
@@ -123,7 +122,6 @@ def test_every_flag_text_has_a_site_code(rates):
              {"title": "auction"}, {"title": "wanted: land"}, {"acres": None}, {"price": 4000, "acres": 1000.0}]
     extra = ["placeholder price - same price on many different-size plots",
              "price may be per m2 (would buy under 20 m2 at local prices)",
-             "far below other listings in this country",
              "may be payment plan price - listed price is the down payment"]
     texts = extra[:]
     for kw in cases:
