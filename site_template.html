@@ -10,9 +10,9 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <style>
-:root{--bg:#fff;--fg:#222;--muted:#666;--line:#ddd;--card:#fff;--link:#1a5fb4;--warn:#b54708}
+:root{--bg:#fff;--fg:#222;--muted:#666;--line:#ddd;--card:#fff;--hover:#f1f3f5;--link:#1a5fb4;--warn:#b54708}
 @media (prefers-color-scheme:dark){
-  :root{--bg:#121212;--fg:#e6e6e6;--muted:#9a9a9a;--line:#333;--card:#1c1c1c;--link:#78aeed;--warn:#f0a050}
+  :root{--bg:#121212;--fg:#e6e6e6;--muted:#9a9a9a;--line:#333;--card:#1c1c1c;--hover:#2a2a2a;--link:#78aeed;--warn:#f0a050}
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
@@ -28,9 +28,23 @@ header h1{font-size:18px;margin:0}
 .bar{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 12px}
 .bar input,.bar select{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:9px 12px}
 .bar #q{flex:1 1 320px;min-width:0}
-.bar #fcity{max-width:220px}
 .bar #fcur{max-width:200px}
-.bar #ftype{max-width:220px}
+.ms{position:relative;flex:0 1 190px;min-width:150px}
+.bar .ms input{width:100%;padding-right:32px;cursor:pointer;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23888' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 12px center}
+.bar .ms input:focus{cursor:text}
+.ms input::placeholder{color:var(--muted);opacity:1}
+.ms input.has::placeholder{color:var(--fg)}
+.ms-pop{position:absolute;z-index:1100;top:calc(100% + 4px);left:0;width:max(100%,260px);max-width:calc(100vw - 32px);max-height:340px;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:4px 0;font-size:14px}
+.ms-pop.right{left:auto;right:0}
+.ms-pop [role=option]{display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer}
+.ms-pop [role=option].on,.ms-pop [role=option]:hover{background:var(--hover)}
+.ms-pop .box{width:16px;height:16px;flex:none;border:1.5px solid var(--muted);border-radius:4px;display:grid;place-items:center}
+.ms-pop [aria-selected=true] .box{background:var(--link);border-color:var(--link)}
+.ms-pop [aria-selected=true] .box::after{content:"";width:8px;height:4px;border:solid var(--card);border-width:0 0 2px 2px;transform:translateY(-1px) rotate(-45deg)}
+.ms-pop .grp{font-size:12px;font-weight:600;color:var(--muted);padding:10px 12px 4px}
+.ms-pop .none{padding:8px 12px;color:var(--muted)}
+.ms-pop .clr{display:block;width:100%;text-align:left;font:inherit;background:none;border:0;border-bottom:1px solid var(--line);color:var(--link);padding:8px 12px;cursor:pointer;border-radius:0}
+@media (max-width:600px){.ms{flex:1 1 calc(50% - 4px);min-width:0}}
 .bar button{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:9px 14px;cursor:pointer}
 .bar button[aria-expanded="true"]{border-color:var(--fg)}
 .adv{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px}
@@ -85,12 +99,10 @@ footer p{margin:4px 0}
 <main class="wrap">
   <div class="bar">
     <input id="q" type="search" placeholder="Search by town, region, country or title" aria-label="Search">
-    <select id="fc" aria-label="Country"><option value="">All countries</option></select>
-    <select id="fcity" aria-label="City" hidden><option value="">All cities</option></select>
-    <select id="ftype" aria-label="Type of property"><option value="">All property types</option>
-      <optgroup label="Type of property" id="ftype-kinds"></optgroup>
-      <optgroup label="Ruins, castles &amp; churches"><option value="sR">Ruins &amp; fixer-uppers</option><option value="sK">Castles &amp; manors</option><option value="sC">Churches &amp; chapels</option></optgroup>
-    </select>
+    <div class="ms" id="fcont" data-label="Continent" data-all="All continents" data-search="Search continents"></div>
+    <div class="ms" id="fc" data-label="Country" data-all="All countries" data-search="Search countries"></div>
+    <div class="ms" id="fcity" data-label="City" data-all="All cities" data-search="Search cities" hidden></div>
+    <div class="ms" id="ftype" data-label="Type of property" data-all="All property types" data-search="Search property types"></div>
     <select id="fcur" aria-label="Currency"></select>
     <button id="advbtn" type="button" aria-expanded="false" aria-controls="adv">Advanced filters</button>
   </div>
@@ -115,7 +127,7 @@ footer p{margin:4px 0}
   <section id="p-map" hidden>
     <div class="count" id="mcount"></div>
     <div id="map"></div>
-    <p class="note">Click a group to zoom in and a price to see the listing. Pick a country or city above to jump to it.
+    <p class="note">Click a group to zoom in and a price to see the listing. Pick a continent, country or city above to jump to it.
       LandWatch listings are pinned at their ZIP code's center. Mercado Libre listings have no location, so they aren't on the map.</p>
   </section>
 </main>
@@ -157,21 +169,32 @@ const FLAGS = {L:"Price looks too low: may be a monthly payment, a per-m² price
 // property type, worked out from each site's category and the listing text when the site is built
 const TYPES = {V:"Vacant land", L:"Building lot", F:"Farmland", T:"Forest", R:"Recreational", W:"Waterfront", C:"Commercial",
   G:"Dacha plot", B:"Land with house", H:"House"};
-for (const [k, v] of Object.entries(TYPES)) $("ftype-kinds").append(new Option(v, k));
+// each country's continent (Central America and the Caribbean count as North America; the Middle East as Asia)
+const CONTINENT = {};
+for (const [name, codes] of Object.entries({
+  "Africa": "DZ AO BJ BW BF BI CV CM CF TD KM CG CD CI DJ EG GQ ER SZ ET GA GM GH GN GW KE LS LR LY MG MW ML MR MU YT MA MZ NA NE NG RE RW SH ST SN SC SL SO ZA SS SD TZ TG TN UG EH ZM ZW",
+  "Asia": "AF AM AZ BH BD BT BN KH CN GE HK IN ID IR IQ IL JP JO KZ KW KG LA LB MO MY MV MN MM NP KP OM PK PS PH QA SA SG KR LK SY TW TJ TH TL TR TM AE UZ VN YE",
+  "Europe": "AX AL AD AT BY BE BA BG HR CY CZ DK EE FO FI FR DE GI GR GG HU IS IE IM IT JE XK LV LI LT LU MT MD MC ME NL MK NO PL PT RO RU SM RS SK SI ES SJ SE CH UA GB VA",
+  "North America": "AI AG AW BS BB BZ BM BQ VG CA KY CR CU CW DM DO SV GL GD GP GT HT HN JM MQ MX MS NI PA PR BL KN LC MF PM VC SX TT TC US VI",
+  "South America": "AR BO BR CL CO EC FK GF GY PY PE SR UY VE",
+  "Oceania": "AS AU CK FJ PF GU KI MH FM NR NC NZ NU NF MP PW PG PN WS SB TK TO TV VU WF"}))
+  for (const cc of codes.split(" ")) CONTINENT[cc] = name;
+const contOf = cc => CONTINENT[cc] || "Other";
 const SPECIAL = {R:"Ruin", K:"Castle", C:"Church"};
-const FILTERS = ["q", "fc", "fcity", "ftype", "fmin", "fmax", "facmin", "facmax", "fppa", "fsrc", "farea", "fflag"];
+const FILTERS = ["q", "fmin", "fmax", "facmin", "facmax", "fppa", "fsrc", "farea", "fflag"];
 
 // buyable at the listed price: no warning flags ("N" = no area listed is fine when ranking by total price)
 const clean = r => r[1] != null && (!r[7] || r[7] === "N");
 
-let ALL = [], VIEW = [], TOWNS = {}, townList = "", shown = PAGE, map, pins, mapAt = null, mapTimer;
+let ALL = [], VIEW = [], TOWNS = {}, COUNTRIES = [], shown = PAGE, map, pins, mapAt = null, mapTimer;
 
 fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
   ALL = d.rows.filter(r => r[1] != null).sort((a, b) => a[1] - b[1]);
   for (const r of ALL) r.text = (r[5] + " " + (r[11] || "") + " " + r[4] + " " + cname(r[3])).toLowerCase();
   $("updated").textContent = `Updated ${new Date(d.generated).toLocaleString("en-US", {dateStyle:"medium", timeStyle:"short"})}.`;
   const cs = [...new Set(ALL.map(r => r[3]))].sort((a, b) => cname(a).localeCompare(cname(b)));
-  for (const cc of cs) $("fc").add(new Option(cname(cc), cc));
+  COUNTRIES = cs;
+  F.cont.setOptions([...new Set(cs.map(contOf))].sort().map(ct => ({value: ct, label: ct})));
   for (const r of ALL) if (r[13]) (TOWNS[r[3]] ??= new Set()).add(r[13]);  // each country's towns, biggest first
   const az = new Intl.Collator("en").compare, pop = d.populations || {};
   for (const cc in TOWNS) TOWNS[cc] = [...TOWNS[cc]].sort((a, b) =>  // towns of unknown size go last, A to Z
@@ -189,7 +212,6 @@ fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.js
     try { localStorage.setItem("currency", CUR); } catch (e) {}
     update();
   });
-  $("fc").addEventListener("input", () => { $("fcity").value = ""; });  // a new country starts with all its towns
   for (const id of FILTERS) $(id).addEventListener("input", () => { shown = PAGE; update(); });
   update();
 }).catch(() => { $("count").textContent = "Couldn't load listings. Refresh to try again."; });
@@ -198,6 +220,7 @@ $("more").onclick = () => { shown += PAGE; renderGrid(); };
 $("advbtn").onclick = () => { const open = $("adv").hidden; $("adv").hidden = !open; $("advbtn").setAttribute("aria-expanded", open); };
 $("reset").onclick = () => {
   for (const id of FILTERS) { const el = $(id); if (el.type === "checkbox") el.checked = false; else el.value = ""; }
+  for (const m of Object.values(F)) m.clear();
   shown = PAGE; update();
 };
 $("t-list").onclick = () => tab("list");
@@ -209,27 +232,26 @@ function tab(name){
 }
 
 function update(){
-  const q = $("q").value.trim().toLowerCase(), cc = $("fc").value, town = $("fcity").value, src = $("fsrc").value,
-        pick = $("ftype").value, sp = pick[0] === "s" ? pick[1] : "", ty = sp ? "" : pick, num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
+  const conts = F.cont.sel;  // the Country list: every country, or just the picked continents'
+  F.country.setOptions(COUNTRIES.filter(c => !conts.size || conts.has(contOf(c))).map(c => ({value: c, label: cname(c)})));
+  const ccs = F.country.sel, towns = F.city.sel, picks = F.type.sel, src = $("fsrc").value, q = $("q").value.trim().toLowerCase(),
+        sps = [...picks].filter(p => p[0] === "s").map(p => p[1]), tys = new Set([...picks].filter(p => p[0] !== "s")),
+        num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
         amn = num("facmin"), amx = num("facmax"), ppa = num("fppa"),
         area = $("farea").checked, fl = $("fflag").checked;
   // picking "House" or one of the ruins and castles shows house listings, which the "house listing" flag otherwise hides
-  const ok = r => fl || clean(r) || ((ty === "H" || sp) && !r[7].replace(/[HN]/g, ""));
+  const ok = r => fl || clean(r) || ((tys.has("H") || sps.length) && !r[7].replace(/[HN]/g, ""));
   // every filter but City
-  const pass = r => ok(r) && (!cc || r[3] === cc) && (!src || r[6] === src) && (!ty || r[12] === ty)
-    && (!sp || (r[16] || "").includes(sp))
+  const pass = r => ok(r) && (!conts.size || conts.has(contOf(r[3]))) && (!ccs.size || ccs.has(r[3])) && (!src || r[6] === src)
+    && (!picks.size || tys.has(r[12]) || sps.some(s => (r[16] || "").includes(s)))
     && (isNaN(mn) || price(r) >= mn) && (isNaN(mx) || price(r) <= mx)
     && (!area || r[2] != null)
     && (isNaN(amn) || (r[2] != null && r[2] >= amn)) && (isNaN(amx) || (r[2] != null && r[2] <= amx))
     && (isNaN(ppa) || (r[0] != null && r[0] * RATE <= ppa))
     && (!q || r.text.includes(q));
-  const near = new Set([town]);  // towns with listings under the other filters, plus the one picked
-  VIEW = ALL.filter(r => {
-    if (!pass(r)) return false;
-    near.add(r[13]);
-    return !town || r[13] === town;
-  });
-  fillTowns(cc, town, near);
+  const base = ALL.filter(pass), near = new Set(base.map(r => r[3] + "|" + r[13]));  // towns with listings under the other filters
+  fillTowns(near);
+  VIEW = towns.size ? base.filter(r => towns.has(r[3] + "|" + r[13])) : base;
   renderGrid();
   if (map && !$("p-map").hidden) { clearTimeout(mapTimer); mapTimer = setTimeout(renderMap, 150); }
 }
@@ -246,16 +268,115 @@ function setCurrency(c){
   for (const r of ALL) r.pin = null;  // map pins show prices too: make them again
 }
 
-// the City list: the picked country's towns that have listings under the other filters
-function fillTowns(cc, town, near){
-  const el = $("fcity"), list = (TOWNS[cc] || []).filter(t => near.has(t)), key = list.join("\n");
-  el.hidden = !TOWNS[cc];
-  if (key === townList) return;
-  townList = key;
-  el.length = 1;  // keeps "All cities"
-  for (const t of list) el.add(new Option(t, t));
-  el.value = town;
+// the City list: the picked countries' towns that have listings under the other filters, plus any already ticked
+function fillTowns(near){
+  const ccs = COUNTRIES.filter(c => F.country.sel.has(c) && TOWNS[c]), items = [];
+  for (const cc of ccs) for (const t of TOWNS[cc]) {
+    const v = cc + "|" + t;
+    if (near.has(v) || F.city.sel.has(v)) items.push({value: v, label: t, group: ccs.length > 1 ? cname(cc) : ""});
+  }
+  F.city.el.hidden = !ccs.length;
+  F.city.setOptions(items);
 }
+
+// a filter that looks like a search box: type to narrow its list, then tick as many as you like
+const norm = s => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+const MAX_SHOWN = 300;  // a long list (US towns) only shows this many until you type
+class Multi {
+  constructor(id, onChange){
+    const el = this.el = $(id), d = el.dataset;
+    this.id = id; this.all = d.all; this.search = d.search; this.onChange = onChange;
+    this.items = []; this.sel = new Set(); this.shown = []; this.active = -1;
+    el.innerHTML = `<input type="text" role="combobox" aria-label="${esc(d.label)}" aria-expanded="false" aria-controls="${id}-list" aria-autocomplete="list" autocomplete="off" spellcheck="false">`
+      + `<div class="ms-pop" id="${id}-list" role="listbox" aria-multiselectable="true" aria-label="${esc(d.label)}" hidden></div>`;
+    const inp = this.inp = el.firstChild, pop = this.pop = el.lastChild;
+    inp.addEventListener("focus", () => this.open());
+    inp.addEventListener("click", () => this.open());
+    inp.addEventListener("input", () => { this.open(); this.active = 0; this.render(); });
+    inp.addEventListener("keydown", e => this.key(e));
+    pop.addEventListener("mousedown", e => e.preventDefault());  // keep the cursor in the box while ticking
+    pop.addEventListener("click", e => {
+      if (e.target.closest(".clr")) { this.sel.clear(); this.changed(); return; }
+      const o = e.target.closest("[data-i]");
+      if (o) { this.active = this.shown.indexOf(+o.dataset.i); this.toggle(+o.dataset.i); }
+    });
+    el.addEventListener("focusout", e => { if (!el.contains(e.relatedTarget)) this.close(); });
+    this.summary();
+  }
+  open(){
+    if (!this.pop.hidden) return;
+    this.pop.hidden = false; this.inp.setAttribute("aria-expanded", "true");
+    this.inp.placeholder = this.search; this.inp.classList.remove("has");
+    this.active = -1; this.render();
+    this.pop.classList.remove("right");
+    if (this.pop.getBoundingClientRect().right > innerWidth - 8) this.pop.classList.add("right");  // keep it on screen
+  }
+  close(){
+    if (this.pop.hidden) return;
+    this.pop.hidden = true; this.inp.setAttribute("aria-expanded", "false"); this.inp.removeAttribute("aria-activedescendant");
+    this.inp.value = ""; this.summary();
+  }
+  // the box shows what's ticked when it's closed: "Portugal", "Portugal, Spain" or "Portugal + 2 more"
+  summary(){
+    const picked = this.items.filter(i => this.sel.has(i.value)).map(i => i.label);
+    this.inp.placeholder = !picked.length ? this.all : picked.length <= 2 ? picked.join(", ") : `${picked[0]} + ${picked.length - 1} more`;
+    this.inp.classList.toggle("has", picked.length > 0);
+  }
+  setOptions(items){
+    this.items = items;
+    const vals = new Set(items.map(i => i.value));
+    for (const v of this.sel) if (!vals.has(v)) this.sel.delete(v);  // drop ticks that are no longer on the list
+    if (this.pop.hidden) this.summary(); else this.render();
+  }
+  clear(){ this.sel.clear(); this.inp.value = ""; if (this.pop.hidden) this.summary(); else this.render(); }
+  toggle(i){
+    const v = this.items[i].value;
+    this.sel.has(v) ? this.sel.delete(v) : this.sel.add(v);
+    this.changed();
+  }
+  changed(){ if (this.pop.hidden) this.summary(); else this.render(); this.onChange(); }
+  render(){
+    if (this.pop.hidden) return;
+    const q = norm(this.inp.value.trim());
+    const hits = [];
+    this.items.forEach((it, i) => { if (!q || norm(it.label + " " + (it.group || "")).includes(q)) hits.push(i); });
+    this.shown = hits.slice(0, MAX_SHOWN);
+    if (this.active >= this.shown.length) this.active = this.shown.length - 1;
+    let html = this.sel.size ? `<button type="button" class="clr" tabindex="-1">Clear ${this.sel.size} selected</button>` : "", grp = "";
+    this.shown.forEach((i, n) => {
+      const it = this.items[i];
+      if (it.group && it.group !== grp) { grp = it.group; html += `<div class="grp" role="presentation">${esc(grp)}</div>`; }
+      html += `<div role="option" id="${this.id}-o${n}" data-i="${i}" aria-selected="${this.sel.has(it.value)}"${n === this.active ? ' class="on"' : ""}><span class="box"></span>${esc(it.label)}</div>`;
+    });
+    if (!hits.length) html += `<div class="none">No matches</div>`;
+    else if (hits.length > MAX_SHOWN) html += `<div class="none">Type to narrow ${(hits.length - MAX_SHOWN).toLocaleString("en-US")} more</div>`;
+    this.pop.innerHTML = html;
+    if (this.active >= 0) {
+      this.inp.setAttribute("aria-activedescendant", `${this.id}-o${this.active}`);
+      $(`${this.id}-o${this.active}`).scrollIntoView({block: "nearest"});
+    } else this.inp.removeAttribute("aria-activedescendant");
+  }
+  key(e){
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault(); this.open();
+      const n = this.shown.length; if (!n) return;
+      this.active = e.key === "ArrowDown" ? (this.active + 1) % n : (this.active <= 0 ? n - 1 : this.active - 1);
+      this.render();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const i = this.shown[Math.max(this.active, 0)];
+      if (i != null) { this.toggle(i); if (this.inp.value) { this.inp.value = ""; this.render(); } }
+    } else if (e.key === "Escape") {
+      this.inp.value ? (this.inp.value = "", this.render()) : this.inp.blur();
+    } else if (e.key === "Backspace" && !this.inp.value && this.sel.size) {  // an empty box: Backspace unticks the last one
+      this.sel.delete([...this.sel].pop()); this.changed();
+    }
+  }
+}
+const refilter = () => { shown = PAGE; update(); };
+const F = {cont: new Multi("fcont", refilter), country: new Multi("fc", refilter), city: new Multi("fcity", refilter), type: new Multi("ftype", refilter)};
+F.type.setOptions([...Object.entries(TYPES).map(([k, v]) => ({value: k, label: v, group: "Type of property"})),
+  ...[["R", "Ruins & fixer-uppers"], ["K", "Castles & manors"], ["C", "Churches & chapels"]].map(([k, v]) => ({value: "s" + k, label: v, group: "Ruins, castles & churches"}))]);
 
 // the listing is priced in another currency, so the big price was converted from its own
 const converted = r => r[15] && r[15] !== CUR;
@@ -312,10 +433,10 @@ function renderMap(){
   pins.addLayers(on);
   const off = VIEW.length - on.length;
   $("mcount").textContent = `${on.length.toLocaleString("en-US")} listings on the map` + (off ? ` · ${off.toLocaleString("en-US")} without a location` : "");
-  const cc = $("fc").value, town = $("fcity").value;
-  if (cc + "|" + town !== mapAt) {  // place changed: show the whole country or town, or the world for all countries
-    mapAt = cc + "|" + town;
-    if (cc && on.length) {
+  const place = [F.cont, F.country, F.city].map(m => [...m.sel].sort().join(",")), town = F.city.sel.size;
+  if (place.join("|") !== mapAt) {  // place changed: show the picked continents, countries or towns, or the world for none
+    mapAt = place.join("|");
+    if (place.some(Boolean) && on.length) {
       // frame where most listings are: the outermost 5% (Alaska and Hawaii, mislocated pins) would zoom far out
       const span = v => { v.sort((a, b) => a - b); const k = Math.floor(v.length * .05); return [v[k], v[v.length - 1 - k]]; };
       const [s, n] = span(on.map(m => m.getLatLng().lat)), [w, e] = span(on.map(m => m.getLatLng().lng));
