@@ -95,6 +95,10 @@ MELI_HOUSE_URLS = {"argentina": "https://inmuebles.mercadolibre.com.ar/casas/ven
                    "mexico": "https://inmuebles.mercadolibre.com.mx/casas/venta/"}
 KINDS = ("land", "houses")
 
+# Ieichiba (家いちば): Japanese owners selling empty houses (akiya) and land themselves, often for under ¥1M. Its
+# listings are grouped in price bands, newest first; we take every live listing up to ¥10M (about $65k).
+IEICHIBA_BANDS = ("0-100manyen", "100-200manyen", "200-1000manyen")
+
 AREA_TO_M2 = {"SquareMeter": 1.0, "SquareFoot": 0.09290304, "Hectare": 10000.0,
               "Acre": ACRE_M2, "SquareKilometer": 1e6, "SquareYard": 0.83612736}
 
@@ -247,14 +251,20 @@ def burial_plot(title):
     return bool(m) and not NEAR_RX.search(title[max(0, m.start() - 20):m.start()])  # "Rua do Cemitério" is a street
 
 
+# sites where owners really do sell (or give away) houses and land for next to nothing, so a tiny or round price
+# is the price: Japanese owners of empty houses pay to keep them and will take ¥0 or ¥10,000 to be rid of them
+CHEAP_IS_REAL = ("ieichiba",)
+
+
 def flag(rec):
     f = []
     usd, acres = rec.get("price_usd"), rec.get("acres")
+    real = rec.get("source") in CHEAP_IS_REAL
     # title_en: the English translation of a non-English title (see add_english), so English checks apply to it too
     text = " ".join(str(rec.get(k) or "") for k in ("title", "title_en", "description"))
     if WANTED_RX.search(rec.get("title") or "") or WANTED_RX.search(rec.get("title_en") or ""):
         f.append("wanted ad - not a listing")
-    if usd is not None and usd < 300:
+    if usd is not None and usd < 300 and not real:
         f.append("price too low - likely monthly payment or per-m2 price")
     elif usd is not None and usd < 2000 and PAYMENT_RX.search(text):
         f.append("may be payment plan price")
@@ -277,7 +287,7 @@ def flag(rec):
         f.append("price may be per m2/acre/hectare (agency listing under $1,500)")
     if LEASE_RX.search(text):
         f.append("lease/rental - not a sale price")
-    if placeholder_price(rec.get("price")):
+    if placeholder_price(rec.get("price")) and not real:
         f.append("placeholder price")
     if PER_UNIT_RX.search(text):
         f.append("price may be per m2/acre/hectare")
@@ -285,7 +295,7 @@ def flag(rec):
         f.append("auction/tender - price may be a minimum bid")
     if not acres:
         f.append("no land area listed")
-    elif rec.get("usd_per_acre") is not None and rec["usd_per_acre"] < 10 and not f:
+    elif rec.get("usd_per_acre") is not None and rec["usd_per_acre"] < 10 and not f and not real:
         f.append("check: under $10/acre")
     return "; ".join(f)
 
@@ -449,7 +459,7 @@ RUIN_RX = re.compile(
     r"|\bпокинут\w*|\bаварі?[йи]н\w*|\b(?:требует|потребує|нуждае се от)\s+(?:капитального\s+|капітального\s+|основен\s+)?ремонт"
     r"|\bза (?:ремонт|събаряне|реконструкция)\b|\bизоставен\w*|\bпорутен\w*|\bсрутен\w*"  # Ukrainian, Russian, Bulgarian
     r"|\bsnosga\b|\bbuzib olish"  # Uzbek: for demolition
-    r"|空き家|古民家|廃屋|廃墟|要修繕|要リフォーム", re.I)  # Japanese
+    r"|空き家|空家|古民家|廃屋|廃墟|要修繕|要リフォーム|老朽|雨漏り|床(?:が)?抜け|傷みが|劣化|要解体|取り壊し|解体(?:が|を)?前提", re.I)  # Japanese
 # castle: a castle, château, manor house or palace. Not a place named after one ("Castle Rock, CO", "Castelo Branco",
 # "Château-Richer") or a street ("Rue du Château")
 _PLACE_AFTER = r"(?!-|\s+(?-i:[A-Z])|\s+(?:de|do|da|dos|das|di|del|d')\b)"
@@ -676,7 +686,7 @@ BROWSER_USE_HOUR, PROXY_GB, DIRECT_GB = 0.02, 5.0, 0.20  # Browser Use cloud pri
 
 
 def source_of(url):
-    return next((s for s in ("properstar", "landwatch", "kijiji", "olx", "mercadolibre") if s in url), "other")
+    return next((s for s in ("properstar", "landwatch", "kijiji", "olx", "mercadolibre", "ieichiba") if s in url), "other")
 
 
 def mins(secs):
@@ -1522,6 +1532,85 @@ def crawl_meli(fetch, store, countries, a, rates, kinds=("land",)):
         log("mercadolibre [%d/%d] %-26s +%d listings" % (i, len(jobs), sid.split(" ", 1)[1], total_new))
 
 
+YEN_RX = re.compile(r"(?:([\d,.]+)\s*億)?\s*(?:([\d,.]+)\s*万)?\s*(?:([\d,]+))?\s*円")
+JP_LAND_RX = re.compile(r"(?:土地|敷地|面積)[^\d\n]{0,8}([\d,]+(?:\.\d+)?)\s*(㎡|m2|m²|平米|平方メートル|坪)")
+# a building on the plot ("住宅地", a residential area, and "別荘を建てたい", to build a holiday home, don't count)
+JP_HOUSE_RX = re.compile(r"建物(?:面積)?\s*[：:]?\s*[\d,.]+\s*(?:㎡|m2|m²|坪)|空き家|空家|古家|古屋|中古住宅|家屋|戸建|平屋|古民家|母屋"
+                         r"|住宅付|家付|築\d+年|昭和\d+年築|平成\d+年築|築古|住宅です|和風住宅|建てた(?:家|住宅|和)")
+JP_BARE_RX = re.compile(r"更地|何も建っておらず|建物はありません|建物なし")  # cleared land, nothing standing
+
+
+def yen(text):
+    """'1,980万円' -> 19800000, '1億2,000万円' -> 120000000, '0円' -> 0; None when there's no price ('応相談')."""
+    m = YEN_RX.search(text or "")
+    if not m or not any(m.groups()):
+        return None
+    oku, man, en = (num(g) or 0 for g in m.groups())
+    return oku * 1e8 + man * 1e4 + en
+
+
+def jp_acres(text):
+    """Land area from a Japanese description: '土地：1,000.82㎡' or '土地 120坪' (1 tsubo = 3.30579 m²)."""
+    m = JP_LAND_RX.search(text or "")
+    if not m:
+        return None
+    v = num(m.group(1))
+    return v * (3.30579 if m.group(2) == "坪" else 1) / ACRE_M2 if v else None
+
+
+def parse_ieichiba(html):
+    """Live listings on an Ieichiba page: (listings, how many cards the page had, ended ones included)."""
+    soup = BeautifulSoup(html, "lxml")
+    cards = soup.select("a.property__list-item")
+    out = []
+    for c in cards:
+        if c.select_one(".property__list-publication-ended-image-main"):
+            continue  # sold or withdrawn
+        el = c.select_one(".property__list-item-price")
+        price = yen(el.get_text(" ", strip=True)) if el else None
+        if price is None:
+            continue
+        get = lambda sel: re.sub(r"\s+", " ", (c.select_one(sel) or BeautifulSoup("", "lxml")).get_text(" ", strip=True))
+        title, desc = get(".property__list-item-heading h3"), get(".property__list-item-body").replace("もっと見る", "").strip()
+        addr = c.select_one(".property__list-item-address")
+        region = re.sub(r"\s+", " ", "".join(addr.find_all(string=True, recursive=False))).strip() if addr else ""
+        out.append({
+            "source": "ieichiba",
+            "country": "JP",
+            "region": region,
+            "title": title,
+            "description": desc[:1500],
+            "price": price,
+            "currency": "JPY",
+            "acres": jp_acres(desc),
+            "lat": None, "lon": None,
+            "url": "https://www.ieichiba.com" + c["href"].split("#")[0],
+            "kind": "houses" if JP_HOUSE_RX.search(title + " " + desc) and not JP_BARE_RX.search(title + " " + desc) else "land",
+        })
+    return out, len(cards)
+
+
+def crawl_ieichiba(fetch, store, a):
+    for i, band in enumerate(IEICHIBA_BANDS, 1):
+        sid, total_new = "ieichiba " + band, 0
+        for p in range(1, 101):  # a band has a few hundred listings, 10 a page; it ends with an empty page
+            if STOP.is_set():
+                return
+            url = "https://www.ieichiba.com/tags/%s%s" % (band, "/page/%d" % p if p > 1 else "")
+            if url in store.done:
+                continue
+            html = fetch.get(url)
+            if not html:
+                store.stop(sid, "fetch failed")
+                break
+            recs, n = parse_ieichiba(html)
+            total_new += store.page(sid, url, recs)
+            if not n:
+                store.stop(sid, "end of results")
+                break
+        log("ieichiba   [%d/%d] %-28s +%d listings" % (i, len(IEICHIBA_BANDS), band, total_new))
+
+
 # ----------------------------------------------------------------------------- verification
 
 def landwatch_full_description(html):
@@ -1708,13 +1797,39 @@ def translate(texts):
     return cache
 
 
+JAPANESE_RX = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
+JP_PREFS = dict(zip(
+    "北海道 青森 岩手 宮城 秋田 山形 福島 茨城 栃木 群馬 埼玉 千葉 東京 神奈川 新潟 富山 石川 福井 山梨 長野 岐阜 静岡 愛知 三重 滋賀 京都 大阪 兵庫 奈良 "
+    "和歌山 鳥取 島根 岡山 広島 山口 徳島 香川 愛媛 高知 福岡 佐賀 長崎 熊本 大分 宮崎 鹿児島 沖縄".split(),
+    "Hokkaido Aomori Iwate Miyagi Akita Yamagata Fukushima Ibaraki Tochigi Gunma Saitama Chiba Tokyo Kanagawa Niigata Toyama "
+    "Ishikawa Fukui Yamanashi Nagano Gifu Shizuoka Aichi Mie Shiga Kyoto Osaka Hyogo Nara Wakayama Tottori Shimane Okayama "
+    "Hiroshima Yamaguchi Tokushima Kagawa Ehime Kochi Fukuoka Saga Nagasaki Kumamoto Oita Miyazaki Kagoshima Okinawa".split()))
+JP_PREF_RX = re.compile(r"^(北海道|東京都|京都府|大阪府|[^都道府県]{2,3}県)")
+JP_SUFFIX_RX = re.compile(r"(?:\s+(?:city|town|village|ward|district|county|prefecture)|-(?:shi|machi|cho|chō|mura|son|gun|ku|ken))$", re.I)
+
+
+def jp_place(rec):
+    """'栃木県那須町' + its translation ('Tochigi Prefecture, Nasu Town' or 'Nasu-machi, Tochigi-ken') -> 'Nasu, Tochigi':
+    the prefecture from a fixed table, the town from the translation without its 'Town'/'-shi'."""
+    region = rec.get("region") or ""
+    m = JP_PREF_RX.match(region)
+    pref = JP_PREFS.get(re.sub(r"[都道府県]$", "", m.group(1)) if m and m.group(1) != "北海道" else "北海道") if m else None
+    if not pref:
+        return rec.get("region_en") or region
+    parts = [JP_SUFFIX_RX.sub("", x.strip()) for x in re.split(r",", rec.get("region_en") or "") if x.strip()]
+    town = next((x for x in parts if x and x.lower() != pref.lower() and not JAPANESE_RX.search(x)), "")
+    if not town and len(region) > len(m.group(1)) and sum(x.lower() == pref.lower() for x in parts) > 1:
+        town = pref  # "富山県富山市": Toyama City, Toyama
+    return "%s, %s" % (town, pref) if town else pref
+
+
 def add_english(recs):
     """Set title_en on non-English listings (OLX, Mercado Libre, French Kijiji ads, foreign-looking Properstar
-    titles, anything in Cyrillic) and region_en on place names written in Cyrillic, for the site."""
-    titled = [r for r in recs if r.get("title") and (r.get("source") in ("olx", "mercadolibre") or CYRILLIC_RX.search(r["title"])
+    titles, anything in Cyrillic, Ieichiba's Japanese) and region_en on place names in Cyrillic or Japanese, for the site."""
+    titled = [r for r in recs if r.get("title") and (r.get("source") in ("olx", "mercadolibre", "ieichiba") or CYRILLIC_RX.search(r["title"])
                                                      or (r.get("source") == "kijiji" and FRENCH_RX.search(r["title"]))
                                                      or (r.get("source") == "properstar" and FOREIGN_RX.search(r["title"])))]
-    placed = [r for r in recs if CYRILLIC_RX.search(r.get("region") or "")]
+    placed = [r for r in recs if CYRILLIC_RX.search(r.get("region") or "") or JAPANESE_RX.search(r.get("region") or "")]
     tr = translate([r["title"] for r in titled] + [r["region"] for r in placed])
     for r in titled:
         if tr.get(r["title"], r["title"]) != r["title"]:
@@ -1722,6 +1837,9 @@ def add_english(recs):
     for r in placed:
         if r["region"] in tr:
             r["region_en"] = tr[r["region"]]
+    for r in recs:
+        if r.get("source") == "ieichiba":
+            r["region_en"] = jp_place(r)
 
 
 # ----------------------------------------------------------------------------- output
@@ -1744,7 +1862,7 @@ def build_outputs(store, english=True):
             same.setdefault((r.get("source"), r.get("country"), round(r["price"], 2)), set()).add(r.get("acres"))
     for r in recs:
         k = (r.get("source"), r.get("country"), round(r.get("price") or 0, 2))
-        if k in same and len(same[k]) >= PLACEHOLDER_SIZES:
+        if k in same and len(same[k]) >= PLACEHOLDER_SIZES and r.get("source") not in CHEAP_IS_REAL:
             r["flags"] = "; ".join(x for x in (r["flags"], "placeholder price - same price on many different-size plots") if x)
     # a "total" price that would only buy ~20 m2 at that country's typical price per m2 is a per-m2 price
     m2p = {}
@@ -1754,7 +1872,7 @@ def build_outputs(store, english=True):
     med_m2 = {c: sorted(v)[len(v) // 2] for c, v in m2p.items() if len(v) >= 20}
     for r in recs:
         m = med_m2.get(r.get("country"))
-        if m and r["price_usd"] and r["price_usd"] < 20 * m:
+        if m and r["price_usd"] and r["price_usd"] < 20 * m and r.get("source") not in CHEAP_IS_REAL:
             r["flags"] = "; ".join(x for x in (r["flags"], "price may be per m2 (would buy under 20 m2 at local prices)") if x)
     # far below everything else in the same country -> usually a wrong area or a per-m2 price
     by = {}
@@ -1764,13 +1882,13 @@ def build_outputs(store, english=True):
     med = {c: sorted(v)[len(v) // 2] for c, v in by.items() if len(v) >= 20}
     for r in recs:
         m = med.get(r.get("country"))
-        if m and r["usd_per_acre"] and r["usd_per_acre"] < m / 250:
+        if m and r["usd_per_acre"] and r["usd_per_acre"] < m / 250 and r.get("source") not in CHEAP_IS_REAL:
             r["flags"] = "; ".join(x for x in (r["flags"], "far below other listings in this country") if x)
     recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # cheapest total price first
     # same parcel reposted under a new URL ("Lot (PID 123) X" vs "(PID 123) X") -> keep one
     seen, uniq = set(), []
     for r in recs:
-        t = re.sub(r"[^a-z0-9]", "", re.sub(r"^\s*lot\b", "", (r.get("title") or "").lower()))
+        t = re.sub(r"[\W_]", "", re.sub(r"^\s*lot\b", "", (r.get("title") or "").lower()))  # keeps Japanese and Cyrillic letters
         key = (r.get("source"), r.get("country"), round(r.get("price") or 0), r.get("acres"), t)
         if key in seen:
             continue
@@ -1940,7 +2058,7 @@ def build_site(recs, rates):
 
 
 COVERAGE_COLS = ["source", "search", "site_total", "fetched", "fetched_pct", "on_site", "pages", "reached_usd", "stopped"]
-SOURCE_ORDER = ["properstar", "landwatch", "kijiji", "olx", "mercadolibre"]
+SOURCE_ORDER = ["properstar", "landwatch", "kijiji", "olx", "mercadolibre", "ieichiba"]
 
 
 def write_coverage(store, recs, cutoff):
@@ -2004,7 +2122,7 @@ TEST_DEFAULTS = dict(states="arizona,maine", countries="portugal,mexico", provin
 def main():
     global DATA
     ap = argparse.ArgumentParser(description="Find the cheapest land listings worldwide.")
-    ap.add_argument("--sources", default="properstar,landwatch,kijiji,olx,mercadolibre")
+    ap.add_argument("--sources", default="properstar,landwatch,kijiji,olx,mercadolibre,ieichiba")
     ap.add_argument("--listings", type=int, default=250,
                     help="believable listings to collect per country/state/province on each site before moving on")
     ap.add_argument("--house-listings", type=int, default=60,
@@ -2070,6 +2188,8 @@ def main():
                 plain.append((crawl_olx, (wanted(OLX_SITES), a, rates, kinds)))
             if "mercadolibre" in sources:
                 plain.append((crawl_meli, (wanted(MELI_SITES), a, rates, kinds)))
+            if "ieichiba" in sources and (not a.countries or "japan" in countries):
+                plain.append((crawl_ieichiba, (a,)))
             def timed(fn):
                 def run(*args):
                     with METRICS.phase(fn.__name__.replace("crawl_", "http ")):

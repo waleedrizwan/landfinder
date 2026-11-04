@@ -13,6 +13,7 @@ actually buy. Price per acre is shown too. Every row links to the live listing.
 | [Kijiji](https://www.kijiji.ca) | every Canadian province/territory | plain HTTP requests |
 | [OLX](https://www.olx.pl) | Poland, Ukraine, Romania, Portugal, Bulgaria, Kazakhstan, Uzbekistan | OLX's JSON search API |
 | [Mercado Libre](https://inmuebles.mercadolibre.com.ar) | Argentina, Mexico | plain HTTP requests |
+| [Ieichiba](https://www.ieichiba.com) (家いちば) | Japan: empty houses (akiya) and land sold by their owners | plain HTTP requests |
 
 Each search is sorted cheapest first. Properstar and Mercado Libre results start at $1,500, because cheaper
 "prices" there are almost always per-m² figures or placeholders. OLX searches start at $500 to $1,500 depending
@@ -105,7 +106,7 @@ LandWatch's homes, Kijiji's houses for sale, OLX's houses and Mercado Libre's *c
 mostly ruins, abandoned farmhouses and fixer-uppers, which is what these searches are for. A house search stops at 60
 believable listings (`--house-listings`) instead of 250, so the house searches take much less time than the land ones. `--no-houses` searches land only.
 
-The list next to Country picks out special listings, found by keywords in the title, its English translation and the
+The "Ruins, castles & churches" group in the Type of property filter picks out special listings, found by keywords in the title, its English translation and the
 description, in each site's languages (no Claude calls):
 
 - **Ruins & fixer-uppers**: a ruin, an abandoned or derelict building, a house for demolition or one that needs a full
@@ -115,7 +116,14 @@ description, in each site's languages (no Claude calls):
 - **Churches & chapels**: a former, old or converted church or chapel, or one for sale ("former church building",
   "antiga igreja"), not one nearby ("next to the old church") or a street ("Church Lane").
 
-A card can have more than one, and each shows as an orange tag. Castles and churches are rare at the cheap end:
+A listing can have more than one, and each shows as a tag under its type. Every Japanese akiya (空き家, "empty house") counts as a
+ruin.
+
+Ieichiba is a Japanese board where owners sell empty houses and land themselves. landfinder takes every live listing
+up to ¥10M (about $65k) from its price bands (`/tags/0-100manyen` and up). Prices there really are that low: owners pay
+yearly tax on houses nobody wants, so ¥0 to ¥300,000 is common. Ieichiba listings skip the "price too low" and
+placeholder checks, and a ¥0 listing shows as Free. Land area comes from the description ("土地：1,000㎡", or 坪,
+3.3 m² each). Titles and towns are translated like the other non-English sources. Castles and churches are rare at the cheap end:
 searches go up from the cheapest listing, so a $400,000 château only turns up in a country with few houses for sale.
 
 LandWatch listings come without coordinates, so they're pinned at their ZIP code's center, from the US Census
