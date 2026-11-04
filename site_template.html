@@ -30,7 +30,7 @@ header h1{font-size:18px;margin:0}
 .bar #q{flex:1 1 320px;min-width:0}
 .bar #fcity{max-width:220px}
 .bar #fcur{max-width:200px}
-.bar #fspec{max-width:220px}
+.bar #ftype{max-width:220px}
 .bar button{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:9px 14px;cursor:pointer}
 .bar button[aria-expanded="true"]{border-color:var(--fg)}
 .adv{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px}
@@ -87,7 +87,10 @@ footer p{margin:4px 0}
     <input id="q" type="search" placeholder="Search by town, region, country or title" aria-label="Search">
     <select id="fc" aria-label="Country"><option value="">All countries</option></select>
     <select id="fcity" aria-label="City" hidden><option value="">All cities</option></select>
-    <select id="fspec" aria-label="Ruins and castles"><option value="">All listings</option><option value="R">Ruins &amp; fixer-uppers</option><option value="K">Castles &amp; manors</option><option value="C">Churches &amp; chapels</option></select>
+    <select id="ftype" aria-label="Type of property"><option value="">All property types</option>
+      <optgroup label="Type of property" id="ftype-kinds"></optgroup>
+      <optgroup label="Ruins, castles &amp; churches"><option value="sR">Ruins &amp; fixer-uppers</option><option value="sK">Castles &amp; manors</option><option value="sC">Churches &amp; chapels</option></optgroup>
+    </select>
     <select id="fcur" aria-label="Currency"></select>
     <button id="advbtn" type="button" aria-expanded="false" aria-controls="adv">Advanced filters</button>
   </div>
@@ -97,7 +100,6 @@ footer p{margin:4px 0}
     <label>Min acres<input id="facmin" type="number" min="0" step="any" inputmode="decimal" placeholder="Any"></label>
     <label>Max acres<input id="facmax" type="number" min="0" step="any" inputmode="decimal" placeholder="Any"></label>
     <label>Max price per acre (<span class="cur">USD</span>)<input id="fppa" type="number" min="0" step="10" inputmode="numeric" placeholder="Any"></label>
-    <label>Type<select id="ftype"><option value="">All types</option></select></label>
     <label>Source<select id="fsrc"><option value="">All sources</option><option value="properstar">Properstar</option><option value="landwatch">LandWatch</option><option value="kijiji">Kijiji</option><option value="olx">OLX</option><option value="mercadolibre">Mercado Libre</option></select></label>
     <label class="chk"><input id="farea" type="checkbox"> Area listed only</label>
     <label class="chk"><input id="fflag" type="checkbox"> Include flagged listings</label>
@@ -155,9 +157,9 @@ const FLAGS = {L:"Price looks too low: may be a monthly payment, a per-m² price
 // property type, worked out from each site's category and the listing text when the site is built
 const TYPES = {V:"Vacant land", L:"Building lot", F:"Farmland", T:"Forest", R:"Recreational", W:"Waterfront", C:"Commercial",
   G:"Dacha plot", B:"Land with house", H:"House"};
-for (const [k, v] of Object.entries(TYPES)) $("ftype").add(new Option(v, k));
+for (const [k, v] of Object.entries(TYPES)) $("ftype-kinds").append(new Option(v, k));
 const SPECIAL = {R:"Ruin", K:"Castle", C:"Church"};
-const FILTERS = ["q", "fc", "fcity", "fspec", "fmin", "fmax", "facmin", "facmax", "fppa", "ftype", "fsrc", "farea", "fflag"];
+const FILTERS = ["q", "fc", "fcity", "ftype", "fmin", "fmax", "facmin", "facmax", "fppa", "fsrc", "farea", "fflag"];
 
 // buyable at the listed price: no warning flags ("N" = no area listed is fine when ranking by total price)
 const clean = r => r[1] != null && (!r[7] || r[7] === "N");
@@ -208,7 +210,7 @@ function tab(name){
 
 function update(){
   const q = $("q").value.trim().toLowerCase(), cc = $("fc").value, town = $("fcity").value, src = $("fsrc").value,
-        ty = $("ftype").value, sp = $("fspec").value, num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
+        pick = $("ftype").value, sp = pick[0] === "s" ? pick[1] : "", ty = sp ? "" : pick, num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
         amn = num("facmin"), amx = num("facmax"), ppa = num("fppa"),
         area = $("farea").checked, fl = $("fflag").checked;
   // picking "House" or one of the ruins and castles shows house listings, which the "house listing" flag otherwise hides
