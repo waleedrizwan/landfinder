@@ -34,7 +34,6 @@ def test_no_area(rates):
     ({"price": 1800, "description": "Only $99/mo with $199 down"}, "may be payment plan price"),
     ({"title": "Gold mining claims, 20 acres"}, "mining claim"),
     ({"url": "https://www.landwatch.com/x-homes-for-sale/pid/1", "source": "landwatch"}, "house listing"),
-    ({"kind": "house", "source": "homes", "currency": "JPY", "price": 300000}, "house listing"),
     ({"source": "kijiji", "currency": "CAD", "price": 2800}, "price too low for Canada"),
     ({"price": 1200}, "agency listing under $1,500"),
     ({"title": "Farmland for lease"}, "lease/rental"),
@@ -45,6 +44,12 @@ def test_no_area(rates):
 ])
 def test_flags(rates, kw, expected):
     assert expected in flags_for(rates, **kw)
+
+
+def test_akiya_houses_are_not_flagged(rates):
+    r = lf.finalize(rec(kind="house", source="homes", currency="JPY", price=300000, acres=0.05,
+                        url="https://www.homes.co.jp/akiyabank/b-1/"), rates)
+    assert r["flags"] == ""
 
 
 def test_no_per_acre_flag(rates):

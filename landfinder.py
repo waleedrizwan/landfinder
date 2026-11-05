@@ -4,7 +4,7 @@ landfinder — scrape the cheapest land listings on earth and rank them by total
 
 Sources
   properstar  worldwide portal (~100+ countries), land plots sorted cheapest first
-  homes       HOME'S akiya bank: land and empty houses for sale in all 47 Japanese prefectures (houses are flagged)
+  homes       HOME'S akiya bank: land and empty houses for sale in all 47 Japanese prefectures (houses ranked too)
   castles     Properstar's castle listings in the same countries (in the main ranking, plus their own site section)
   landwatch   all 50 US states, sorted cheapest first
   kijiji      every Canadian province, land-for-sale sorted cheapest first
@@ -207,7 +207,7 @@ def flag(rec):
         f.append("may be payment plan price")
     if CLAIM_RX.search(text):
         f.append("mining claim/mineral rights/access deed - not land ownership")
-    if "homes-for-sale" in (rec.get("url") or "") or rec.get("kind") == "house":
+    if "homes-for-sale" in (rec.get("url") or ""):  # LandWatch houses; akiya bank houses are ranked like land
         f.append("house listing - not vacant land")
     if rec.get("source") == "kijiji" and usd is not None and usd < 3000:
         f.append("price too low for Canada - likely a deposit, lease or placeholder")
