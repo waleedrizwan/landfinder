@@ -109,6 +109,22 @@ def test_desktop(browser, site):
     assert errors == []
 
 
+def test_moving_the_map_narrows_the_list(browser, site):
+    """Leaflet is blocked in these tests, so this drives the same code a pan or zoom runs: AREA set from the map."""
+    page, errors = open_page(browser, site, {"width": 1440, "height": 900})
+    wait_for_data(page)
+    total = page.inner_text("#count")
+    # a box around New Mexico, as if the visitor had zoomed in there
+    page.evaluate("""() => { AREA = {getEast: () => -103, getWest: () => -109.1, getNorth: () => 37, getSouth: () => 31.3,
+      contains: ([lat, lng]) => lat >= 31.3 && lat <= 37 && lng >= -109.1 && lng <= -103}; shown = PAGE; update(true); }""")
+    assert page.inner_text("#count") != total
+    assert "In the map area" in page.inner_text("#chips")
+    assert all("New Mexico" in t for t in page.locator("#rows .where").all_inner_texts())
+    page.click("#chips .chip:has-text('In the map area')")
+    assert page.inner_text("#count") == total
+    assert errors == []
+
+
 def test_map_is_a_tab_on_narrower_screens(browser, site):
     page, errors = open_page(browser, site, {"width": 1024, "height": 768})
     wait_for_data(page)

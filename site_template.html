@@ -118,7 +118,7 @@ body.mapfull{overflow:hidden}
 
 /* wide screens: the map is a third column beside the list, the full height of the window, and stays put as you scroll */
 @media (min-width:1280px){
-  .layout{grid-template-columns:260px minmax(0,1fr) minmax(420px,38vw);max-width:none}
+  .layout{grid-template-columns:260px minmax(0,1fr) minmax(360px,30vw);max-width:none}
   .tabs{display:none}
   #fcur{margin-left:auto}
   #p-map{position:sticky;top:0;align-self:start;height:100vh;height:100dvh;display:flex;flex-direction:column;border-left:1px solid var(--rule)}
@@ -219,7 +219,7 @@ footer p{margin:4px 0}
         <thead><tr><th>#</th><th>Price</th><th>Land</th><th>Listing</th><th>Type</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
-      <div class="empty" id="empty" hidden>No listings match these filters. <button class="linkbtn" type="button" onclick="resetAll()">Clear all filters</button></div>
+      <div class="empty" id="empty" hidden><span id="emptymsg">No listings match these filters.</span> <button class="linkbtn" type="button" onclick="resetAll()">Clear all filters</button></div>
       <button class="more" id="more" type="button" hidden>Show more</button>
     </section>
 
@@ -293,7 +293,9 @@ const clean = r => r[1] != null && (!r[7] || r[7] === "N");
 // its only flag says it's a house: shown when you pick House or one of the ruins, castles and churches
 const houseOnly = r => !r[7].replace(/[HN]/g, "");
 
-let ALL = [], VIEW = [], TOWNS = {}, POP = {}, shown = PAGE, map, pins, mapAt = null, mapTimer;
+// AREA: the part of the map the visitor panned or zoomed to, which the list keeps to (null: anywhere).
+// MAPVIEW: what the map shows, every filter but AREA, so panning brings more pins into view
+let AREA = null, MAPVIEW = [], placeKey = "", ALL = [], VIEW = [], TOWNS = {}, POP = {}, shown = PAGE, map, pins, mapAt = null, mapTimer;
 
 fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
   ALL = d.rows.filter(r => r[1] != null).sort((a, b) => a[1] - b[1]);
@@ -339,6 +341,7 @@ $("done").onclick = () => { openSide(false); $("fbtn").scrollIntoView({block: "s
 function resetAll(){
   for (const id of FILTERS) { const el = $(id); if (el.type === "checkbox") el.checked = false; else el.value = ""; }
   for (const f of Object.values(F)) f.clear();
+  AREA = null;
   refilter();
 }
 $("reset").onclick = resetAll;
@@ -356,14 +359,14 @@ function placeMap(){
   $("p-map").hidden = !wide && !onMap;
   $("p-list").hidden = !wide && onMap;
   if (ALL.length) update();
-  if (map) map.invalidateSize();
+  if (map) { touchedAt = 0; map.invalidateSize(); }
 }
 WIDE.addEventListener("change", placeMap);
 placeMap();
 
 function tab(name){
   for (const t of ["list", "map"]) { $("t-" + t).setAttribute("aria-selected", t === name); $("p-" + t).hidden = t !== name; }
-  if (name === "map" && window.L) { initMap(); map.invalidateSize(); renderMap(); }
+  if (name === "map" && window.L) { initMap(); touchedAt = 0; map.invalidateSize(); renderMap(); }
   else renderList();
 }
 
@@ -427,14 +430,22 @@ const F = {type: new Facet("ftype"), cont: new Facet("fcont"), country: new Face
 F.type.setItems([...Object.entries(TYPES).map(([k, v]) => ({value: k, label: v})),
   ...[["R", "Ruins & fixer-uppers"], ["K", "Castles & manors"], ["C", "Churches & chapels"]].map(([k, v]) => ({value: "s" + k, label: v, group: "Ruins, castles & churches"}))]);
 const refilter = () => { shown = PAGE; update(); };
+const inArea = r => {
+  if (r[9] == null || r[10] == null) return false;
+  if (AREA.getEast() - AREA.getWest() >= 360) return AREA.getSouth() <= r[9] && r[9] <= AREA.getNorth();
+  return [r[10], r[10] - 360, r[10] + 360].some(lng => AREA.contains([r[9], lng]));  // the map wraps around east-west
+};
 
-function update(){
+function update(fromMap){
   const conts = F.cont.sel, ccs = F.country.sel, towns = F.city.sel, picks = F.type.sel,
         src = $("fsrc").value, q = $("q").value.trim().toLowerCase(),
         sps = [...picks].filter(p => p[0] === "s").map(p => p[1]), tys = new Set([...picks].filter(p => p[0] !== "s")),
         num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
         amn = num("facmin"), amx = num("facmax"), ppa = num("fppa"),
         area = $("farea").checked, fl = $("fflag").checked;
+  // picking a continent, country or town moves the map there, so the old map area no longer applies
+  const places = [conts, ccs, towns].map(m => [...m].sort().join(",")).join("|");
+  if (places !== placeKey) { placeKey = places; AREA = null; }
   // the filters that aren't checkbox lists
   const base = r => (!src || r[6] === src) && (isNaN(mn) || price(r) >= mn) && (isNaN(mx) || price(r) <= mx)
     && (!area || r[2] != null)
@@ -451,25 +462,33 @@ function update(){
   // one pass: the listings to show, and each list's counts under every filter but its own
   // (and the continents' under every filter but the places)
   const cn = {type: new Map(), cont: new Map(), country: new Map(), city: new Map()}, add = (m, k) => m.set(k, (m.get(k) || 0) + 1);
-  VIEW = [];
+  VIEW = []; MAPVIEW = [];
   for (const r of ALL) {
     if (!base(r)) continue;
+    // the map area narrows the list and the type counts. Not the places: picking one moves the map there and drops
+    // the area, so every continent, country and town stays on its list with its full count
+    const inA = !AREA || inArea(r);
     const ct = contOf(r[3]), inCont = !conts.size || conts.has(ct), inCountry = !ccs.size || ccs.has(r[3]),
           town = r[3] + "|" + r[13], inTown = !towns.size || towns.has(town), here = inCont && inCountry && inTown;
-    if (here) {  // type counts: what you'd see if you ticked only that type
+    if (here && inA) {  // type counts: what you'd see if you ticked only that type
       if (fl || clean(r) || (r[12] === "H" && houseOnly(r))) add(cn.type, r[12]);
       if (r[16] && (fl || clean(r) || houseOnly(r))) for (const s of r[16]) add(cn.type, "s" + s);
     }
     if (!ok(r) || !isType(r)) continue;
+    if (here) MAPVIEW.push(r);
     add(cn.cont, ct);  // every continent stays on the list, so you can widen the search from a country
     if (inCont) add(cn.country, r[3]);
     if (inCont && inCountry && r[13]) add(cn.city, town);
-    if (here) VIEW.push(r);
+    if (here && inA) VIEW.push(r);
   }
   for (const k in F) { F[k].counts = cn[k]; F[k].render(); }
   $("cityblock").hidden = !F.city.items.length;
   renderChips();
   renderList();
+  if (fromMap) {  // the map didn't change, only the list: bring its top into view
+    if ($("p-list").getBoundingClientRect().top < 0) window.scrollTo({top: 0});
+    return;
+  }
   if (mapShown() && window.L) {
     if (!map) { initMap(); renderMap(); }
     else { clearTimeout(mapTimer); mapTimer = setTimeout(renderMap, 150); }
@@ -497,7 +516,8 @@ function renderChips(){
     ...["type", "cont", "country", "city"].flatMap(k => [...F[k].sel].map(v => ({label: F[k].labelOf(v), clear: () => F[k].sel.delete(v)}))),
     field("facmin", v => `${v}+ acres`), field("facmax", v => `Up to ${v} acres`), field("fppa", v => `Up to ${withCur(v)} an acre`),
     $("fsrc").value && {label: srcName($("fsrc").value), clear: () => { $("fsrc").value = ""; }},
-    tick("farea", "Area listed"), tick("fflag", "Flagged included")].filter(Boolean);
+    tick("farea", "Area listed"), tick("fflag", "Flagged included"),
+    AREA && {label: "In the map area", clear: () => { AREA = null; }}].filter(Boolean);
   $("chips").innerHTML = CHIPS.map((c, i) => `<button class="chip" type="button" data-chip="${i}" aria-label="Remove ${esc(c.label)}">${esc(c.label)}<span aria-hidden="true">×</span></button>`).join("")
     + (CHIPS.length > 1 ? `<button class="chip" type="button" onclick="resetAll()">Clear all</button>` : "");
   $("fbtn").textContent = CHIPS.length ? `Filters (${CHIPS.length})` : "Filters";
@@ -522,7 +542,7 @@ const titleLink = r => `<a class="t" href="${esc(r[8])}" target="_blank" rel="no
 function renderList(){
   const page = VIEW.slice(0, shown);
   $("count").textContent = `${VIEW.length.toLocaleString("en-US")} ${VIEW.length === 1 ? "listing" : "listings"}`;
-  if (!mapShown() || WIDE.matches) $("sub").textContent = "cheapest first";
+  if (!mapShown() || WIDE.matches) $("sub").textContent = AREA ? "in the map area, cheapest first" : "cheapest first";
   $("rows").innerHTML = page.map((r, i) => `<tr data-i="${i}">
     <td class="rank">${i + 1}</td>
     <td class="price">${priceCell(r)}</td>
@@ -530,6 +550,7 @@ function renderList(){
     <td class="what">${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div><div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${warning(r)}</td>
     <td class="type">${TYPES[r[12]] || "Land"}${specials(r)}</td></tr>`).join("");
   $("empty").hidden = VIEW.length > 0;
+  $("emptymsg").textContent = AREA && MAPVIEW.length ? "No listings in this part of the map. Zoom out or drag the map to see more." : "No listings match these filters.";
   $("more").hidden = shown >= VIEW.length;
   $("more").textContent = `Show ${Math.min(PAGE, VIEW.length - shown)} more`;
 }
@@ -555,6 +576,17 @@ function initMap(){
   map.setMinZoom(fillZoom());
   map.on("resize", () => map.setMinZoom(fillZoom()));  // full screen, or the window resized
   world();
+  // the visitor's own pans and zooms (drag, wheel, buttons, keys, clicking a group or a pin) set the list's area; the
+  // page's own moves (jumping to a picked country, resizing) don't. A gesture's moves end within a couple of seconds
+  const box = map.getContainer();
+  for (const ev of ["mousedown", "mouseup", "wheel", "touchstart", "touchend", "keydown"])
+    box.addEventListener(ev, () => { touchedAt = Date.now(); }, {passive: true});
+  map.on("moveend", () => {
+    if (Date.now() - touchedAt > 2000) return;
+    AREA = map.getBounds();
+    shown = PAGE;
+    update(true);
+  });
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     {maxZoom: 18, attribution: "&copy; OpenStreetMap contributors"}).addTo(map);
   // a button that fills the whole window with the map; Esc or the button again brings the page back
@@ -565,6 +597,7 @@ function initMap(){
     const set = on => {
       $("map").classList.toggle("full", on); document.body.classList.toggle("mapfull", on);
       a.textContent = on ? "✕ Exit full screen" : "⛶ Full screen"; a.title = on ? "Exit full screen (Esc)" : "Show the map full screen";
+      touchedAt = 0;
       map.invalidateSize();
     };
     set(false);
@@ -585,7 +618,7 @@ function initMap(){
     }}).addTo(map);
 }
 
-let hotEl = null;
+let hotEl = null, touchedAt = 0;
 function hot(tr){
   const r = tr && VIEW[+tr.dataset.i], m = r && r.pin && pins && pins.hasLayer(r.pin) ? pins.getVisibleParent(r.pin) : null;
   const el = m && m.getElement ? m.getElement() : null;
@@ -600,7 +633,7 @@ $("rows").addEventListener("mouseleave", () => hot(null));
 function renderMap(){
   if (!pins) return;
   const on = [];
-  for (const r of VIEW) {
+  for (const r of MAPVIEW) {
     if (r[9] == null || r[10] == null || (r[9] === 0 && r[10] === 0)) continue;
     if (!r.pin) {  // made once per listing, reused as the filters change
       r.pin = L.marker([r[9], r[10]], {row: r, icon: L.divIcon({className: "pin", iconSize: [0, 0],
@@ -613,13 +646,14 @@ function renderMap(){
   }
   pins.clearLayers();
   pins.addLayers(on);
-  const off = VIEW.length - on.length;
+  const off = MAPVIEW.length - on.length;
   const where = `${on.length.toLocaleString("en-US")} on the map` + (off ? `, ${off.toLocaleString("en-US")} without a location` : "");
   if (WIDE.matches) $("mapcount").textContent = where + ".";
   else { $("mapcount").textContent = ""; $("sub").textContent = where; }
   const sel = [F.cont, F.country, F.city].map(m => [...m.sel].sort().join(",")), town = F.city.sel.size;
   if (sel.join("|") !== mapAt) {  // place changed: show the picked continents, countries or towns, or the world for none
     mapAt = sel.join("|");
+    touchedAt = 0;  // the page's own move, not the visitor's
     if (sel.some(Boolean) && on.length) {
       // frame where most listings are: the outermost 5% (Alaska and Hawaii, mislocated pins) would zoom far out
       const span = v => { v.sort((a, b) => a - b); const k = Math.floor(v.length * .05); return [v[k], v[v.length - 1 - k]]; };
