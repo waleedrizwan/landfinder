@@ -3,354 +3,563 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Cheapest Land on Earth</title>
-<meta name="description" content="{{DESCRIPTION}}">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%23f2c230'/%3E%3Ctext x='16' y='25' font-family='Impact,sans-serif' font-size='24' font-weight='900' text-anchor='middle' fill='%231d2a23'%3E$%3C/text%3E%3C/svg%3E">
+<title>Cheapest Land</title>
+<meta name="description" content="The cheapest land and houses for sale worldwide, ruins and castles included, sorted by total price and updated daily.">
+<!-- inline icon (a "for sale" sign on a field): Cloudflare Pages answers /favicon.ico with this page -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3CclipPath id='r'%3E%3Crect width='32' height='32' rx='7'/%3E%3C/clipPath%3E%3Cg clip-path='url(%23r)'%3E%3Crect width='32' height='32' fill='%233d8fd6'/%3E%3Cpath d='M0 21c6-5 12-6 19-2s10 3 13 1v12H0z' fill='%236cc36c'/%3E%3Cpath d='M0 27c8-4 17-4 32 1v4H0z' fill='%232e8b4a'/%3E%3Crect x='15' y='14' width='2.4' height='13' fill='%237a4b2a'/%3E%3Crect x='7' y='5' width='18.5' height='12' rx='2.5' fill='%23fff'/%3E%3Cpath d='M19.0 9.2c-.8-.8-1.9-1.2-3-1.2-1.7 0-3 .9-3 2.2 0 3 6 1.6 6 4.6 0 1.4-1.4 2.4-3.2 2.4-1.2 0-2.4-.5-3.2-1.3M16.0 6.5v12' transform='translate(16.2 11.0) scale(0.78) translate(-16 -12.5)' stroke='%231f6f43' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;900&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <style>
-:root{
-  --paper:#e9ede6; --paper-2:#dfe5dc; --ink:#1d2a23; --ink-2:#4a5a51; --rule:#c3ccc2;
-  --contour:#9a6b3f; --survey:#245f8f; --sign:#f2c230; --sign-ink:#1d2a23; --warn:#a4471f;
-  --card:#f4f6f2;
-}
+/* A ranked price list: rows you read down one column, with the filters in a sidebar that shows how many
+   listings each choice has. Long lists (countries, towns) have their own search box. */
+:root{--paper:#fff;--ink:#18202e;--soft:#5a6475;--rule:#e2e5ea;--tint:#f4f5f8;--blue:#2346b5;--mark:#fff3b8;--warn:#a4400f;--bar:#a9b8dc}
 @media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]){
-    --paper:#151c18; --paper-2:#1b241f; --ink:#e4e9e2; --ink-2:#a3b0a7; --rule:#2e3a33;
-    --contour:#b8875a; --survey:#7fb2dc; --sign:#f2c230; --sign-ink:#151c18; --warn:#e08a5e;
-    --card:#1a221e;
-  }
-}
-:root[data-theme="dark"]{
-  --paper:#151c18; --paper-2:#1b241f; --ink:#e4e9e2; --ink-2:#a3b0a7; --rule:#2e3a33;
-  --contour:#b8875a; --survey:#7fb2dc; --sign:#f2c230; --sign-ink:#151c18; --warn:#e08a5e;
-  --card:#1a221e;
+  :root{--paper:#161a21;--ink:#e8ebf0;--soft:#9aa3b2;--rule:#2b313b;--tint:#1f242d;--blue:#8ea8ff;--mark:#36311a;--warn:#f0a070;--bar:#4a5d8f}
 }
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 "IBM Plex Sans",system-ui,sans-serif;font-variant-numeric:tabular-nums}
-a{color:var(--survey);text-underline-offset:3px}
-a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--sign);outline-offset:2px}
-.wrap{max-width:1180px;margin:0 auto;padding:0 16px}
-h1,h2{font-family:"Big Shoulders Display",Impact,sans-serif;font-weight:900;line-height:.92;margin:0;letter-spacing:.005em}
-h2{font-size:clamp(34px,5vw,52px);margin-bottom:6px}
-.lede{color:var(--ink-2);max-width:62ch;margin:0 0 22px}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 "Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+button,input,select{font:inherit;color:inherit}
 
-/* ---- hero ---- */
-.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--rule);background:var(--paper)}
-.hero svg.topo{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.hero svg.topo path{fill:none;stroke:var(--contour);stroke-width:1;opacity:.55}
-.hero svg.topo path.idx{stroke-width:2;opacity:.75}
-.hero-in{position:relative;padding-top:28px;padding-bottom:56px}
-.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:clamp(36px,8vw,84px)}
-.brand{font-family:"Big Shoulders Display",sans-serif;font-weight:700;font-size:22px;letter-spacing:.02em;color:var(--ink);text-decoration:none}
-.top nav{display:flex;gap:18px;align-items:center;font-size:15px}
-@media (max-width:560px){.top nav a{display:none}}
-.theme{background:none;border:1px solid var(--rule);color:var(--ink);border-radius:999px;padding:4px 12px;font:inherit;font-size:14px;cursor:pointer}
-.kicker{font-size:17px;color:var(--ink-2);margin:0 0 10px;max-width:40ch}
-.price{font-size:clamp(88px,19vw,232px);display:flex;align-items:baseline;gap:.12em;flex-wrap:wrap}
-.price .per{font-size:.3em;font-weight:700;color:var(--ink-2)}
-.sign{display:inline-block;background:var(--sign);color:var(--sign-ink);padding:.02em .16em .06em;transform:rotate(-1.2deg);box-shadow:4px 4px 0 var(--ink)}
-.where{font-size:clamp(19px,2.6vw,26px);margin:22px 0 6px;max-width:34ch;line-height:1.3}
-.facts{color:var(--ink-2);margin:0 0 22px}
-.btn{display:inline-block;background:var(--ink);color:var(--paper);text-decoration:none;padding:11px 18px;border-radius:4px;font-weight:600}
-.btn:hover{background:var(--survey)}
-.runnersup{margin-top:34px;display:flex;gap:10px;flex-wrap:wrap;font-size:14px;color:var(--ink-2)}
-.runnersup a{background:var(--card);border:1px solid var(--rule);border-radius:4px;padding:6px 10px;text-decoration:none;color:var(--ink)}
-.runnersup b{font-weight:600}
+header{display:flex;align-items:center;gap:28px;padding:0 28px;height:60px;border-bottom:1px solid var(--rule)}
+header h1{font-size:19px;font-weight:800;letter-spacing:-.01em;margin:0;white-space:nowrap}
+header h1 span{font-weight:400;color:var(--soft)}
+.brand{display:flex;flex-direction:column;justify-content:center;line-height:1.2}
+#visitors{font-size:12px;color:var(--soft);white-space:nowrap}
+.tabs{display:flex;gap:4px;margin-left:auto;align-self:stretch}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--soft);font-weight:500;padding:0 10px;cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--ink);font-weight:700;border-bottom-color:var(--ink)}
+#fcur{background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:5px 8px;max-width:190px}
 
-section{padding:56px 0;border-bottom:1px solid var(--rule)}
-.sec-head{display:flex;justify-content:space-between;align-items:end;gap:12px 24px;flex-wrap:wrap;margin-bottom:18px}
-.sec-head .lede{margin:0}
+.layout{display:grid;grid-template-columns:270px minmax(0,1fr);max-width:1320px;margin:0 auto}
+aside{position:sticky;top:0;align-self:start;max-height:100vh;max-height:100dvh;overflow:auto;padding:22px 22px 40px 28px;border-right:1px solid var(--rule)}
+aside h2{font-size:13px;font-weight:700;margin:22px 0 8px}
+aside > h2:first-child{margin-top:0}
+aside input[type=search],aside input[type=number],aside select{width:100%;background:var(--tint);border:1px solid transparent;border-radius:4px;padding:8px 10px;min-width:0}
+aside input:focus{background:var(--paper);border-color:var(--blue);outline:0}
+.range{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;color:var(--soft);font-size:14px}
+.facet{list-style:none;margin:0;padding:0}
+.facet label{display:flex;align-items:baseline;gap:9px;padding:3px 0;cursor:pointer;font-size:14px;line-height:1.35}
+.facet input{accent-color:var(--blue);margin:0;flex:none;transform:translateY(2px)}
+.facet .n{margin-left:auto;padding-left:8px;color:var(--soft);font-size:13px}
+.facet .grp{font-size:12px;font-weight:600;color:var(--soft);padding:8px 0 2px}
+.facet .none{font-size:14px;color:var(--soft);padding:4px 0}
+.fsearch{margin-bottom:6px}
+.scroll{max-height:300px;overflow:auto;margin-right:-8px;padding-right:8px}
+.linkbtn{background:none;border:0;color:var(--blue);padding:4px 0;cursor:pointer;font-size:14px}
+.chk{display:flex;align-items:center;gap:9px;font-size:14px;padding:3px 0;cursor:pointer}
+.chk input{accent-color:var(--blue);margin:0}
+.field{display:block;font-size:13px;color:var(--soft);margin-bottom:8px}
+.field input,.field select{margin-top:3px;color:var(--ink)}
+.done{display:none}
 
-/* ---- filters ---- */
-.filters{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:end;margin-bottom:14px;padding:14px;background:var(--paper-2);border:1px solid var(--rule);border-radius:6px}
-.filters label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--ink-2)}
-.filters input,.filters select{font:inherit;font-size:15px;color:var(--ink);background:var(--card);border:1px solid var(--rule);border-radius:4px;padding:7px 9px;min-width:0;height:40px}
-.filters input[type=search]{width:230px}
-.filters input[type=number]{width:150px}
-.filters .chk{flex-direction:row;align-items:center;gap:8px;font-size:15px;color:var(--ink);padding-bottom:8px}
-.filters .chk input{height:auto}
-.count{font-size:14px;color:var(--ink-2);margin-bottom:14px}
+main{padding:22px 28px 0;min-width:0}
+.top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.top h2{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0}
+.top p{margin:0;color:var(--soft)}
+.fbtn{display:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
+.chip{background:var(--tint);border:0;border-radius:4px;padding:4px 9px;font-size:13px;cursor:pointer}
+.chip span{color:var(--soft);margin-left:4px}
+.chip:hover span{color:var(--ink)}
 
-/* ---- listing grid ---- */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:18px}
-.card{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--rule);border-radius:6px;overflow:hidden;position:relative}
-.card:hover{border-color:var(--ink)}
-.card:focus-within{border-color:var(--ink)}
-.ph{display:block;position:relative;aspect-ratio:4/3;overflow:hidden;
-  background:repeating-radial-gradient(ellipse at 72% 28%,transparent 0 13px,var(--rule) 13px 14px),var(--paper-2)}
-.ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;background:var(--paper-2)}
-.rk{position:absolute;top:10px;left:10px;background:var(--sign);color:var(--sign-ink);font:700 15px/1 "Big Shoulders Display",Impact,sans-serif;padding:5px 8px 4px;border-radius:3px;letter-spacing:.02em}
-.bd{display:flex;flex-direction:column;gap:2px;padding:12px 14px 14px;flex:1}
-.pr{font:900 36px/1 "Big Shoulders Display",Impact,sans-serif;margin:0}
-.sz{margin:0 0 6px;color:var(--ink-2);font-size:14px}
-.card h3{font-size:15px;font-weight:500;line-height:1.35;margin:0 0 4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.card h3 a{color:var(--ink);text-decoration:none}
-.card h3 a::after{content:"";position:absolute;inset:0}  /* whole card is the link */
-.card h3 a:hover{text-decoration:underline}
-.pl{margin:0;color:var(--ink-2);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.src{margin:auto 0 0;padding-top:10px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--survey)}
-.fn{margin:6px 0 0;color:var(--warn);font-size:13px;line-height:1.4}
-.empty{grid-column:1/-1;padding:28px 0;color:var(--ink-2)}
-.empty button{font:inherit;background:none;border:0;padding:0;color:var(--survey);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
-.more{display:block;margin:22px auto 0;font:inherit;font-weight:600;background:none;border:1px solid var(--ink);color:var(--ink);border-radius:4px;padding:9px 18px;cursor:pointer}
-.more:hover{background:var(--ink);color:var(--paper)}
-.more[hidden]{display:none}
+table{width:100%;border-collapse:collapse;margin-top:14px}
+thead th{font-size:13px;font-weight:600;color:var(--soft);text-align:left;padding:8px 10px;border-bottom:2px solid var(--ink);white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--rule)}
+tbody tr:hover{background:var(--mark)}
+td{padding:12px 10px;vertical-align:top}
+td.rank{color:var(--soft);font-size:13px;width:44px;padding-top:15px}
+td.price{width:140px}
+.p{display:block;font-size:21px;font-weight:700;letter-spacing:-.01em;line-height:1.15}
+.own{display:block;font-size:12.5px;color:var(--soft);margin-top:3px}
+td.land{width:150px}
+.ac{font-weight:600}
+.bar{display:block;height:4px;background:var(--bar);border-radius:2px;margin:6px 0 4px;min-width:3px;max-width:100%}
+.ppa{font-size:12.5px;color:var(--soft)}
+.t{font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.where{color:var(--soft);font-size:14px;margin-top:2px}
+.w{color:var(--warn);font-size:13px;margin-top:4px}
+td.type{width:160px;font-size:14px}
+.sp{display:block;font-size:12.5px;font-weight:600;color:var(--warn);margin-top:2px}
+.more{display:block;margin:22px auto 8px;background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:9px 18px;cursor:pointer}
+.empty{padding:40px 0;color:var(--soft)}
+.empty button{font-size:15px}
 
-/* ---- country grid ---- */
-.ranks{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
-.rank{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"fl ri" "cn cn" "v v" "meta meta";align-items:center;gap:2px 8px;
-  background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.rank:hover{border-color:var(--ink)}
-.rank .fl{grid-area:fl;font-size:24px;line-height:1}
-.rank .ri{grid-area:ri;justify-self:end;font-size:13px;color:var(--ink-2)}
-.rank .cn{grid-area:cn;font-weight:600;margin-top:6px}
-.rank .v{grid-area:v;font:900 30px/1.05 "Big Shoulders Display",Impact,sans-serif}
-.rank .meta{grid-area:meta;font-size:13px;color:var(--ink-2)}
+#map{height:calc(100vh - 190px);height:calc(100dvh - 190px);min-height:420px;border:1px solid var(--rule);border-radius:4px;margin-top:14px}
+#map.full{position:fixed!important;inset:0;z-index:1000;height:auto;min-height:0;border:0;border-radius:0;margin:0}  /* full screen map */
+body.mapfull{overflow:hidden}
+.fsbtn a{display:flex;align-items:center;justify-content:center;width:auto!important;padding:0 10px;font:600 13px/30px "Public Sans",sans-serif;color:#222;cursor:pointer;white-space:nowrap}
+@media (prefers-color-scheme:dark){#map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}}
+.pin div,.cl div{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:999px;cursor:pointer;font:700 12px/1 "Public Sans",sans-serif}
+.pin div{background:var(--paper);color:var(--ink);border:1px solid var(--rule);padding:5px 8px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.pin div:hover{border-color:var(--ink)}
+.pin div.flag{border-color:var(--warn);color:var(--warn)}
+.cl div{background:var(--ink);color:var(--paper);padding:7px 11px;font-weight:400;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.cl div b{font-weight:700}
+.cl div.big{padding:9px 13px;font-size:13px}
+.cl div.huge{padding:11px 15px;font-size:14px}
+.leaflet-container{font-family:"Public Sans",sans-serif}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--paper);color:var(--ink)}
+.leaflet-popup-content{margin:14px 16px;font-size:14px;line-height:1.45}
+.pop .p{margin-bottom:2px}
+.pop .t{margin-top:6px}
+.note{color:var(--soft);font-size:13px;margin:10px 0 0}
 
-/* ---- map ---- */
-#map{height:min(62vh,540px);border:1px solid var(--rule);border-radius:6px;background:var(--paper-2)}
-.leaflet-popup-content{font:14px/1.45 "IBM Plex Sans",sans-serif;margin:12px 14px}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ink-2);margin-top:10px}
-.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:-1px}
+footer{color:var(--soft);font-size:13px;padding:28px 0 36px;max-width:80ch}
+footer p{margin:4px 0}
+[hidden]{display:none!important}
 
-@media (max-width:720px){
-  .filters{display:grid;grid-template-columns:1fr 1fr}
-  .filters label:first-child{grid-column:1/3}
-  .filters input:not([type=checkbox]),.filters select{width:100%}
-  .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
-  .pr{font-size:30px}
-  .bd{padding:10px 11px 12px}
-  .ranks{grid-template-columns:1fr 1fr}
-}
-
-footer{padding:40px 0 60px;color:var(--ink-2);font-size:15px}
-footer p{max-width:68ch}
-@media (prefers-reduced-motion:no-preference){
-  .topo path{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);animation:draw 2.4s ease-out forwards;animation-delay:var(--d)}
-  @keyframes draw{to{stroke-dashoffset:0}}
-  .card,.rank{transition:border-color .15s,transform .15s}
-  .card:hover,.rank:hover{transform:translateY(-2px)}
+@media (max-width:860px){
+  header{padding:0 16px;gap:14px}
+  header h1 span{display:none}
+  #fcur{max-width:84px}
+  .layout{display:block}
+  aside{display:none;position:static;max-height:none;border-right:0;border-bottom:1px solid var(--rule);padding:16px}
+  aside.open{display:block}
+  .done{display:block;width:100%;margin-top:22px;background:var(--ink);color:var(--paper);border:0;border-radius:4px;padding:11px;font-weight:600;cursor:pointer}
+  main{padding:16px 16px 0}
+  .fbtn{display:inline-block;margin-left:auto;background:var(--tint);border:0;border-radius:4px;padding:7px 12px;font-weight:600;cursor:pointer}
+  .top h2{font-size:22px}
+  thead{display:none}
+  table,tbody{display:block}
+  tbody tr{display:grid;grid-template-columns:auto 1fr;column-gap:14px;padding:14px 0}
+  td{padding:0}
+  td.rank{display:none}
+  td.price{grid-row:1/3;width:auto}
+  td.land{width:auto;display:flex;flex-wrap:wrap;gap:0 10px;align-items:baseline}
+  td.land .bar{display:none}
+  td.what{grid-column:1/3;margin-top:8px}
+  td.type{grid-column:1/3;width:auto;margin-top:4px;color:var(--soft)}
+  .sp{display:inline;margin-left:8px}
+  #map{height:calc(100dvh - 170px)}
 }
 </style>
 </head>
 <body>
-<header class="hero">
-  <svg class="topo" id="topo" aria-hidden="true"></svg>
-  <div class="wrap hero-in">
-    <div class="top">
-      <a class="brand" href="#">Cheapest Land on Earth</a>
-      <nav><a href="#all">Listings</a><!--CASTLES_NAV--><a href="#countries">Countries</a><a href="#map-sec">Map</a>
-        <button class="theme" id="theme" type="button">Dark</button></nav>
-    </div>
-    <div id="hero">
-    <!--HERO-->
-    </div>
+<header>
+  <div class="brand">
+    <h1>Cheapest Land <span>worldwide</span></h1>
+    <span id="visitors" hidden></span>
   </div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="t-list" aria-selected="true">List</button>
+    <button role="tab" id="t-map" aria-selected="false">Map</button>
+  </nav>
+  <select id="fcur" aria-label="Currency"></select>
 </header>
 
-<main>
-  <section id="all"><div class="wrap">
-    <div class="sec-head">
-      <div><h2>Cheapest land you can buy</h2>
-      <p class="lede">Every listing ranked by its total asking price in US dollars, from {{SOURCE_COUNT}} listing sites. Size doesn't change the order. Listings whose price looks wrong, like a monthly payment, a lease, a per-m² price or an auction minimum bid, are hidden unless you show them.</p></div>
-    </div>
-    <div class="filters">
-      <label>Search<input id="q" type="search" placeholder="Town, region or keyword"></label>
-      <label>Country<select id="fc"><option value="">Anywhere</option><!--COUNTRIES--></select></label>
-      <label>Source<select id="fsrc"><option value="">All sites</option><!--SOURCES--></select></label>
-      <label>Max price (USD)<input id="fmax" type="number" min="0" step="100" inputmode="numeric" placeholder="Any"></label>
-      <label>Min size (acres)<input id="fac" type="number" min="0" step="any" inputmode="decimal" placeholder="Any"></label>
-      <label>Sort<select id="fs">
-        <option value="price-asc">Cheapest first</option><option value="price-desc">Most expensive first</option>
-        <option value="size-desc">Largest first</option></select></label>
-      <label class="chk"><input id="fflag" type="checkbox"> Show flagged</label>
-    </div>
-    <div class="count" id="count" aria-live="polite">The cheapest of {{ROWS}} listings</div>
-    <div class="grid" id="grid">
-      <!--CARDS-->
-    </div>
-    <button class="more" id="more" type="button" hidden>Show 48 more</button>
-  </div></section>
+<div class="layout">
+  <aside id="side" aria-label="Filters">
+    <h2><label for="q">Search</label></h2>
+    <input id="q" type="search" placeholder="Town, region or words in the title">
 
-  <!--CASTLES-->
+    <h2>Price (<span class="cur">USD</span>)</h2>
+    <div class="range"><input id="fmin" type="number" min="0" step="100" inputmode="numeric" placeholder="Min" aria-label="Min price">to<input id="fmax" type="number" min="0" step="100" inputmode="numeric" placeholder="Max" aria-label="Max price"></div>
 
-  <section id="countries"><div class="wrap">
-    <h2>Cheapest land by country</h2>
-    <p class="lede">The cheapest piece of land you can buy in each country today. Choose a country to see all of its listings.</p>
-    <div class="ranks" id="ranks">
-    <!--RANKS-->
+    <h2>Type of property</h2>
+    <div id="ftype" data-label="Type of property"></div>
+
+    <h2>Continent</h2>
+    <div id="fcont" data-label="Continent"></div>
+
+    <h2>Country</h2>
+    <div id="fc" data-label="Country" data-search="Search countries"></div>
+
+    <div id="cityblock" hidden>
+      <h2>City or town</h2>
+      <div id="fcity" data-label="City or town" data-search="Search towns"></div>
     </div>
-  </div></section>
 
-  <section id="map-sec"><div class="wrap">
-    <h2>Where it is</h2>
-    <p class="lede">Every listing with a known location. LandWatch, Encuentra24 and HOME'S Akiya Bank don't publish coordinates, so their listings appear only in the grid.</p>
-    <div id="map" role="region" aria-label="Map of listings"></div>
-    <div class="legend" id="legend"></div>
-  </div></section>
-</main>
+    <h2>Land</h2>
+    <div class="range"><input id="facmin" type="number" min="0" step="any" inputmode="decimal" placeholder="Min acres" aria-label="Min acres">to<input id="facmax" type="number" min="0" step="any" inputmode="decimal" placeholder="Max acres" aria-label="Max acres"></div>
+    <label class="field" style="margin-top:10px">Max price per acre (<span class="cur">USD</span>)<input id="fppa" type="number" min="0" step="10" inputmode="numeric" placeholder="Any"></label>
+    <label class="chk"><input id="farea" type="checkbox"> Area listed only</label>
 
-<footer><div class="wrap">
-  <p id="updated"><!--UPDATED--></p>
-  <p>Prices are converted to US dollars at that day's exchange rates. Cheap land is often remote, landlocked or unbuildable, and many countries limit foreign ownership. Open the listing and check access, zoning, title and ownership rules before you buy anything.</p>
-  <p>Listings are scraped daily and link back to the sites they come from: {{SOURCE_LIST}}. Built with <a href="https://github.com/waleedrizwan/landfinder">landfinder</a>, which is open source.</p>
-</div></footer>
+    <h2>Listings</h2>
+    <label class="field">Source<select id="fsrc"><option value="">All sources</option><option value="properstar">Properstar</option><option value="landwatch">LandWatch</option><option value="kijiji">Kijiji</option><option value="olx">OLX</option><option value="mercadolibre">Mercado Libre</option><option value="ieichiba">Ieichiba</option><option value="homes">HOME'S Akiya Bank</option><option value="zillow">Zillow</option><option value="immobiliare">Immobiliare.it</option><option value="encuentra24">Encuentra24</option></select></label>
+    <label class="chk"><input id="fflag" type="checkbox"> Include flagged listings</label>
+    <button class="linkbtn" id="reset" type="button" style="margin-top:14px">Clear all filters</button>
+    <button class="done" id="done" type="button">Show listings</button>
+  </aside>
+
+  <main>
+    <div class="top">
+      <h2 id="count">Loading…</h2>
+      <p id="sub">cheapest first</p>
+      <button class="fbtn" id="fbtn" type="button" aria-controls="side" aria-expanded="false">Filters</button>
+    </div>
+    <div class="chips" id="chips"></div>
+
+    <section id="p-list">
+      <table>
+        <thead><tr><th>#</th><th>Price</th><th>Land</th><th>Listing</th><th>Type</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" hidden>No listings match these filters. <button class="linkbtn" type="button" onclick="resetAll()">Clear all filters</button></div>
+      <button class="more" id="more" type="button" hidden>Show more</button>
+    </section>
+
+    <section id="p-map" hidden>
+      <div id="map"></div>
+      <p class="note">Click a group to zoom in and a price to see the listing. Pick a continent, country or town to jump to it.
+        LandWatch listings are pinned at their ZIP code's center. Mercado Libre, Ieichiba, HOME'S and Encuentra24 listings have no location, so they aren't on the map.</p>
+    </section>
+
+    <footer>
+      <p><span id="updated"></span></p>
+      <p>Prices are converted at the exchange rates of the last update. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Zillow, Kijiji, OLX, Mercado Libre, Ieichiba, HOME'S Akiya Bank, Immobiliare.it, Encuentra24. A free (¥0) Japanese house still costs transfer fees, registration and yearly property tax.</p>
+    </footer>
+  </main>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
-// row: [priceUsd, acres, cc, region, title, source, flags, url, lat, lon, img]
-const PRICE = 0, ACRES = 1, CC = 2, REGION = 3, TITLE = 4, SRC = 5, FL = 6, URL = 7, LAT = 8, LON = 9, IMG = 10;
-const PAGE = 48;
-const FLAGS = {L:"Price looks too low: may be a monthly payment or a per-m² price",
-  P:"May be a payment-plan price", A:"Auction or tender: price may be a minimum bid",
-  N:"No land area listed", R:"Lease or rental, not a sale price", X:"Looks like a placeholder price",
-  U:"Price may be per m², acre or hectare",
-  M:"Mining claim, mineral rights or access deed: you don't own the land", H:"A house listing, not vacant land"};
-const SOURCES = {properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji", olx:"OLX", zillow:"Zillow",
-  immobiliare:"Immobiliare.it", encuentra24:"Encuentra24", homes:"HOME'S Akiya Bank"};
+// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type, town, price, currency, tags]
+// title and region are in English; originalTitle is set when the title was translated; type is a TYPES key;
+// town is "" when the listing doesn't say, and "Deming, NM" in the US and Canada; price is in the listing's own currency;
+// tags holds SPECIAL keys: a ruin or fixer-upper, a castle or manor, a church or chapel
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let regionNames; try { regionNames = new Intl.DisplayNames(["en"], {type:"region"}); } catch (e) {}
+let regionNames, currencyNames;
+try { regionNames = new Intl.DisplayNames(["en"], {type:"region"}); currencyNames = new Intl.DisplayNames(["en"], {type:"currency"}); } catch (e) {}
 const cname = cc => { if (cc && cc.length === 2) { try { return regionNames.of(cc) || cc; } catch (e) {} } return (cc || "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()); };
-const cflag = cc => cc && cc.length === 2 ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 127397 + c.charCodeAt(0))) : "🌐";
-const money = v => v == null ? "—" : "$" + (v < 10 ? v.toFixed(2) : Math.round(v).toLocaleString("en-US"));
-const acres = v => v == null ? "—" : v < .01 ? "<0.01" : v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString("en-US");
-const size = v => v == null ? "Size not listed" : `${acres(v)} ${v === 1 ? "acre" : "acres"}`;
-const motion = () => matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-
-// theme toggle (per-viewer convenience)
-(function(){
-  const root = document.documentElement, b = $("theme");
-  let saved; try { saved = localStorage.getItem("theme"); } catch (e) {}
-  if (saved) root.dataset.theme = saved;
-  const isDark = () => root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  const label = () => b.textContent = isDark() ? "Light" : "Dark";
-  label();
-  b.onclick = () => { root.dataset.theme = isDark() ? "light" : "dark"; try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {} label(); window.dispatchEvent(new Event("themechange")); };
-})();
-
-// contour lines: concentric wobbly rings around a few "hills"
-(function(){
-  const svg = $("topo"), W = 1400, H = 760;
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("preserveAspectRatio", "xMidYMid slice");
-  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const hills = [[1080, 260, 15], [1250, 640, 9], [640, 820, 8], [180, -40, 6]];
-  let out = "", n = 0;
-  for (const [cx, cy, rings] of hills) {
-    const ph = [rnd() * 6, rnd() * 6, rnd() * 6];
-    for (let k = 1; k <= rings; k++) {
-      const r = k * 34 + rnd() * 6, pts = [];
-      for (let i = 0; i <= 72; i++) {
-        const a = i / 72 * Math.PI * 2;
-        const w = 1 + .16 * Math.sin(3 * a + ph[0]) + .09 * Math.sin(5 * a + ph[1] + k * .15) + .05 * Math.sin(9 * a + ph[2]);
-        pts.push([cx + Math.cos(a) * r * w * 1.25, cy + Math.sin(a) * r * w * .85]);
-      }
-      const d = "M" + pts.map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join("L") + "Z";
-      const len = Math.round(r * 9.5);
-      out += `<path d="${d}" class="${k % 5 === 0 ? "idx" : ""}" style="--len:${len};--d:${(n++ * 0.035).toFixed(2)}s"/>`;
-    }
-  }
-  svg.innerHTML = out;
-})();
-
-let ALL = [], VIEW = [], shown = PAGE, loading = null, mapDone = false;
-
-// The hero, the first cards and the country grid are rendered at build time. The full data (several MB)
-// is fetched when the grid is about to scroll into view, or as soon as a filter is touched.
-function load(){
-  return loading ||= fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
-    ALL = d.rows; render(); if (mapWanted) map();
-  }).catch(e => {
-    $("count").textContent = "The full list couldn't be loaded. Refresh the page to try again.";
-    $("map").textContent = "The map couldn't load because the listings didn't.";
-    $("more").hidden = true;
-  });
-}
-
-// buyable at the listed price: no warning flags ("N" = no area listed is fine when ranking by total price)
-const clean = r => r[PRICE] != null && (!r[FL] || r[FL] === "N");
-
-function card(r, rank){
-  const place = [r[REGION], cname(r[CC])].filter(Boolean).join(", ");
-  const notes = [...(r[FL] || "")].filter(f => f !== "N").map(f => FLAGS[f]).filter(Boolean).join(". ");
-  const u = esc(r[URL]);
-  return `<article class="card"><a class="ph" href="${u}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">`
-    + (r[IMG] ? `<img src="${esc(r[IMG])}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">` : "")
-    + `<span class="rk">#${rank}</span></a>`
-    + `<div class="bd"><p class="pr">${money(r[PRICE])}</p><p class="sz">${size(r[ACRES])}</p>`
-    + `<h3><a href="${u}" target="_blank" rel="noopener">${esc(r[TITLE] || "Land in " + place)}</a></h3>`
-    + `<p class="pl"><span aria-hidden="true">${cflag(r[CC])}</span> ${esc(place)}</p>`
-    + (notes ? `<p class="fn">${esc(notes)}</p>` : "")
-    + `<p class="src">${esc(SOURCES[r[SRC]] || r[SRC] || "")}</p></div></article>`;
-}
-
-const SORTS = {
-  "price-asc": (a, b) => a[PRICE] - b[PRICE],
-  "price-desc": (a, b) => b[PRICE] - a[PRICE],
-  "size-desc": (a, b) => (b[ACRES] ?? -1) - (a[ACRES] ?? -1) || a[PRICE] - b[PRICE],
+// prices are kept in US dollars and shown in the picked currency; RATES[c] is what a dollar bought on the day the site was built
+let RATES = {USD: 1}, CUR = "USD", RATE = 1, SIGN = "$";
+const withCur = s => SIGN ? SIGN + s : s + " " + CUR;  // "$1,250", or "1,250 PLN" for currencies written with letters
+const digits = v => v < 10 ? v.toFixed(2) : Math.round(v).toLocaleString("en-US");
+const money = v => v == null ? "—" : v === 0 ? "Free" : withCur(digits(v));
+// a listing's price in the picked currency: its own price when it's listed in that currency, else converted from dollars
+const price = r => r[15] === CUR ? r[14] : r[1] * RATE;
+const acres = v => v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString("en-US");
+const srcName = s => ({properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji", olx:"OLX", mercadolibre:"Mercado Libre", ieichiba:"Ieichiba", homes:"HOME'S Akiya Bank", castles:"Properstar", zillow:"Zillow", immobiliare:"Immobiliare.it", encuentra24:"Encuentra24"})[s] || s;
+const PAGE = 60;
+const FLAGS = {L:"Price looks too low: may be a monthly payment, a per-m² price or in the wrong currency",
+  S:"Only a share, usage rights or a burial plot, not land you'd own outright",
+  P:"May be a payment-plan price", A:"Auction or tender: price may be a minimum bid",
+  C:"Under $10 an acre: double-check the listing", R:"Lease or rental, not a sale price",
+  X:"Looks like a placeholder price", U:"Price may be per m², acre or hectare",
+  O:"Far cheaper than other listings in this country: the area or price is probably wrong",
+  M:"Mining claim, mineral rights or access deed: you don't own the land", H:"A house listing, not vacant land"};
+// property type, worked out from each site's category and the listing text when the site is built
+const TYPES = {V:"Vacant land", L:"Building lot", F:"Farmland", T:"Forest", R:"Recreational", W:"Waterfront", C:"Commercial",
+  G:"Dacha plot", B:"Land with house", H:"House"};
+// each country's continent (Central America and the Caribbean count as North America; the Middle East as Asia)
+const CONTINENT = {};
+for (const [name, codes] of Object.entries({
+  "Africa": "DZ AO BJ BW BF BI CV CM CF TD KM CG CD CI DJ EG GQ ER SZ ET GA GM GH GN GW KE LS LR LY MG MW ML MR MU YT MA MZ NA NE NG RE RW SH ST SN SC SL SO ZA SS SD TZ TG TN UG EH ZM ZW",
+  "Asia": "AF AM AZ BH BD BT BN KH CN GE HK IN ID IR IQ IL JP JO KZ KW KG LA LB MO MY MV MN MM NP KP OM PK PS PH QA SA SG KR LK SY TW TJ TH TL TR TM AE UZ VN YE",
+  "Europe": "AX AL AD AT BY BE BA BG HR CY CZ DK EE FO FI FR DE GI GR GG HU IS IE IM IT JE XK LV LI LT LU MT MD MC ME NL MK NO PL PT RO RU SM RS SK SI ES SJ SE CH UA GB VA",
+  "North America": "AI AG AW BS BB BZ BM BQ VG CA KY CR CU CW DM DO SV GL GD GP GT HT HN JM MQ MX MS NI PA PR BL KN LC MF PM VC SX TT TC US VI",
+  "South America": "AR BO BR CL CO EC FK GF GY PY PE SR UY VE",
+  "Oceania": "AS AU CK FJ PF GU KI MH FM NR NC NZ NU NF MP PW PG PN WS SB TK TO TV VU WF"}))
+  for (const cc of codes.split(" ")) CONTINENT[cc] = name;
+const contOf = cc => CONTINENT[cc] || "Other";
+const SPECIAL = {R:"Ruin", K:"Castle", C:"Church"};
+const FILTERS = ["q", "fmin", "fmax", "facmin", "facmax", "fppa", "fsrc", "farea", "fflag"];
+// titles written in capitals read as shouting: show them in sentence case
+const tidy = s => {
+  s = String(s || "").trim();
+  const letters = s.replace(/[^\p{L}]/gu, ""), upper = s.replace(/[^\p{Lu}]/gu, "");
+  return letters.length > 6 && upper.length / letters.length > .6 ? s.toLowerCase().replace(/^\P{L}*\p{L}/u, c => c.toUpperCase()) : s;
 };
 
-function render(){
-  if (!ALL.length) return;
-  const q = $("q").value.trim().toLowerCase(), cc = $("fc").value, src = $("fsrc").value,
-        mx = parseFloat($("fmax").value), ac = parseFloat($("fac").value), fl = $("fflag").checked;
-  VIEW = ALL.filter(r => (fl || clean(r)) && (!cc || r[CC] === cc) && (!src || r[SRC] === src)
-    && (isNaN(mx) || (r[PRICE] != null && r[PRICE] <= mx)) && (isNaN(ac) || (r[ACRES] || 0) >= ac)
-    && (!q || ((r[TITLE] || "") + " " + (r[REGION] || "")).toLowerCase().includes(q)));
-  VIEW.sort(SORTS[$("fs").value] || SORTS["price-asc"]);
-  $("count").textContent = `${VIEW.length.toLocaleString("en-US")} listings`;
-  $("grid").innerHTML = VIEW.slice(0, shown).map((r, i) => card(r, i + 1)).join("")
-    || `<p class="empty">No listings match these filters. <button type="button" onclick="clearFilters()">Clear filters</button></p>`;
-  const left = VIEW.length - shown;
-  $("more").hidden = left <= 0;
-  $("more").textContent = `Show ${Math.min(PAGE, left).toLocaleString("en-US")} more`;
-}
+// buyable at the listed price: no warning flags ("N" = no area listed is fine when ranking by total price)
+const clean = r => r[1] != null && (!r[7] || r[7] === "N");
+// its only flag says it's a house: shown when you pick House or one of the ruins, castles and churches
+const houseOnly = r => !r[7].replace(/[HN]/g, "");
 
-function clearFilters(){
-  for (const id of ["q", "fc", "fsrc", "fmax", "fac"]) $(id).value = "";
-  $("fflag").checked = false; shown = PAGE; render();
-}
+let ALL = [], VIEW = [], TOWNS = {}, POP = {}, shown = PAGE, map, pins, mapAt = null, mapTimer;
 
-for (const id of ["q", "fc", "fsrc", "fmax", "fac", "fs", "fflag"])
-  $(id).addEventListener("input", () => { shown = PAGE; load().then(render); });
-$("more").onclick = () => { shown += PAGE; load().then(render); };
-
-$("ranks").onclick = e => { const b = e.target.closest(".rank"); if (!b) return;
-  $("fc").value = b.dataset.cc; shown = PAGE; load().then(render);
-  $("all").scrollIntoView({behavior: motion()}); };
-
-let mapWanted = false;
-if ("IntersectionObserver" in window) {
-  const io = new IntersectionObserver(es => { if (es.some(x => x.isIntersecting)) { io.disconnect(); load(); } }, {rootMargin: "300px 0px"});
-  io.observe($("grid"));
-  const mo = new IntersectionObserver(es => { if (es.some(x => x.isIntersecting)) { mo.disconnect(); mapWanted = true; load().then(map); } }, {rootMargin: "300px 0px"});
-  mo.observe($("map-sec"));
-} else { mapWanted = true; load(); }
-if (/^#(all|map-sec|countries)$/.test(location.hash)) load();
-
-function map(){
-  if (mapDone || !ALL.length) return;
-  mapDone = true;
-  if (!window.L) { $("map").textContent = "The map couldn't load."; return; }
-  const pts = ALL.filter(r => clean(r) && r[LAT] != null && r[LON] != null);
-  const bins = [[2000, "#1f7a4d", "Under $2,000"], [10000, "#7aa83a", "$2,000–10,000"], [50000, "#d9a441", "$10,000–50,000"], [Infinity, "#b5532a", "Over $50,000"]];
-  const color = v => bins.find(b => v < b[0])[1];
-  const m = L.map("map", {preferCanvas: true, worldCopyJump: true, scrollWheelZoom: false}).setView([20, 0], 2);
-  const dark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  const tiles = () => L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_${dark() ? "Dark" : "Light"}_Gray_Base/MapServer/tile/{z}/{y}/{x}`,
-    {maxZoom: 16, attribution: "Tiles &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors"});
-  let layer = tiles().addTo(m);
-  window.addEventListener("themechange", () => { m.removeLayer(layer); layer = tiles().addTo(m); });
-  for (const r of pts.sort((a, b) => b[PRICE] - a[PRICE])) {
-    L.circleMarker([r[LAT], r[LON]], {radius: 5, weight: 1, color: "#1d2a23", fillColor: color(r[PRICE]), fillOpacity: .85})
-      .bindPopup(`<b>${money(r[PRICE])}</b>${r[ACRES] != null ? ` for ${acres(r[ACRES])} acres` : ""}<br>${esc(r[REGION])}, ${esc(cname(r[CC]))}<br><a href="${esc(r[URL])}" target="_blank" rel="noopener">Open the listing</a>`)
-      .addTo(m);
+fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
+  ALL = d.rows.filter(r => r[1] != null).sort((a, b) => a[1] - b[1]);
+  for (const r of ALL) r.text = (r[5] + " " + (r[11] || "") + " " + r[4] + " " + cname(r[3])).toLowerCase();
+  $("updated").textContent = `Updated ${new Date(d.generated).toLocaleString("en-US", {dateStyle:"medium", timeStyle:"short"})}.`;
+  const cs = [...new Set(ALL.map(r => r[3]))];
+  F.country.setItems(cs.map(c => ({value: c, label: cname(c)})));
+  F.cont.setItems([...new Set(cs.map(contOf))].sort().map(ct => ({value: ct, label: ct})));
+  for (const r of ALL) if (r[13]) (TOWNS[r[3]] ??= new Set()).add(r[13]);
+  POP = d.populations || {};
+  RATES = d.rates || RATES;
+  const wide = matchMedia("(min-width:861px)").matches;  // phones only have room for "USD"
+  for (const c of Object.keys(RATES).sort()) {  // every currency with a rate and an English name
+    const name = currencyNames ? currencyNames.of(c) : "";
+    if (name !== c) $("fcur").add(new Option(name && wide ? `${c} · ${name}` : c, c));
   }
-  $("legend").innerHTML = bins.map(b => `<span style="--c:${b[1]}">${b[2]}</span>`).join("");
+  let saved; try { saved = localStorage.getItem("currency"); } catch (e) {}
+  $("fcur").value = [...$("fcur").options].some(o => o.value === saved) ? saved : "USD";
+  setCurrency($("fcur").value);
+  $("fcur").addEventListener("input", () => {
+    setCurrency($("fcur").value);
+    try { localStorage.setItem("currency", CUR); } catch (e) {}
+    update();
+  });
+  for (const id of FILTERS) $(id).addEventListener("input", refilter);
+  update();
+}).catch(() => { $("count").textContent = "Couldn't load listings"; $("sub").textContent = "Refresh the page to try again."; });
+
+// the visitor count (functions/api/visitors.js): a browser's first visit adds one, later visits just read it
+let firstVisit = false;
+try { firstVisit = !localStorage.getItem("counted"); } catch (e) {}
+fetch("/api/visitors", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({first: firstVisit})})
+  .then(r => r.ok ? r.json() : Promise.reject(r.status)).then(d => {
+    try { localStorage.setItem("counted", "1"); } catch (e) {}
+    $("visitors").textContent = `${d.total.toLocaleString("en-US")} ${d.total === 1 ? "visitor" : "visitors"} so far`;
+    $("visitors").hidden = false;
+  }).catch(() => {});  // no count (a local preview has no API): the line stays hidden
+
+$("more").onclick = () => { shown += PAGE; renderList(); };
+const openSide = open => { $("side").classList.toggle("open", open); $("fbtn").setAttribute("aria-expanded", open); };
+$("fbtn").onclick = () => openSide(!$("side").classList.contains("open"));
+$("done").onclick = () => { openSide(false); $("fbtn").scrollIntoView({block: "start"}); };
+function resetAll(){
+  for (const id of FILTERS) { const el = $(id); if (el.type === "checkbox") el.checked = false; else el.value = ""; }
+  for (const f of Object.values(F)) f.clear();
+  refilter();
+}
+$("reset").onclick = resetAll;
+$("chips").onclick = e => { const b = e.target.closest("[data-chip]"); if (b) { CHIPS[+b.dataset.chip].clear(); refilter(); } };
+$("t-list").onclick = () => tab("list");
+$("t-map").onclick = () => tab("map");
+
+function tab(name){
+  for (const t of ["list", "map"]) { $("t-" + t).setAttribute("aria-selected", t === name); $("p-" + t).hidden = t !== name; }
+  if (name === "map" && window.L) { initMap(); map.invalidateSize(); renderMap(); }
+  else renderList();
+}
+
+const norm = s => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+// a list of checkboxes with how many listings each has under the other filters.
+// Long lists get a search box, and show their biggest few until you search or ask for all of them.
+const MAX_SHOWN = 250;  // US towns run to thousands: show this many, and say how many more a search would find
+class Facet {
+  constructor(id, {top = Infinity} = {}){
+    const el = this.el = $(id), d = el.dataset;
+    this.label = d.label; this.top = top; this.items = []; this.counts = new Map(); this.sel = new Set(); this.q = ""; this.all = false;
+    el.innerHTML = (d.search ? `<input type="search" class="fsearch" placeholder="${esc(d.search)}" aria-label="${esc(d.search)}">` : "")
+      + `<ul class="facet" role="group" aria-label="${esc(d.label)}"></ul><button type="button" class="linkbtn" hidden></button>`;
+    this.list = el.querySelector("ul"); this.btn = el.querySelector("button"); this.inp = el.querySelector("input");
+    if (this.inp) {
+      this.inp.addEventListener("input", () => { this.q = this.inp.value; this.render(); });
+      this.inp.addEventListener("keydown", e => {  // Enter ticks the first match and empties the box for the next one
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        const first = this.list.querySelector("input:not(:checked)");
+        if (first) { this.sel.add(first.value); this.inp.value = this.q = ""; refilter(); }
+      });
+    }
+    this.list.addEventListener("change", e => { const v = e.target.value; e.target.checked ? this.sel.add(v) : this.sel.delete(v); refilter(); });
+    this.btn.onclick = () => { this.all = !this.all; this.render(); };
+  }
+  setItems(items){
+    this.items = items;
+    const vals = new Set(items.map(i => i.value));
+    for (const v of this.sel) if (!vals.has(v)) this.sel.delete(v);  // drop ticks that are no longer on the list
+  }
+  clear(){ this.sel.clear(); this.q = ""; this.all = false; if (this.inp) this.inp.value = ""; }
+  labelOf(v){ return (this.items.find(i => i.value === v) || {}).label || v; }
+  render(){
+    const n = v => this.counts.get(v) || 0, q = norm(this.q.trim()), groups = [...new Set(this.items.map(i => i.group || ""))];
+    // ticked ones and ones with listings; long lists biggest first within each group
+    let list = this.items.filter(i => this.sel.has(i.value) || n(i.value));
+    if (this.top < Infinity) list.sort((a, b) => groups.indexOf(a.group || "") - groups.indexOf(b.group || "") || n(b.value) - n(a.value) || a.label.localeCompare(b.label));
+    if (q) list = list.filter(i => norm(i.label + " " + (i.group || "")).includes(q));
+    let show = list;
+    if (!q && !this.all && list.length > this.top) show = [...list.filter(i => this.sel.has(i.value)), ...list.filter(i => !this.sel.has(i.value)).slice(0, this.top)];
+    const cut = show.length > MAX_SHOWN ? show.length - MAX_SHOWN : 0;
+    show = show.slice(0, MAX_SHOWN);
+    const had = document.activeElement?.closest?.(".facet") === this.list ? document.activeElement.value : null;
+    let html = "", grp = "";
+    for (const it of show) {
+      if (it.group && it.group !== grp) { grp = it.group; html += `<li class="grp">${esc(grp)}</li>`; }
+      html += `<li><label><input type="checkbox" value="${esc(it.value)}"${this.sel.has(it.value) ? " checked" : ""}> <span>${esc(it.label)}</span><span class="n">${n(it.value).toLocaleString("en-US")}</span></label></li>`;
+    }
+    if (!show.length) html = `<li class="none">${q ? "No matches" : "None with these filters"}</li>`;
+    if (cut) html += `<li class="none">Search to find ${cut.toLocaleString("en-US")} more</li>`;
+    this.list.innerHTML = html;
+    this.list.classList.toggle("scroll", this.all && !q);
+    if (had != null) [...this.list.querySelectorAll("input")].find(i => i.value === had)?.focus();  // keep keyboard focus
+    this.btn.hidden = q || list.length <= this.top;
+    this.btn.textContent = this.all ? "Show fewer" : `Show all ${list.length.toLocaleString("en-US")}`;
+  }
+}
+const F = {type: new Facet("ftype"), cont: new Facet("fcont"), country: new Facet("fc", {top: 8}), city: new Facet("fcity", {top: 8})};
+F.type.setItems([...Object.entries(TYPES).map(([k, v]) => ({value: k, label: v})),
+  ...[["R", "Ruins & fixer-uppers"], ["K", "Castles & manors"], ["C", "Churches & chapels"]].map(([k, v]) => ({value: "s" + k, label: v, group: "Ruins, castles & churches"}))]);
+const refilter = () => { shown = PAGE; update(); };
+
+function update(){
+  const conts = F.cont.sel, ccs = F.country.sel, towns = F.city.sel, picks = F.type.sel,
+        src = $("fsrc").value, q = $("q").value.trim().toLowerCase(),
+        sps = [...picks].filter(p => p[0] === "s").map(p => p[1]), tys = new Set([...picks].filter(p => p[0] !== "s")),
+        num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
+        amn = num("facmin"), amx = num("facmax"), ppa = num("fppa"),
+        area = $("farea").checked, fl = $("fflag").checked;
+  // the filters that aren't checkbox lists
+  const base = r => (!src || r[6] === src) && (isNaN(mn) || price(r) >= mn) && (isNaN(mx) || price(r) <= mx)
+    && (!area || r[2] != null)
+    && (isNaN(amn) || (r[2] != null && r[2] >= amn)) && (isNaN(amx) || (r[2] != null && r[2] <= amx))
+    && (isNaN(ppa) || (r[0] != null && r[0] * RATE <= ppa))
+    && (!q || r.text.includes(q));
+  // picking "House" or one of the ruins and castles shows house listings, which the "house listing" flag otherwise hides
+  const ok = r => fl || clean(r) || ((tys.has("H") || sps.length) && houseOnly(r));
+  const isType = r => !picks.size || tys.has(r[12]) || sps.some(s => (r[16] || "").includes(s));
+  // the town list: the picked countries' towns, biggest first
+  F.city.setItems(F.country.items.filter(c => ccs.has(c.value) && TOWNS[c.value]).flatMap(c =>
+    [...TOWNS[c.value]].sort((a, b) => ((POP[c.value] || {})[b] || 0) - ((POP[c.value] || {})[a] || 0))
+      .map(t => ({value: c.value + "|" + t, label: t, group: ccs.size > 1 ? c.label : ""}))));
+  // one pass: the listings to show, and each list's counts under every filter but its own
+  // (and the continents' under every filter but the places)
+  const cn = {type: new Map(), cont: new Map(), country: new Map(), city: new Map()}, add = (m, k) => m.set(k, (m.get(k) || 0) + 1);
+  VIEW = [];
+  for (const r of ALL) {
+    if (!base(r)) continue;
+    const ct = contOf(r[3]), inCont = !conts.size || conts.has(ct), inCountry = !ccs.size || ccs.has(r[3]),
+          town = r[3] + "|" + r[13], inTown = !towns.size || towns.has(town), here = inCont && inCountry && inTown;
+    if (here) {  // type counts: what you'd see if you ticked only that type
+      if (fl || clean(r) || (r[12] === "H" && houseOnly(r))) add(cn.type, r[12]);
+      if (r[16] && (fl || clean(r) || houseOnly(r))) for (const s of r[16]) add(cn.type, "s" + s);
+    }
+    if (!ok(r) || !isType(r)) continue;
+    add(cn.cont, ct);  // every continent stays on the list, so you can widen the search from a country
+    if (inCont) add(cn.country, r[3]);
+    if (inCont && inCountry && r[13]) add(cn.city, town);
+    if (here) VIEW.push(r);
+  }
+  for (const k in F) { F[k].counts = cn[k]; F[k].render(); }
+  $("cityblock").hidden = !F.city.items.length;
+  renderChips();
+  renderList();
+  if (map && !$("p-map").hidden) { clearTimeout(mapTimer); mapTimer = setTimeout(renderMap, 150); }
+}
+
+function setCurrency(c){
+  CUR = c; RATE = RATES[c];
+  let sign = c;
+  try {
+    sign = new Intl.NumberFormat("en-US", {style: "currency", currency: c, currencyDisplay: "narrowSymbol"})
+      .formatToParts(1).find(p => p.type === "currency").value;
+  } catch (e) {}
+  SIGN = /[^\p{L}]/u.test(sign) ? sign : "";  // "$", "€" and "R$" go before amounts; "zł", "kr" and bare codes don't
+  for (const el of document.querySelectorAll(".cur")) el.textContent = c;
+  for (const r of ALL) r.pin = null;  // map pins show prices too: make them again
+}
+
+// what's filtered, as buttons that each take one filter off
+let CHIPS = [];
+function renderChips(){
+  const val = id => $(id).value.trim(), field = (id, label) => val(id) && {label: label(val(id)), clear: () => { $(id).value = ""; }};
+  const tick = (id, label) => $(id).checked && {label, clear: () => { $(id).checked = false; }};
+  CHIPS = [field("q", v => `“${v}”`), field("fmin", v => `From ${withCur(v)}`), field("fmax", v => `Up to ${withCur(v)}`),
+    ...["type", "cont", "country", "city"].flatMap(k => [...F[k].sel].map(v => ({label: F[k].labelOf(v), clear: () => F[k].sel.delete(v)}))),
+    field("facmin", v => `${v}+ acres`), field("facmax", v => `Up to ${v} acres`), field("fppa", v => `Up to ${withCur(v)} an acre`),
+    $("fsrc").value && {label: srcName($("fsrc").value), clear: () => { $("fsrc").value = ""; }},
+    tick("farea", "Area listed"), tick("fflag", "Flagged included")].filter(Boolean);
+  $("chips").innerHTML = CHIPS.map((c, i) => `<button class="chip" type="button" data-chip="${i}" aria-label="Remove ${esc(c.label)}">${esc(c.label)}<span aria-hidden="true">×</span></button>`).join("")
+    + (CHIPS.length > 1 ? `<button class="chip" type="button" onclick="resetAll()">Clear all</button>` : "");
+  $("fbtn").textContent = CHIPS.length ? `Filters (${CHIPS.length})` : "Filters";
+}
+
+// the listing is priced in another currency, so the big price was converted from its own
+const converted = r => r[15] && r[15] !== CUR;
+const place = r => [r[4], cname(r[3])].filter(Boolean).join(", ");
+const warning = r => clean(r) || houseOnly(r) ? "" : `<div class="w">${[...r[7]].filter(f => f !== "H").map(f => FLAGS[f]).filter(Boolean).join(". ")}</div>`;
+const specials = r => [...(r[16] || "")].map(t => `<span class="sp">${SPECIAL[t]}</span>`).join("");
+const priceCell = r => `<span class="p">${money(price(r))}</span>${converted(r) && r[14] ? `<span class="own">${digits(r[14])} ${r[15]}</span>` : ""}`;
+// the bar shows land on a log scale, so a 0.05-acre lot and a 500-acre ranch both read
+const barW = a => Math.max(2, Math.min(100, (Math.log10(a) + 2) / 5 * 100));
+const landCell = r => r[2] == null ? `<span class="ppa">Area not listed</span>`
+  : `<span class="ac">${acres(r[2])} ${r[2] === 1 ? "acre" : "acres"}</span><span class="bar" style="width:${barW(r[2])}%"></span>`
+    + (r[0] ? `<span class="ppa">${money(r[0] * RATE)} an acre</span>` : "");
+// some listings have no title, or just a "•": link those as "View listing"
+const titleLink = r => `<a class="t" href="${esc(r[8])}" target="_blank" rel="noopener"${r[11] ? ` title="Original: ${esc(r[11])}"` : ""}>${esc(/[\p{L}\p{N}]/u.test(r[5] || "") ? tidy(r[5]) : "View listing")}</a>`;
+
+function renderList(){
+  const page = VIEW.slice(0, shown);
+  $("count").textContent = `${VIEW.length.toLocaleString("en-US")} ${VIEW.length === 1 ? "listing" : "listings"}`;
+  if ($("p-map").hidden) $("sub").textContent = "cheapest first";
+  $("rows").innerHTML = page.map((r, i) => `<tr>
+    <td class="rank">${i + 1}</td>
+    <td class="price">${priceCell(r)}</td>
+    <td class="land">${landCell(r)}</td>
+    <td class="what">${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div>${warning(r)}</td>
+    <td class="type">${TYPES[r[12]] || "Land"}${specials(r)}</td></tr>`).join("");
+  $("empty").hidden = VIEW.length > 0;
+  $("more").hidden = shown >= VIEW.length;
+  $("more").textContent = `Show ${Math.min(PAGE, VIEW.length - shown)} more`;
+}
+
+// "$950", "$1.2k", "$35k", "$1.5M": short enough for a map pin
+const short = v => v === 0 ? "Free" : withCur(v < 1e3 ? Math.round(v) : v < 1e6 ? (v < 1e4 ? (v / 1e3).toFixed(1).replace(/\.0$/, "") : Math.round(v / 1e3)) + "k"
+  : v < 1e9 ? (v / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : (v / 1e9).toFixed(1).replace(/\.0$/, "") + "B");
+
+function initMap(){
+  if (map) return;
+  map = L.map("map", {worldCopyJump: true, minZoom: 2}).setView([25, 0], 2);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {maxZoom: 18, attribution: "&copy; OpenStreetMap contributors"}).addTo(map);
+  // a button that fills the whole window with the map; Esc or the button again brings the page back
+  const fs = L.control({position: "topright"});
+  fs.onAdd = () => {
+    const box = L.DomUtil.create("div", "leaflet-bar fsbtn"), a = L.DomUtil.create("a", "", box);
+    a.href = "#"; a.setAttribute("role", "button");
+    const set = on => {
+      $("map").classList.toggle("full", on); document.body.classList.toggle("mapfull", on);
+      a.textContent = on ? "✕ Exit full screen" : "⛶ Full screen"; a.title = on ? "Exit full screen (Esc)" : "Show the map full screen";
+      map.invalidateSize();
+    };
+    set(false);
+    L.DomEvent.disableClickPropagation(box);
+    L.DomEvent.on(a, "click", e => { L.DomEvent.preventDefault(e); set(!$("map").classList.contains("full")); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && $("map").classList.contains("full")) set(false); });
+    return box;
+  };
+  fs.addTo(map);
+  // nearby listings group into one bubble with their count and cheapest price; click it to zoom in
+  pins = L.markerClusterGroup({chunkedLoading: true, showCoverageOnHover: false, maxClusterRadius: z => z <= 3 ? 110 : z <= 6 ? 80 : 60,
+    iconCreateFunction: c => {
+      let min = Infinity;
+      for (const m of c.getAllChildMarkers()) min = Math.min(min, m.options.row[1]);
+      const n = c.getChildCount();
+      return L.divIcon({className: "cl", iconSize: [0, 0],
+        html: `<div class="${n < 100 ? "" : n < 1000 ? "big" : "huge"}"><b>${n.toLocaleString("en-US")}</b> from ${short(min * RATE)}</div>`});
+    }}).addTo(map);
+}
+
+function renderMap(){
+  if (!pins) return;
+  const on = [];
+  for (const r of VIEW) {
+    if (r[9] == null || r[10] == null || (r[9] === 0 && r[10] === 0)) continue;
+    if (!r.pin) {  // made once per listing, reused as the filters change
+      r.pin = L.marker([r[9], r[10]], {row: r, icon: L.divIcon({className: "pin", iconSize: [0, 0],
+        html: `<div class="${clean(r) ? "" : "flag"}">${short(price(r))}</div>`})});
+      r.pin.bindPopup(() => `<div class="pop">${priceCell(r)}<div class="ppa">${r[2] != null ? acres(r[2]) + (r[2] === 1 ? " acre, " : " acres, ") : ""}${(TYPES[r[12]] || "Land").toLowerCase()}</div>
+        ${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div>${specials(r)}${warning(r)}
+        ${r[6] === "landwatch" ? `<div class="ppa">Pin shows the ZIP code area</div>` : ""}</div>`, {minWidth: 220, maxWidth: 280});
+    }
+    on.push(r.pin);
+  }
+  pins.clearLayers();
+  pins.addLayers(on);
+  const off = VIEW.length - on.length;
+  $("sub").textContent = `${on.length.toLocaleString("en-US")} on the map` + (off ? `, ${off.toLocaleString("en-US")} without a location` : "");
+  const sel = [F.cont, F.country, F.city].map(m => [...m.sel].sort().join(",")), town = F.city.sel.size;
+  if (sel.join("|") !== mapAt) {  // place changed: show the picked continents, countries or towns, or the world for none
+    mapAt = sel.join("|");
+    if (sel.some(Boolean) && on.length) {
+      // frame where most listings are: the outermost 5% (Alaska and Hawaii, mislocated pins) would zoom far out
+      const span = v => { v.sort((a, b) => a - b); const k = Math.floor(v.length * .05); return [v[k], v[v.length - 1 - k]]; };
+      const [s, n] = span(on.map(m => m.getLatLng().lat)), [w, e] = span(on.map(m => m.getLatLng().lng));
+      map.fitBounds(L.latLngBounds([[s, w], [n, e]]).pad(.1), {padding: [30, 30], maxZoom: town ? 12 : 9, animate: false});
+    } else map.setView([25, 0], 2, {animate: false});
+  }
 }
 </script>
 </body>

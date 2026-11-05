@@ -24,13 +24,15 @@ def test_properstar():
 
 
 def test_properstar_without_state():
-    assert lf.parse_properstar("<html><body>Just a moment...</body></html>", "chile") == ([], 0)
-    assert lf.parse_properstar("<script>window.__INITIAL_STATE__ = {\"x\": 1};</script>", "chile") == ([], 0)
+    # (None, 0): a bot check or a new layout, which stops the search without marking the page done
+    assert lf.parse_properstar("<html><body>Just a moment...</body></html>", "chile") == (None, 0)
+    assert lf.parse_properstar("<script>window.__INITIAL_STATE__ = {\"x\": 1};</script>", "chile") == (None, 0)
 
 
 def test_landwatch():
-    recs = lf.parse_landwatch(fixture_html("landwatch_search.html"), "new-mexico")
+    recs, _ = lf.parse_landwatch(fixture_html("landwatch_search.html"), "new-mexico")
     assert len(recs) == 4
+    assert {r["kind"] for r in recs} == {"land"}
     r = recs[1]
     assert r["source"] == "landwatch"
     assert (r["country"], r["region"]) == ("US", "New Mexico")
@@ -43,7 +45,7 @@ def test_landwatch():
 
 
 def test_landwatch_empty_page():
-    assert lf.parse_landwatch("<html><body>No results</body></html>", "ohio") == []
+    assert lf.parse_landwatch("<html><body>No results</body></html>", "ohio") == ([], None)
 
 
 def test_landwatch_full_description():
@@ -58,7 +60,7 @@ def test_landwatch_full_description_missing():
 
 
 def test_kijiji():
-    recs = lf.parse_kijiji(fixture_html("kijiji_search.html"), "nova-scotia")
+    recs, _ = lf.parse_kijiji(fixture_html("kijiji_search.html"), "nova-scotia")
     assert len(recs) == 6
     r = recs[1]
     assert r["source"] == "kijiji"
@@ -72,11 +74,11 @@ def test_kijiji():
 
 def test_kijiji_skips_non_fixed_prices():
     html = fixture_html("kijiji_search.html").replace('"type": "FIXED"', '"type": "CONTACT"', 1)
-    assert len(lf.parse_kijiji(html, "nova-scotia")) == 5
+    assert len(lf.parse_kijiji(html, "nova-scotia")[0]) == 5
 
 
 def test_kijiji_without_next_data():
-    assert lf.parse_kijiji("<html><body></body></html>", "ontario") == []
+    assert lf.parse_kijiji("<html><body></body></html>", "ontario") == ([], None)
 
 
 def castle_page(listings, total):
@@ -97,9 +99,9 @@ def test_properstar_castles():
         castle_listing(1),                                         # generic title -> labelled
         castle_listing(2, title_en="Château with moat and park"),  # already says so -> left alone
         castle_listing(3, sub="Villa", auto="Home for sale in Nice, France"),
-    ], 705), "france")
+    ], 705), "france", "houses")
     assert total == 705
-    assert [r["kind"] for r in recs] == ["castle", "castle", None]
+    assert [r["kind"] for r in recs] == ["houses"] * 3
     assert recs[0]["title"] == "Castle: Home for sale in Ravières, France"
     assert recs[1]["title"] == "Château with moat and park"
     assert recs[2]["title"] == "Home for sale in Nice, France"
@@ -107,15 +109,17 @@ def test_properstar_castles():
 
 
 def test_properstar_urls():
-    assert lf.properstar_url("france", 1, castles=True) == \
+    assert lf.properstar_url("france", 1, "castles") == \
         "https://www.properstar.com/france/buy/house/castle/price-low-to-high"
-    assert lf.properstar_url("france", 3, castles=True).endswith("/buy/house/castle/price-low-to-high?p=3")
+    assert lf.properstar_url("france", 3, "castles").endswith("/buy/house/castle/price-low-to-high?p=3")
     assert lf.properstar_url("paraguay", 2) == \
         "https://www.properstar.com/paraguay/buy/land-plot/price-low-to-high?price.min=%d&p=2" % lf.MIN_PRICE
+    assert lf.properstar_url("paraguay", 1, "houses") == \
+        "https://www.properstar.com/paraguay/buy/house/price-low-to-high?price.min=%d" % lf.MIN_PRICE
 
 
 def test_homes_land():
-    recs = lf.parse_homes(fixture_html("homes_search.html"), "hokuriku/nagano:land")
+    recs = lf.parse_homes(fixture_html("homes_search.html"), "hokuriku/nagano", "land")
     assert len(recs) == 2  # 応相談 (price on request) is skipped
     r = recs[0]
     assert (r["source"], r["country"], r["currency"], r["kind"]) == ("homes", "JP", "JPY", "land")
@@ -125,17 +129,15 @@ def test_homes_land():
     assert r["region"] == "長野県 木曽郡上松町"
     assert "JR上松駅" in r["description"] and "Point" not in r["description"]
     assert r["url"] == "https://www.homes.co.jp/akiyabank/b-38871/"
-    assert r["img"].startswith("https://akiyabank-image.")
     assert recs[1]["price"] == 12_005_000
     assert recs[1]["acres"] == pytest.approx(300 * 3.305785 / lf.ACRE_M2)  # tsubo
     assert recs[1]["url"] == "https://www.homes.co.jp/akiyabank/b-30666/"
-    assert recs[1]["img"] is None
 
 
 def test_homes_house_kind_and_empty_or_blocked_pages():
-    assert {r["kind"] for r in lf.parse_homes(fixture_html("homes_search.html"), "kyushu/oita:house")} == {"house"}
-    assert lf.parse_homes("<title>【ホームズ】空き家バンク</title><p>0件</p>", "tohoku/akita:land") == []
-    assert lf.parse_homes("<title>Access Denied</title>", "tohoku/akita:land") is None
+    assert {r["kind"] for r in lf.parse_homes(fixture_html("homes_search.html"), "kyushu/oita", "houses")} == {"houses"}
+    assert lf.parse_homes("<title>【ホームズ】空き家バンク</title><p>0件</p>", "tohoku/akita") == []
+    assert lf.parse_homes("<title>Access Denied</title>", "tohoku/akita") is None
 
 
 @pytest.mark.parametrize("text, value", [
@@ -147,7 +149,7 @@ def test_yen(text, value):
 
 
 def test_homes_url():
-    assert lf.homes_url("hokuriku/nagano:land", 1) == \
+    assert lf.homes_url("hokuriku/nagano", 1) == \
         "https://www.homes.co.jp/akiyabank/hokuriku/nagano/?sort=price_asc&categories%5B%5D=102"
-    assert lf.homes_url("kyushu/oita:house", 3).endswith("/kyushu/oita/?sort=price_asc&categories%5B%5D=101&page=3")
+    assert lf.homes_url("kyushu/oita", 3, "houses").endswith("/kyushu/oita/?sort=price_asc&categories%5B%5D=101&page=3")
     assert len(lf.HOMES_PREFECTURES) == 47

@@ -40,6 +40,7 @@ class FakeStore:
 
     def __init__(self, recs):
         self.recs = recs
+        self.searches = {}  # no per-search tallies: coverage.csv is written with no rows
 
     def all(self):
         return [dict(r) for r in self.recs]

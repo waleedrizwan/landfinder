@@ -46,15 +46,25 @@ def test_flags(rates, kw, expected):
     assert expected in flags_for(rates, **kw)
 
 
-def test_akiya_houses_are_not_flagged(rates):
-    r = lf.finalize(rec(kind="house", source="homes", currency="JPY", price=300000, acres=0.05,
+@pytest.mark.parametrize("source", ["homes", "ieichiba"])
+def test_akiya_houses_are_not_flagged(rates, source):
+    # on the akiya sites the empty house is what you buy, so it ranks with the land, even at ¥0
+    r = lf.finalize(rec(kind="houses", source=source, currency="JPY", price=0, acres=0.05,
                         url="https://www.homes.co.jp/akiyabank/b-1/"), rates)
     assert r["flags"] == ""
+    assert r["type"] == "house"
 
 
-def test_no_per_acre_flag(rates):
-    # listings are ranked by total price, so a very low price per acre (often a wrong area) isn't a warning
-    assert flags_for(rates, price=4000, acres=1000.0) == ""
+def test_other_house_sections_are_flagged(rates):
+    r = lf.finalize(rec(kind="houses", source="olx", price=20000), rates)
+    assert "house listing" in r["flags"]
+    assert lf.believable_flags(r["flags"])  # shown when you pick House on the site
+
+
+def test_very_low_price_per_acre_is_checked(rates):
+    # $4/acre is usually a wrong area; listings that already have a warning don't get this one too
+    assert flags_for(rates, price=4000, acres=1000.0) == "check: under $10/acre"
+    assert "under $10/acre" not in flags_for(rates, price=4000, acres=1000.0, title="for lease")
 
 
 def test_kijiji_reparses_area_from_text(rates):
@@ -87,7 +97,7 @@ def test_down_payment_fix_only_for_landwatch(rates):
 def test_real_monthly_price_listing_is_never_shown_at_the_monthly_price(rates):
     """A real LandWatch card priced at $47 that is really '$47/mo'. Re-read with its full description
     (as verify_cheapest does), it must stay flagged so it never ranks as $47 land."""
-    card = lf.parse_landwatch(fixture_html("landwatch_search.html"), "new-mexico")[0]
+    card = lf.parse_landwatch(fixture_html("landwatch_search.html"), "new-mexico")[0][0]
     assert card["price"] == 47
     card["description"] = lf.landwatch_full_description(fixture_html("landwatch_detail.html"))
     r = lf.finalize(card, rates)
@@ -125,9 +135,14 @@ def test_every_flag_text_has_a_site_code(rates):
     cases = [{"price": 250}, {"price": 1800, "description": "$99/mo"}, {"title": "mining claim"},
              {"url": "x-homes-for-sale-y"}, {"source": "kijiji", "currency": "CAD", "price": 2800},
              {"price": 1200}, {"title": "for lease"}, {"price": 77777}, {"title": "precio por m2"},
-             {"title": "auction"}, {"title": "wanted: land"}, {"acres": None}, {"price": 4000, "acres": 1000.0}]
+             {"title": "auction"}, {"title": "wanted: land"}, {"acres": None}, {"price": 4000, "acres": 1000.0},
+             {"title": "1/2 share of a farm"}, {"title": "Cemetery plots for sale"},
+             {"source": "olx", "country": "PL", "title": "Działka ROD", "currency": "PLN", "price": 30000},
+             {"title": "Lote Usd 880.000", "currency": "ARS", "price": 880000},
+             {"kind": "houses", "source": "olx"}]
     extra = ["placeholder price - same price on many different-size plots",
              "price may be per m2 (would buy under 20 m2 at local prices)",
+             "far below other listings in this country",
              "may be payment plan price - listed price is the down payment"]
     texts = extra[:]
     for kw in cases:

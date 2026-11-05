@@ -60,81 +60,69 @@ def open_page(browser, site_dir, viewport):
 @pytest.fixture
 def site(workdir):
     recs = lf.parse_properstar(fixture_html("properstar_search.html"), "paraguay")[0]
-    recs += lf.parse_landwatch(fixture_html("landwatch_search.html"), "new-mexico")
-    recs += lf.parse_kijiji(fixture_html("kijiji_search.html"), "nova-scotia")
+    recs += lf.parse_landwatch(fixture_html("landwatch_search.html"), "new-mexico")[0]
+    recs += lf.parse_kijiji(fixture_html("kijiji_search.html"), "nova-scotia")[0]
     for r in recs:
         r["scraped_at"] = datetime.now().isoformat(timespec="seconds")
-    lf.build_outputs(FakeStore(recs))
+    lf.build_outputs(FakeStore(recs), english=False)
     return str(workdir / "site")
 
 
 def wait_for_data(page):
-    """Scroll to the listings so the page fetches data.json, then wait until the grid is drawn from it."""
-    page.locator("#all").scroll_into_view_if_needed()
-    page.wait_for_function("!document.getElementById('count').textContent.startsWith('The cheapest')", timeout=15000)
+    """Wait until the list is drawn from data.json."""
+    page.wait_for_function("/listings?$/.test(document.getElementById('count').textContent)", timeout=15000)
 
 
 def first_price(page):
-    return page.inner_text("#grid .card:first-child .pr")
+    return page.inner_text("#rows tr:first-child .p")
 
 
 def test_desktop(browser, site):
     page, errors = open_page(browser, site, {"width": 1440, "height": 900})
-    assert page.title() == "Cheapest Land on Earth"
-    assert page.inner_text("#hero .sign") == "$749"
-    assert "New Mexico, United States" in page.inner_text("#hero .where")
-    assert page.locator("#hero .runnersup a").count() == 5
-    assert page.locator(".rank").count() == 3  # US, Paraguay, Canada
-    assert page.locator("#grid .card").count() > 0  # the first cards are built into the page
-    assert first_price(page) == "$749"
-    assert page.locator("#more").is_hidden()  # nothing to page through before the data loads
-
+    assert page.title() == "Cheapest Land"
     wait_for_data(page)
     total = page.inner_text("#count")
-    assert total.endswith(" listings") and not total.startswith("0 ")
+    assert not total.startswith("0 ")
     assert first_price(page) == "$749"
-    page.locator("#map-sec").scroll_into_view_if_needed()  # the map is built when it comes into view
-    page.wait_for_function("document.getElementById('map').textContent !== ''", timeout=15000)
-    assert page.inner_text("#map") == "The map couldn't load."  # Leaflet is blocked in this test
-    page.locator("#all").scroll_into_view_if_needed()
+    assert page.inner_text("#rows tr:first-child .where") == "New Mexico, United States, on LandWatch"
+    assert page.locator("#more").is_hidden()  # fewer listings than one page
 
-    page.select_option("#fc", "PY")
+    page.check("#fc input[value='PY']")
     assert page.inner_text("#count") == "3 listings"
-    page.select_option("#fc", "")
-    page.fill("#q", "no such place anywhere")
-    assert page.inner_text("#count") == "0 listings"
-    assert "No listings match these filters." in page.inner_text("#grid")
-    assert page.locator("#more").is_hidden()
-    page.click("#grid .empty button")
+    page.uncheck("#fc input[value='PY']")
     assert page.inner_text("#count") == total
 
-    page.select_option("#fs", "price-desc")
-    assert first_price(page) != "$749"
-    page.select_option("#fs", "price-asc")
+    page.fill("#q", "no such place anywhere")
+    assert page.inner_text("#count") == "0 listings"
+    assert page.locator("#empty").is_visible()
+    page.click("#empty button")
+    assert page.inner_text("#count") == total
+
+    page.check("#fflag")  # the $47/month LandWatch card is only shown with the flagged listings
+    assert first_price(page) == "$47"
+    page.uncheck("#fflag")
+    assert first_price(page) == "$749"
+
+    page.click("#t-map")  # Leaflet is blocked in this test: the tab still switches, without errors
+    assert page.locator("#p-map").is_visible() and page.locator("#p-list").is_hidden()
+    page.click("#t-list")
     assert first_price(page) == "$749"
     assert errors == []
 
 
 def test_phone(browser, site):
     page, errors = open_page(browser, site, {"width": 390, "height": 844})
-    assert page.evaluate("document.documentElement.scrollWidth") <= 390
     wait_for_data(page)
-    assert page.locator("#fs").is_visible()
-    page.select_option("#fs", "price-desc")
-    assert first_price(page) != "$749"
-    page.select_option("#fs", "price-asc")
-    assert first_price(page) == "$749"
     assert page.evaluate("document.documentElement.scrollWidth") <= 390
+    assert first_price(page) == "$749"
+    assert page.locator("#fbtn").is_visible()  # the filters open from a button on phones
     assert errors == []
 
 
 def test_error_state_when_data_fails(browser, site):
     os.remove(os.path.join(site, "data.json"))
     page, errors = open_page(browser, site, {"width": 1440, "height": 900})
-    assert page.inner_text("#hero .sign") == "$749"  # built into the page, so it still shows
-    page.locator("#all").scroll_into_view_if_needed()
-    page.wait_for_function("document.getElementById('count').textContent.includes(\"couldn't\")", timeout=15000)
-    assert page.locator("#more").is_hidden()
+    page.wait_for_function("document.getElementById('count').textContent.includes(\"Couldn't\")", timeout=15000)
     assert errors == []
 
 
@@ -145,16 +133,15 @@ def real_build_is_current():
             rows = json.load(f)["rows"]
     except (OSError, ValueError, KeyError):
         return False
-    return bool(rows) and len(rows[0]) == lf.KIND + 1
+    return bool(rows) and len(rows[0]) == 17
 
 
 @pytest.mark.skipif(not real_build_is_current(), reason="no site/ build in the current format here")
 def test_real_site_build(browser):
     """The site/ folder from the last real run, if there is one."""
     page, errors = open_page(browser, os.path.join(ROOT, "site"), {"width": 1440, "height": 900})
-    assert page.inner_text("#hero .sign").startswith("$")
-    assert page.locator(".rank").count() > 5
     wait_for_data(page)
-    assert page.locator("#grid .card").count() == 48
+    assert first_price(page).strip()
+    assert page.locator("#rows tr").count() > 10
     assert page.locator("#more").is_visible()
     assert errors == []
