@@ -471,7 +471,9 @@ const converted = r => r[15] && r[15] !== CUR;
 const place = r => [r[4], cname(r[3])].filter(Boolean).join(", ");
 const warning = r => clean(r) || houseOnly(r) ? "" : `<div class="w">${[...r[7]].filter(f => f !== "H").map(f => FLAGS[f]).filter(Boolean).join(". ")}</div>`;
 const specials = r => [...(r[16] || "")].map(t => `<span class="sp">${SPECIAL[t]}</span>`).join("");
-const priceCell = r => `<span class="p">${money(price(r))}</span>${converted(r) && r[14] ? `<span class="own">${digits(r[14])} ${r[15]}</span>` : ""}`;
+// under the price, always the currency: the listing's own price when it was converted, else the price in the picked currency
+const ownLine = r => converted(r) ? (r[14] ? `${digits(r[14])} ${r[15]}` : "") : (price(r) ? `${digits(price(r))} ${CUR}` : "");
+const priceCell = r => `<span class="p">${money(price(r))}</span>${ownLine(r) ? `<span class="own">${ownLine(r)}</span>` : ""}`;
 // the bar shows land on a log scale, so a 0.05-acre lot and a 500-acre ranch both read
 const barW = a => Math.max(2, Math.min(100, (Math.log10(a) + 2) / 5 * 100));
 const landCell = r => r[2] == null ? `<span class="ppa">Area not listed</span>`
