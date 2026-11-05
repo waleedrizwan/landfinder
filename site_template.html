@@ -110,6 +110,9 @@ body.mapfull{overflow:hidden}
 .pop .t{margin-top:6px}
 .note{color:var(--soft);font-size:13px;margin:10px 0 0}
 .tyin{display:none}
+.fees{font-size:13px;line-height:1.45;color:var(--soft);margin-top:4px;max-width:62ch}
+.fees summary{cursor:pointer;color:var(--warn);width:fit-content}
+.fees p{margin:6px 0 2px;padding-left:10px;border-left:2px solid var(--rule)}
 .mapcount{font-weight:600;color:var(--ink)}
 /* a listing row under the pointer lights up its pin, or the group it's in */
 .leaflet-marker-icon.hot{z-index:100000!important}
@@ -529,7 +532,19 @@ const place = r => [r[4], cname(r[3])].filter(Boolean).join(", ");
 const warning = r => clean(r) || houseOnly(r) ? "" : `<div class="w">${[...r[7]].filter(f => f !== "H").map(f => FLAGS[f]).filter(Boolean).join(". ")}</div>`;
 const specials = r => [...(r[16] || "")].map(t => `<span class="sp">${SPECIAL[t]}</span>`).join("");
 // under the price, always the currency: the listing's own price when it was converted, else the price in the picked currency
-const ownLine = r => converted(r) ? (r[14] ? `${digits(r[14])} ${r[15]}` : "") : (price(r) ? `${digits(price(r))} ${CUR}` : "");
+// a free listing still costs money to take over: what the buyer pays, by country
+// [the one line shown, the full breakdown behind it]
+const FEES = {
+  JP: ["Still costs about ¥50,000–150,000 plus taxes to take over", "Free to take over, but the buyer still pays to transfer it: registration tax (about 1.5–2% of the government's assessed value, "
+    + "which is often low for an old rural house), real estate acquisition tax (about 3%), a judicial scrivener to register the "
+    + "transfer (often ¥50,000–150,000) and any fee the site charges. Property tax, 1.4% of the assessed value, is due every year after."],
+  "": ["Transfer costs and taxes still apply", "Free to take over, but the buyer still pays the transfer costs: recording and transfer fees, title or legal work, "
+    + "and property tax every year after."],
+};
+const free = r => price(r) === 0;
+const feeNote = r => { if (!free(r)) return ""; const [line, more] = FEES[r[3]] || FEES[""];
+  return `<details class="fees"><summary>${esc(line)}</summary><p>${esc(more)}</p></details>`; };
+const ownLine = r => free(r) ? "plus transfer costs" : converted(r) ? (r[14] ? `${digits(r[14])} ${r[15]}` : "") : (price(r) ? `${digits(price(r))} ${CUR}` : "");
 const priceCell = r => `<span class="p">${money(price(r))}</span>${ownLine(r) ? `<span class="own">${ownLine(r)}</span>` : ""}`;
 // the bar shows land on a log scale, so a 0.05-acre lot and a 500-acre ranch both read
 const barW = a => Math.max(2, Math.min(100, (Math.log10(a) + 2) / 5 * 100));
@@ -547,7 +562,7 @@ function renderList(){
     <td class="rank">${i + 1}</td>
     <td class="price">${priceCell(r)}</td>
     <td class="land">${landCell(r)}</td>
-    <td class="what">${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div><div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${warning(r)}</td>
+    <td class="what">${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div><div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${feeNote(r)}${warning(r)}</td>
     <td class="type">${TYPES[r[12]] || "Land"}${specials(r)}</td></tr>`).join("");
   $("empty").hidden = VIEW.length > 0;
   $("emptymsg").textContent = AREA && MAPVIEW.length ? "No listings in this part of the map. Zoom out or drag the map to see more." : "No listings match these filters.";
@@ -639,7 +654,7 @@ function renderMap(){
       r.pin = L.marker([r[9], r[10]], {row: r, icon: L.divIcon({className: "pin", iconSize: [0, 0],
         html: `<div class="${clean(r) ? "" : "flag"}">${short(price(r))}</div>`})});
       r.pin.bindPopup(() => `<div class="pop">${priceCell(r)}<div class="ppa">${r[2] != null ? acres(r[2]) + (r[2] === 1 ? " acre, " : " acres, ") : ""}${(TYPES[r[12]] || "Land").toLowerCase()}</div>
-        ${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div>${specials(r)}${warning(r)}
+        ${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div>${specials(r)}${feeNote(r)}${warning(r)}
         ${r[6] === "landwatch" ? `<div class="ppa">Pin shows the ZIP code area</div>` : ""}</div>`, {minWidth: 220, maxWidth: 280});
     }
     on.push(r.pin);
