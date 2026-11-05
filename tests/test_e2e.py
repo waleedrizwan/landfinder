@@ -103,8 +103,23 @@ def test_desktop(browser, site):
     page.uncheck("#fflag")
     assert first_price(page) == "$749"
 
-    page.click("#t-map")  # Leaflet is blocked in this test: the tab still switches, without errors
+    # wide screens: the map is a column beside the list, with no tabs (Leaflet is blocked here, so it stays empty)
+    assert page.locator("#p-map").is_visible() and page.locator("#p-list").is_visible()
+    assert page.locator(".tabs").is_hidden()
+    assert errors == []
+
+
+def test_map_is_a_tab_on_narrower_screens(browser, site):
+    page, errors = open_page(browser, site, {"width": 1024, "height": 768})
+    wait_for_data(page)
+    assert page.locator("#p-map").is_hidden()
+    page.click("#t-map")
     assert page.locator("#p-map").is_visible() and page.locator("#p-list").is_hidden()
+    page.set_viewport_size({"width": 1440, "height": 900})  # widened: both, side by side
+    page.wait_for_function("!document.getElementById('p-list').hidden")
+    assert page.locator("#p-map").is_visible()
+    page.set_viewport_size({"width": 1024, "height": 768})  # and back: the map tab is still the one picked
+    page.wait_for_function("document.getElementById('p-list').hidden")
     page.click("#t-list")
     assert first_price(page) == "$749"
     assert errors == []

@@ -93,9 +93,9 @@ td.type{width:160px;font-size:14px}
 #map{height:calc(100vh - 190px);height:calc(100dvh - 190px);min-height:420px;border:1px solid var(--rule);border-radius:4px;margin-top:14px}
 #map.full{position:fixed!important;inset:0;z-index:1000;height:auto;min-height:0;border:0;border-radius:0;margin:0}  /* full screen map */
 body.mapfull{overflow:hidden}
-.fsbtn a{display:flex;align-items:center;justify-content:center;width:auto!important;padding:0 10px;font:600 13px/30px "Public Sans",sans-serif;color:#222;cursor:pointer;white-space:nowrap}
+.fsbtn a{display:flex;align-items:center;justify-content:center;width:auto!important;padding:0 10px;font:600 13px/30px Overpass,sans-serif;color:#222;cursor:pointer;white-space:nowrap}
 @media (prefers-color-scheme:dark){#map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}}
-.pin div,.cl div{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:999px;cursor:pointer;font:700 12px/1 "Public Sans",sans-serif}
+.pin div,.cl div{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:999px;cursor:pointer;font:700 12px/1 Overpass,sans-serif}
 .pin div{background:var(--paper);color:var(--ink);border:1px solid var(--rule);padding:5px 8px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .pin div:hover{border-color:var(--ink)}
 .pin div.flag{border-color:var(--warn);color:var(--warn)}
@@ -103,12 +103,31 @@ body.mapfull{overflow:hidden}
 .cl div b{font-weight:700}
 .cl div.big{padding:9px 13px;font-size:13px}
 .cl div.huge{padding:11px 15px;font-size:14px}
-.leaflet-container{font-family:"Public Sans",sans-serif}
+.leaflet-container{font-family:Overpass,sans-serif}
 .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--paper);color:var(--ink)}
 .leaflet-popup-content{margin:14px 16px;font-size:14px;line-height:1.45}
 .pop .p{margin-bottom:2px}
 .pop .t{margin-top:6px}
 .note{color:var(--soft);font-size:13px;margin:10px 0 0}
+.tyin{display:none}
+.mapcount{font-weight:600;color:var(--ink)}
+/* a listing row under the pointer lights up its pin, or the group it's in */
+.leaflet-marker-icon.hot{z-index:100000!important}
+.pin.hot div{background:var(--blue);border-color:var(--blue);color:#fff}
+.cl.hot div{background:var(--blue)}
+
+/* wide screens: the map is a third column beside the list, the full height of the window, and stays put as you scroll */
+@media (min-width:1280px){
+  .layout{grid-template-columns:260px minmax(0,1fr) minmax(420px,38vw);max-width:none}
+  .tabs{display:none}
+  #fcur{margin-left:auto}
+  #p-map{position:sticky;top:0;align-self:start;height:100vh;height:100dvh;display:flex;flex-direction:column;border-left:1px solid var(--rule)}
+  #p-map #map{flex:1;height:auto;min-height:0;margin:0;border:0;border-radius:0}
+  #p-map .note{margin:0;padding:10px 18px 14px;border-top:1px solid var(--rule)}
+  td.rank,td.type,thead th:first-child,thead th:last-child{display:none}  /* the type moves under the listing */
+  .tyin{display:block;color:var(--soft);font-size:14px}
+  .tyin .sp{display:inline;margin-left:8px}
+}
 
 footer{color:var(--soft);font-size:13px;padding:28px 0 36px;max-width:80ch}
 footer p{margin:4px 0}
@@ -153,7 +172,7 @@ footer p{margin:4px 0}
   <select id="fcur" aria-label="Currency"></select>
 </header>
 
-<div class="layout">
+<div class="layout" id="layout">
   <aside id="side" aria-label="Filters">
     <h2><label for="q">Search</label></h2>
     <input id="q" type="search" placeholder="Town, region or words in the title">
@@ -206,7 +225,7 @@ footer p{margin:4px 0}
 
     <section id="p-map" hidden>
       <div id="map"></div>
-      <p class="note">Click a group to zoom in and a price to see the listing. Pick a continent, country or town to jump to it.
+      <p class="note"><span class="mapcount" id="mapcount"></span> Click a group to zoom in and a price to see the listing. Pick a continent, country or town to jump to it.
         LandWatch listings are pinned at their ZIP code's center. Mercado Libre, Ieichiba, HOME'S and Encuentra24 listings have no location, so they aren't on the map.</p>
     </section>
 
@@ -327,6 +346,21 @@ $("chips").onclick = e => { const b = e.target.closest("[data-chip]"); if (b) { 
 $("t-list").onclick = () => tab("list");
 $("t-map").onclick = () => tab("map");
 
+// 1280px and wider: the map is its own column beside the list (see the CSS); narrower, it's a tab
+const WIDE = matchMedia("(min-width:1280px)");
+const mapShown = () => !$("p-map").hidden;
+function placeMap(){
+  const wide = WIDE.matches, onMap = $("t-map").getAttribute("aria-selected") === "true";
+  if (wide) $("layout").append($("p-map"));
+  else $("p-list").after($("p-map"));
+  $("p-map").hidden = !wide && !onMap;
+  $("p-list").hidden = !wide && onMap;
+  if (ALL.length) update();
+  if (map) map.invalidateSize();
+}
+WIDE.addEventListener("change", placeMap);
+placeMap();
+
 function tab(name){
   for (const t of ["list", "map"]) { $("t-" + t).setAttribute("aria-selected", t === name); $("p-" + t).hidden = t !== name; }
   if (name === "map" && window.L) { initMap(); map.invalidateSize(); renderMap(); }
@@ -436,7 +470,10 @@ function update(){
   $("cityblock").hidden = !F.city.items.length;
   renderChips();
   renderList();
-  if (map && !$("p-map").hidden) { clearTimeout(mapTimer); mapTimer = setTimeout(renderMap, 150); }
+  if (mapShown() && window.L) {
+    if (!map) { initMap(); renderMap(); }
+    else { clearTimeout(mapTimer); mapTimer = setTimeout(renderMap, 150); }
+  }
 }
 
 function setCurrency(c){
@@ -485,12 +522,12 @@ const titleLink = r => `<a class="t" href="${esc(r[8])}" target="_blank" rel="no
 function renderList(){
   const page = VIEW.slice(0, shown);
   $("count").textContent = `${VIEW.length.toLocaleString("en-US")} ${VIEW.length === 1 ? "listing" : "listings"}`;
-  if ($("p-map").hidden) $("sub").textContent = "cheapest first";
-  $("rows").innerHTML = page.map((r, i) => `<tr>
+  if (!mapShown() || WIDE.matches) $("sub").textContent = "cheapest first";
+  $("rows").innerHTML = page.map((r, i) => `<tr data-i="${i}">
     <td class="rank">${i + 1}</td>
     <td class="price">${priceCell(r)}</td>
     <td class="land">${landCell(r)}</td>
-    <td class="what">${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div>${warning(r)}</td>
+    <td class="what">${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div><div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${warning(r)}</td>
     <td class="type">${TYPES[r[12]] || "Land"}${specials(r)}</td></tr>`).join("");
   $("empty").hidden = VIEW.length > 0;
   $("more").hidden = shown >= VIEW.length;
@@ -501,9 +538,23 @@ function renderList(){
 const short = v => v === 0 ? "Free" : withCur(v < 1e3 ? Math.round(v) : v < 1e6 ? (v < 1e4 ? (v / 1e3).toFixed(1).replace(/\.0$/, "") : Math.round(v / 1e3)) + "k"
   : v < 1e9 ? (v / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : (v / 1e9).toFixed(1).replace(/\.0$/, "") + "B");
 
+// the least zoom that still fills the map's height with tiles (no grey above and below the world). Whole zoom levels
+// only: in between, the tiles are scaled and show hairline seams
+const fillZoom = () => Math.max(1, Math.ceil(Math.log2(map.getSize().y / 256)));
+// the world view: as much of the inhabited world as fits, never zoomed out into grey
+const world = () => {
+  const z = Math.max(fillZoom(), Math.min(2, map.getBoundsZoom([[-48, -150], [68, 160]])));
+  map.setView([30, -45], z, {animate: false});  // the Atlantic: the Americas and Europe, where most listings are
+  map.panInsideBounds(map.options.maxBounds, {animate: false});
+};
+
 function initMap(){
   if (map) return;
-  map = L.map("map", {worldCopyJump: true, minZoom: 2}).setView([25, 0], 2);
+  // the edges of the world's tiles: panning stops there instead of showing grey (east-west it wraps around)
+  map = L.map("map", {worldCopyJump: true, maxBounds: [[-85.05, -1e4], [85.05, 1e4]], maxBoundsViscosity: 1});
+  map.setMinZoom(fillZoom());
+  map.on("resize", () => map.setMinZoom(fillZoom()));  // full screen, or the window resized
+  world();
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     {maxZoom: 18, attribution: "&copy; OpenStreetMap contributors"}).addTo(map);
   // a button that fills the whole window with the map; Esc or the button again brings the page back
@@ -534,6 +585,18 @@ function initMap(){
     }}).addTo(map);
 }
 
+let hotEl = null;
+function hot(tr){
+  const r = tr && VIEW[+tr.dataset.i], m = r && r.pin && pins && pins.hasLayer(r.pin) ? pins.getVisibleParent(r.pin) : null;
+  const el = m && m.getElement ? m.getElement() : null;
+  if (el === hotEl) return;
+  if (hotEl) hotEl.classList.remove("hot");
+  if (el) el.classList.add("hot");
+  hotEl = el;
+}
+$("rows").addEventListener("mouseover", e => { if (mapShown()) hot(e.target.closest("tr")); });
+$("rows").addEventListener("mouseleave", () => hot(null));
+
 function renderMap(){
   if (!pins) return;
   const on = [];
@@ -551,7 +614,9 @@ function renderMap(){
   pins.clearLayers();
   pins.addLayers(on);
   const off = VIEW.length - on.length;
-  $("sub").textContent = `${on.length.toLocaleString("en-US")} on the map` + (off ? `, ${off.toLocaleString("en-US")} without a location` : "");
+  const where = `${on.length.toLocaleString("en-US")} on the map` + (off ? `, ${off.toLocaleString("en-US")} without a location` : "");
+  if (WIDE.matches) $("mapcount").textContent = where + ".";
+  else { $("mapcount").textContent = ""; $("sub").textContent = where; }
   const sel = [F.cont, F.country, F.city].map(m => [...m.sel].sort().join(",")), town = F.city.sel.size;
   if (sel.join("|") !== mapAt) {  // place changed: show the picked continents, countries or towns, or the world for none
     mapAt = sel.join("|");
@@ -560,7 +625,7 @@ function renderMap(){
       const span = v => { v.sort((a, b) => a - b); const k = Math.floor(v.length * .05); return [v[k], v[v.length - 1 - k]]; };
       const [s, n] = span(on.map(m => m.getLatLng().lat)), [w, e] = span(on.map(m => m.getLatLng().lng));
       map.fitBounds(L.latLngBounds([[s, w], [n, e]]).pad(.1), {padding: [30, 30], maxZoom: town ? 12 : 9, animate: false});
-    } else map.setView([25, 0], 2, {animate: false});
+    } else world();
   }
 }
 </script>
