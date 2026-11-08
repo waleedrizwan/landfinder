@@ -608,8 +608,10 @@
       "fp": "0236e6ee09",
       "id": "B034",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "not_a_bug",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "The parse is as described: 'Deming'.rpartition(', ') gives name='' and state='Deming', and towns() can emit bare labels. But every US and CA row in geo/town_population.tsv.gz has a non-empty state (17,328 US and 2,900 CA rows, none empty). So even the 'correct' lookup with an empty state could never match, and a stateless town gets no population either way. I wrote no test file.",
+      "test_file": null
     },
     {
       "file": "landfinder.py",
@@ -624,8 +626,10 @@
       "fp": "7d0da2c10b",
       "id": "B035",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "build_outputs pastes json.dumps(slim) into report_template.html without escaping '<' or '/'. A listing with title '</script><img src=x onerror=alert(1)>' ends up unescaped in report.html, which closes the script block early. The test fails on the current code on the assertion that the injected img tag is absent. Scraped titles are untrusted input, so this can happen with real data.",
+      "test_file": "tests/test_bughunt_b035.py"
     },
     {
       "file": "landfinder.py",
