@@ -1,0 +1,16 @@
+{
+  "chunks": {
+    "core": "landfinder.py from `def log` to `class Store`: number/area parsing, FX, flags, fix_down_payment, property_type, finalize",
+    "store": "landfinder.py from `class Store` to `def parse_properstar`: Store (save/resume/dedupe), Metrics, Browser, Plain, search_pages",
+    "parsers_a": "landfinder.py from `def parse_properstar` to `def strip_tags`: Properstar, LandWatch, Kijiji, OLX, Mercado Libre, Ieichiba parsers and crawlers, crawl_search",
+    "parsers_b": "landfinder.py from `def strip_tags` to `def same_title`: Zillow, Immobiliare, HOME'S, Encuentra24 parsers, verify_cheapest, translate, add_english",
+    "outputs": "landfinder.py from `def same_title` to the end (build_outputs, site_codes, towns, build_site, write_coverage, main), plus site_template.html, report_template.html and functions/api/visitors.js"
+  },
+  "categories": {
+    "parsing": "number, currency, area and unit parsing; locale separators; ranges and per-unit prices",
+    "logic": "off-by-one, wrong comparisons, wrong branch order, None/empty/zero inputs, early returns that skip work",
+    "data": "records lost, duplicated, overwritten or mis-merged; resume and de-duplication; sorting with missing values",
+    "errors": "swallowed exceptions, crashes on unexpected HTML/JSON, partial writes, resources not cleaned up",
+    "security": "XSS or HTML injection from scraped titles into the site/report, unsafe file paths, injection into subprocess calls, the visitors.js endpoint"
+  }
+}
