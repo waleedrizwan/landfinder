@@ -482,8 +482,10 @@
       "fp": "9280c252b3",
       "id": "B027",
       "chunk": "parsers_b",
-      "status": "found",
-      "found_at": "2026-11-08T03:59:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:59:03",
+      "verify_reason": "`parse_zillow` on a `__NEXT_DATA__` page with `listResults: null` raises `TypeError: 'NoneType' object is not iterable` at landfinder.py:1737, outside the try block. Neither `crawl_search` nor `crawl_zillow` catches it, and the `timed` wrapper in `main` doesn't either. The exception therefore ends the whole Zillow thread. The test fails on the current code. I didn't check whether Zillow actually serves `null` there, so the trigger is plausible rather than observed.",
+      "test_file": "tests/test_bughunt_b027.py"
     },
     {
       "file": "landfinder.py",
