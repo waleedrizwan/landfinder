@@ -410,8 +410,10 @@
       "fp": "dd2883fa81",
       "id": "B023",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:56"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:56",
+      "verify_reason": "A Kijiji page that returns 200 with `__NEXT_DATA__` but no `__APOLLO_STATE__` makes `parse_kijiji` return ([], None). `crawl_kijiji` then records the stop reason as 'end of results' and writes the page URL to pages_done.txt. The test fails on the current code, and a rerun would skip that search. `crawl_search` already handles this case correctly: it reports 'fetch failed' and leaves the page unmarked.",
+      "test_file": "tests/test_bughunt_b023.py"
     },
     {
       "file": "landfinder.py",
