@@ -356,8 +356,10 @@
       "fp": "9f31a8c927",
       "id": "B020",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:27"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:27",
+      "verify_reason": "br.get returns the page HTML when the ready check times out and the title isn't in BLOCK_TITLES, so a placard-less interstitial reaches parse_landwatch. crawl_landwatch_one then calls store.page, which marks the URL done, and store.stop(sid, 'end of results'), which makes search_pages skip the search on resume. The test fails on the current code with stops == ['end of results'] and the page marked done. One caveat: a genuine past-the-end LandWatch page may also have no placards, so a fix has to tell the two apart, for example by checking for the 'N Listings' count.",
+      "test_file": "tests/test_bughunt_b020.py"
     },
     {
       "file": "landfinder.py",
