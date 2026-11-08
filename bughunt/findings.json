@@ -122,8 +122,10 @@
       "fp": "b705542ea2",
       "id": "B007",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:23"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:23",
+      "verify_reason": "acres_from_text('12.000 m2 terreno') returns 0.00297 acres (12 m²) instead of about 2.97, because num() reads '12.000' as 12.0 and only comma forms are normalised. All 4 test cases fail, including Kijiji's kijiji_acres() with a Spanish description. The function is only reached through Kijiji ads (and Kijiji's finalize() re-read) and the homes lotAreaString path. Other Spanish and European sources use their own parsers, so real exposure is narrow, limited to Kijiji ads written in Romance languages. tests/test_bughunt_b003.py already covers the same defect.",
+      "test_file": "tests/test_bughunt_b007.py"
     },
     {
       "file": "landfinder.py",
