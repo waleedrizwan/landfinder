@@ -2234,14 +2234,19 @@ def build_outputs(store, english=True):
         m = med.get(r.get("country"))
         if m and r["usd_per_acre"] and r["usd_per_acre"] < m / 250 and r.get("source") not in CHEAP_IS_REAL:
             r["flags"] = "; ".join(x for x in (r["flags"], "far below other listings in this country") if x)
-    recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # cheapest total price first
+    recs.sort(key=lambda r: r.get("scraped_at") or "", reverse=True)  # newest first among equal prices, so a
+    recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # repost keeps its live URL; cheapest first
     # same parcel reposted under a new URL ("Lot (PID 123) X" vs "(PID 123) X") -> keep one
     seen, uniq = {}, []
     for r in recs:
         title = r.get("title") or ""
         t = re.sub(r"[\W_]", "", re.sub(r"^\s*lot\b", "", title.lower()))  # keeps Japanese and Cyrillic letters
-        key = (r.get("source"), r.get("country"), round(r.get("price") or 0), r.get("acres"))
-        if any(same_title(t, title, *prev, r.get("source")) for prev in seen.get(key, ())):
+        # region too: two 'Terreno en venta' at one price in different towns are different parcels. Normalized like
+        # the title, because a Kijiji repost's address can gain or lose a leading 'Lot' as well
+        region = re.sub(r"[\W_]", "", re.sub(r"^\s*lot\b", "", (r.get("region") or "").lower()))
+        key = (r.get("source"), r.get("country"), region, round(r.get("price") or 0), r.get("acres"))
+        # a title with no letters or digits ('•', '-', '') says nothing about which parcel it is
+        if t and any(same_title(t, title, *prev, r.get("source")) for prev in seen.get(key, ())):
             continue
         seen.setdefault(key, []).append((t, title))
         uniq.append(r)
