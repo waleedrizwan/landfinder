@@ -1,10 +1,11 @@
 // POST /api/visitors: the site's visitor count, for the line in the page footer.
 //
 // The page sends {first: true} the first time a browser visits (it remembers in localStorage that it was counted).
-// A first visit adds one to the count, unless the same IP address and browser were already counted today: that stops
-// a reload with storage blocked, or a script, from adding more than one a day.
-// To tell, we keep a hash of the day's random salt + IP + user agent, never the IP itself. Salts and hashes older
-// than two days are deleted, after which a hash can't be linked back to anyone.
+// A first visit adds one to the count, unless the same IP address was already counted today: that stops a reload
+// with storage blocked, or a script, from adding more than one a day. (The user agent isn't part of it: a script can
+// send a new one with every request, and would count once per request.)
+// To tell, we keep a hash of the day's random salt + IP, never the IP itself. Salts and hashes older than two days
+// are deleted, after which a hash can't be linked back to anyone.
 //
 // Needs a D1 database bound as DB (see wrangler.toml). The tables are created on first use.
 
@@ -36,7 +37,8 @@ async function countable(db, request){
     db.prepare("SELECT salt FROM salts WHERE day = ?").bind(day),
   ]);
   const ip = request.headers.get("cf-connecting-ip") || "";
-  const hash = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt.results[0].salt + "|" + ip + "|" + ua)));
+  if (!ip) return false;
+  const hash = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt.results[0].salt + "|" + ip)));
   const res = await db.prepare("INSERT OR IGNORE INTO seen (day, hash) VALUES (?, ?)").bind(day, hash).run();
   return res.meta.changes === 1;
 }
@@ -47,6 +49,7 @@ export async function onRequestPost({request, env}){
   await setup(db);
   let body = {};
   try { body = await request.json(); } catch (e) {}
+  if (!body || typeof body !== "object") body = {};  // "null" or a bare number parse fine but have no .first
   if (body.first === true && await countable(db, request)) await db.prepare("UPDATE total SET n = n + 1 WHERE id = 1").run();
   const row = await db.prepare("SELECT n FROM total WHERE id = 1").first();
   return Response.json({total: row.n}, {headers: {"cache-control": "no-store"}});
