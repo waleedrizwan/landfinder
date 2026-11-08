@@ -554,8 +554,10 @@
       "fp": "ac6427d286",
       "id": "B031",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "build_outputs puts json.dumps(slim) into the report's inline <script> block without escaping '<'. A scraped title of '</script><img src=x onerror=alert(1)>' therefore appears verbatim in report.html and closes the script block early. The test fails on the current code. A scraped listing title can carry this text, so the trigger is realistic.",
+      "test_file": "tests/test_bughunt_b031.py"
     },
     {
       "file": "landfinder.py",
