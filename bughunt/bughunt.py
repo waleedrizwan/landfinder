@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Bug-hunt loop for landfinder: hunt -> verify -> fix -> gate, with a ledger so rounds don't repeat.
+Bug-hunt loop for landfinder: hunt -> group -> verify -> fix -> gate, with a ledger so rounds don't repeat.
 
 Each stage is a separate, fresh `claude -p` session, so the agent that finds a bug never grades it.
 
@@ -72,10 +72,20 @@ def fingerprint(f):
     return hashlib.sha1(key.encode()).hexdigest()[:10]
 
 
+def root_causes(ledger):
+    """Root causes already in the ledger, one line each, with what became of them."""
+    seen = {}
+    for f in ledger["findings"]:
+        if f.get("root_cause") and f["root_cause"] not in seen:
+            seen[f["root_cause"]] = f["status"]
+    return seen
+
+
 def known_summary(ledger):
-    lines = [f"- {f['function']}: {f['trigger'][:120]} ({f['status']})" for f in ledger["findings"]]
-    qa = os.path.join(ROOT, "QA_REPORT.md")
-    if os.path.exists(qa):
+    lines = [f"- {rc} ({st})" for rc, st in root_causes(ledger).items()]
+    lines += [f"- {f['function']}: {f['trigger'][:120]} (not a bug: {f.get('verify_reason', '')[:100]})"
+              for f in ledger["findings"] if f["status"] in ("not_a_bug", "not_reproducible")]
+    if os.path.exists(os.path.join(ROOT, "QA_REPORT.md")):
         lines.append("- everything in QA_REPORT.md (read it)")
     return "\n".join(lines) or "- nothing yet"
 
@@ -115,14 +125,48 @@ def hunt(ledger, chunks, categories, workers):
 
 
 def finding_text(f):
-    keep = {k: f[k] for k in ("file", "line", "function", "trigger", "expected", "actual", "impact") if k in f}
+    keep = {k: f[k] for k in ("id", "file", "line", "function", "trigger", "expected", "actual", "impact") if k in f}
     return json.dumps(keep, indent=2, ensure_ascii=False)
+
+
+def group(ledger):
+    """Parallel hunters report one defect many times (round 1: 38 confirmed findings, 10 root causes).
+    One session clusters the new findings; only one per root cause goes on to be verified and fixed."""
+    new = [f for f in ledger["findings"] if f["status"] == "found" and not f.get("root_cause")]
+    if not new:
+        return
+    existing = "\n".join(f"- {rc}" for rc in root_causes(ledger)) or "- none"
+    try:
+        out = claude(prompt("group", EXISTING=existing, FINDINGS="\n".join(finding_text(f) for f in new)), READ_TOOLS)
+    except Exception as e:
+        log(f"grouping failed ({e}): every finding will be verified on its own")
+        for f in new:
+            f["root_cause"] = f"{f['function']}: {f['trigger'][:80]}"
+        save_ledger(ledger)
+        return
+    by = {f["id"]: f for f in new}
+    for g in out.get("groups", []):
+        ids = [i for i in g.get("ids", []) if i in by]
+        if not ids:
+            continue
+        rc = g.get("existing") or g.get("root_cause") or by[ids[0]]["function"]
+        rep = g.get("representative") if g.get("representative") in ids else ids[0]
+        for i in ids:
+            by[i]["root_cause"] = rc
+            if g.get("existing"):
+                by[i]["status"] = "duplicate"  # already confirmed or fixed in an earlier round
+            elif i != rep:
+                by[i].update(status="duplicate", duplicate_of=rep)
+    for f in new:  # anything the grouper left out is its own root cause
+        f.setdefault("root_cause", f"{f['function']}: {f['trigger'][:80]}")
+    save_ledger(ledger)
+    log(f"grouped {len(new)} findings into {len({f['root_cause'] for f in new})} root causes")
 
 
 def verify(ledger):
     confirmed = 0
     for f in [f for f in ledger["findings"] if f["status"] == "found"]:
-        log(f"verifying {f['id']} ({f['function']})")
+        log(f"verifying {f['id']} ({f['root_cause'][:70]})")
         try:
             v = claude(prompt("verify", FINDING=finding_text(f), ID=f["id"].lower()), VERIFY_TOOLS)
         except Exception as e:
@@ -131,6 +175,9 @@ def verify(ledger):
         f["status"] = v.get("verdict", "not_reproducible")
         f["verify_reason"] = v.get("reason", "")
         f["test_file"] = v.get("test_file")
+        if f["status"] == "confirmed" and not suite_passes(only=[f["test_file"]], expect_fail=True):
+            f["status"] = "not_reproducible"  # don't take the verifier's word: its test must actually fail now
+            f["verify_reason"] = "test did not fail when rerun by the loop. " + f["verify_reason"]
         confirmed += f["status"] == "confirmed"
         log(f"  {f['status']}: {f['verify_reason']}")
         save_ledger(ledger)
@@ -141,31 +188,53 @@ def git(*args):
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
 
 
-def suite_passes():
-    r = subprocess.run([sys.executable, "-m", "pytest", "-m", "not e2e", "-q"], cwd=ROOT,
-                       capture_output=True, text=True)
-    return r.returncode == 0
+def pending_tests(ledger, but=()):
+    """Failing tests of confirmed bugs not fixed yet: left out of the gate, or no fix could ever pass it."""
+    return [f["test_file"] for f in ledger["findings"]
+            if f["status"] == "confirmed" and f.get("test_file") and f["test_file"] not in but]
+
+
+def suite_cmd(ignore=()):
+    return [sys.executable, "-m", "pytest", "-m", "not e2e", "-q"] + [f"--deselect={t}" for t in ignore]
+
+
+def suite_passes(ignore=(), only=None, expect_fail=False):
+    cmd = [sys.executable, "-m", "pytest", "-q", *only] if only else suite_cmd(ignore)
+    ok = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True).returncode == 0
+    return not ok if expect_fail else ok
 
 
 def fix(ledger, attempts=3):
-    for f in [f for f in ledger["findings"] if f["status"] == "confirmed"]:
+    groups = {}
+    for f in ledger["findings"]:
+        if f["status"] == "confirmed":
+            groups.setdefault(f["root_cause"], []).append(f)
+    for rc, fs in groups.items():
+        tests = [f["test_file"] for f in fs if f.get("test_file")]
+        ignore = pending_tests(ledger, but=tests)
+        cmd = " ".join(suite_cmd(ignore)).replace(sys.executable, "python3")
         for n in range(1, attempts + 1):
-            log(f"fixing {f['id']} (attempt {n})")
+            log(f"fixing {rc[:70]} (attempt {n})")
             try:
-                r = claude(prompt("fix", FINDING=finding_text(f), TEST_FILE=f["test_file"], ID=f["id"]), FIX_TOOLS)
+                r = claude(prompt("fix", ROOT_CAUSE=rc, FINDINGS="\n".join(finding_text(f) for f in fs),
+                                  TEST_FILES=", ".join(tests)).replace(
+                    'python3 -m pytest -m "not e2e" -q', cmd), FIX_TOOLS)
             except Exception as e:
                 r = {"status": "gave_up", "summary": str(e)}
-            if r.get("status") == "fixed" and suite_passes():  # gate: don't trust the agent's word for it
-                git("add", "-A", "landfinder.py", "site_template.html", "report_template.html",
-                    "functions", "tests", f["test_file"])
-                git("commit", "-q", "-m", f"Fix {f['id']}: {r.get('summary', f['function'])}\n\n"
-                    "Found and fixed by the bughunt loop (bughunt/findings.json).")
-                f.update(status="fixed", fix_summary=r.get("summary"), commit=git("rev-parse", "--short", "HEAD").stdout.strip())
-                log(f"  fixed in {f['commit']}")
+            if r.get("status") == "fixed" and suite_passes(ignore):  # gate: don't trust the agent's word for it
+                git("add", "-A", "landfinder.py", "site_template.html", "report_template.html", "functions", *tests)
+                ids = ", ".join(f["id"] for f in fs)
+                git("commit", "-q", "-m", f"{r.get('summary') or 'Fix ' + rc}\n\nRoot cause: {rc}\n"
+                    f"Bughunt {ids}. Found and fixed by the bughunt loop (bughunt/findings.json).")
+                commit = git("rev-parse", "--short", "HEAD").stdout.strip()
+                for f in fs:
+                    f.update(status="fixed", fix_summary=r.get("summary"), commit=commit)
+                log(f"  fixed in {commit}")
                 break
             git("checkout", "--", "landfinder.py", "site_template.html", "report_template.html", "functions")
         else:
-            f["status"] = "needs_human"
+            for f in fs:
+                f["status"] = "needs_human"
             log("  gave up: left for you")
         save_ledger(ledger)
 
@@ -183,13 +252,13 @@ def main():
 
     if git("branch", "--show-current").stdout.strip() in ("main", "master"):
         sys.exit("Run this on a branch, not main: git checkout -b bughunt")
-    if not suite_passes():
-        sys.exit("The test suite fails before we start. Fix that first, or the gate means nothing.")
-
     ledger = load_ledger()
+    if not suite_passes(pending_tests(ledger)):
+        sys.exit("The test suite fails before we start. Fix that first, or the gate means nothing.")
     for rnd in range(1, a.rounds + 1):
         log(f"=== round {rnd} ===")
         hunt(ledger, a.chunks.split(","), a.categories.split(","), a.workers)
+        group(ledger)
         if a.hunt_only:
             continue
         confirmed = verify(ledger)

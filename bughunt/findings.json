@@ -13,10 +13,12 @@
       "fp": "9a3053de3b",
       "id": "B001",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:15",
       "verify_reason": "acres_from_text returns 4.0 for '1/4 acre lot', 2.0 for '1/2 acre lot' and 2.0 for '2 1/2 acres'. The regex matches only the digits after the slash. The real Kijiji path, finalize(), re-reads a title such as '1/4 acre lot' and overwrites a correct 0.25 with 4.0, and all 4 tests in the new file fail on the current code.",
-      "test_file": "tests/test_bughunt_b001.py"
+      "test_file": "tests/test_bughunt_b001.py",
+      "root_cause": "R01 fractions / '1,000 acres' + Romance word / dot-grouped m² (acres_from_text)",
+      "commit": "b668c24"
     },
     {
       "file": "landfinder.py",
@@ -32,10 +34,13 @@
       "fp": "71f0419c91",
       "id": "B002",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:15",
       "verify_reason": "acres_from_text is called on scraped titles, descriptions and lotAreaString (landfinder.py lines 554, 1389, 1751). On the current code, 'Terre à vendre, 1,000 acres' returns 1.0 and 'Land 2,500 acres near Baton Rouge, LA' returns 2.5, so both parametrized tests fail. The `factor >= 1` check in the decimal-comma rule also matches acres (factor 1.0), not only hectares, and the 'la' in 'LA' sets the Romance flag.",
-      "test_file": "tests/test_bughunt_b002.py"
+      "test_file": "tests/test_bughunt_b002.py",
+      "root_cause": "R01 fractions / '1,000 acres' + Romance word / dot-grouped m² (acres_from_text)",
+      "duplicate_of": "B001",
+      "commit": "b668c24"
     },
     {
       "file": "landfinder.py",
@@ -50,10 +55,13 @@
       "fp": "db50363936",
       "id": "B003",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:15",
       "verify_reason": "acres_from_text treats a dot-grouped area as a decimal, so 'Terreno 1.500 m2 en venta', '10.000 m2' and '1.250 m²' parse as 1.5, 10 and 1.25 m², which is 1000x too small. All 3 parametrized cases in the test fail on the current code. The titles are free text from OLX and Kijiji (callers at lines 554 and 1389), and nothing normalises the dot-grouped form.",
-      "test_file": "tests/test_bughunt_b003.py"
+      "test_file": "tests/test_bughunt_b003.py",
+      "root_cause": "R01 fractions / '1,000 acres' + Romance word / dot-grouped m² (acres_from_text)",
+      "duplicate_of": "B001",
+      "commit": "b668c24"
     },
     {
       "file": "landfinder.py",
@@ -68,10 +76,12 @@
       "fp": "64a38c5ee4",
       "id": "B004",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:15",
       "verify_reason": "flag() builds its text from the title, title_en and description. `PER_UNIT_RX` has no trailing word boundary after `metro`, so ordinary phrases like 'the Metro area' match. The test passes a $5,000, 1-acre listing titled 'Lot 20 min from the Metro area' to flag() and gets 'price may be per m2/acre/hectare'. believable_flags() is therefore false, and the test fails on the current code.",
-      "test_file": "tests/test_bughunt_b004.py"
+      "test_file": "tests/test_bughunt_b004.py",
+      "root_cause": "R02 'the Metro area' flagged as per-m² price",
+      "commit": "14c2b83"
     },
     {
       "file": "landfinder.py",
@@ -86,10 +96,13 @@
       "fp": "aaba56250d",
       "id": "B005",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:23",
       "verify_reason": "Both tests fail on the current code. `acres_from_text('1/2 acre lot')` returns 2.0 instead of 0.5. `finalize` on a Kijiji record titled '1/2 acre lot near lake' with scraped acres=0.5 overwrites it with 2.0, so the bug is reachable from real scraped titles.",
-      "test_file": "tests/test_bughunt_b005.py"
+      "test_file": "tests/test_bughunt_b005.py",
+      "root_cause": "R01 fractions / '1,000 acres' + Romance word / dot-grouped m² (acres_from_text)",
+      "duplicate_of": "B001",
+      "commit": "b668c24"
     },
     {
       "file": "landfinder.py",
@@ -104,10 +117,13 @@
       "fp": "6af4913381",
       "id": "B006",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:23",
       "verify_reason": "acres_from_text('Rolling terrain, 1,500 acres ranch'), 'Ranch near La Junta, CO - 2,500 acres' and '1,250 acres terrain' return 1.5, 2.5 and 1.25 instead of 1500, 2500 and 1250. The `romance and factor >= 1` rule at line 182 treats the thousands comma as a decimal comma. Callers pass scraped titles, descriptions and lotAreaString to this function (lines 554, 1389, 1751), so real listings can hit it. All 3 parametrized cases fail on the current code.",
-      "test_file": "tests/test_bughunt_b006.py"
+      "test_file": "tests/test_bughunt_b006.py",
+      "root_cause": "R01 fractions / '1,000 acres' + Romance word / dot-grouped m² (acres_from_text)",
+      "duplicate_of": "B001",
+      "commit": "b668c24"
     },
     {
       "file": "landfinder.py",
@@ -122,10 +138,13 @@
       "fp": "b705542ea2",
       "id": "B007",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:23",
       "verify_reason": "acres_from_text('12.000 m2 terreno') returns 0.00297 acres (12 m²) instead of about 2.97, because num() reads '12.000' as 12.0 and only comma forms are normalised. All 4 test cases fail, including Kijiji's kijiji_acres() with a Spanish description. The function is only reached through Kijiji ads (and Kijiji's finalize() re-read) and the homes lotAreaString path. Other Spanish and European sources use their own parsers, so real exposure is narrow, limited to Kijiji ads written in Romance languages. tests/test_bughunt_b003.py already covers the same defect.",
-      "test_file": "tests/test_bughunt_b007.py"
+      "test_file": "tests/test_bughunt_b007.py",
+      "root_cause": "R01 fractions / '1,000 acres' + Romance word / dot-grouped m² (acres_from_text)",
+      "duplicate_of": "B001",
+      "commit": "b668c24"
     },
     {
       "file": "landfinder.py",
@@ -140,10 +159,13 @@
       "fp": "eb52c71bf8",
       "id": "B008",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:23",
       "verify_reason": "Both tests fail on the current code. acres_from_text('1/4 acre lot') returns 4.0 instead of 0.25, and finalize() on a Kijiji record with title '1/4 acre lot' and a correct acres=0.25 overwrites it with 4.0. finalize() re-parses every Kijiji title and description (lines 553-556), so real scraped listings hit this.",
-      "test_file": "tests/test_bughunt_b008.py"
+      "test_file": "tests/test_bughunt_b008.py",
+      "root_cause": "R01 fractions / '1,000 acres' + Romance word / dot-grouped m² (acres_from_text)",
+      "duplicate_of": "B001",
+      "commit": "b668c24"
     },
     {
       "file": "landfinder.py",
@@ -158,10 +180,13 @@
       "fp": "6caf6c5e0c",
       "id": "B009",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:23",
       "verify_reason": "acres_from_text('Terreno 1.250 m²') returns 0.000309 acres (1.25 m²) and '12.500 m2' returns 0.0031, instead of 1,250 and 12,500 m². Both parametrized cases fail on the current code. Callers pass real scraped titles, descriptions and lotAreaString to this function (lines 554, 1389, 1751). I tested only the m² half of the report. The '1.250 ha' half is ambiguous, because it could legitimately mean 1.25 ha. The bug also overlaps with the existing tests b003 and b007, which fail for the same reason.",
-      "test_file": "tests/test_bughunt_b009.py"
+      "test_file": "tests/test_bughunt_b009.py",
+      "root_cause": "R01 fractions / '1,000 acres' + Romance word / dot-grouped m² (acres_from_text)",
+      "duplicate_of": "B001",
+      "commit": "b668c24"
     },
     {
       "file": "landfinder.py",
@@ -194,10 +219,12 @@
       "fp": "f314190d9a",
       "id": "B011",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:25",
       "verify_reason": "load_fx calls json.load(open(path)) at line 219 with no try block, and line 225 writes the cache with open(path, 'w'), which truncates the file and is not atomic. The test leaves a truncated fx.json in a temp data dir and fakes a working API. load_fx raises JSONDecodeError instead of re-fetching, so the test fails on the current code. It would pass once the corrupt cache is ignored.",
-      "test_file": "tests/test_bughunt_b011.py"
+      "test_file": "tests/test_bughunt_b011.py",
+      "root_cause": "R09 corrupt fx.json crashes every run",
+      "commit": "4c4baaf"
     },
     {
       "file": "landfinder.py",
@@ -212,10 +239,13 @@
       "fp": "64ccdf2065",
       "id": "B012",
       "chunk": "core",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:56:25",
       "verify_reason": "All 4 parametrized cases fail on the current code. 'Terreno de 1.250 m²' returns 0.000309 acres instead of 0.309, 'Terreno 12.500 m2 à vendre' returns 0.00309 instead of 3.09, and 'Terrain 1.250,00 m²' returns 0.0618 (250 m²). acres_from_text only normalises a decimal comma, so a dot thousands separator is parsed as a decimal point. It is called directly on scraped titles, descriptions and lotAreaString (lines 554, 1389, 1751), so real listings can hit it.",
-      "test_file": "tests/test_bughunt_b012.py"
+      "test_file": "tests/test_bughunt_b012.py",
+      "root_cause": "R01 fractions / '1,000 acres' + Romance word / dot-grouped m² (acres_from_text)",
+      "duplicate_of": "B001",
+      "commit": "b668c24"
     },
     {
       "file": "landfinder.py",
@@ -230,10 +260,12 @@
       "fp": "57c6fc983d",
       "id": "B013",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:25",
       "verify_reason": "JP_LAND_RX includes a bare '面積', so jp_acres('建物面積 80㎡ 土地面積 200㎡') returns 0.0198 acres (80 m²) instead of 200 m², and a building-only or 延床面積-only text gets an invented lot size instead of None. The trigger is realistic: jp_acres runs on scraped Ieichiba card descriptions in parse_ieichiba, and JP_HOUSE_RX already expects '建物面積 N㎡' text there. Both tests in the new file fail on the current code.",
-      "test_file": "tests/test_bughunt_b013.py"
+      "test_file": "tests/test_bughunt_b013.py",
+      "root_cause": "R03 Mercado Libre bedrooms as hectares, Mexican decimals; Ieichiba building area as land",
+      "commit": "c499bf3"
     },
     {
       "file": "landfinder.py",
@@ -248,10 +280,13 @@
       "fp": "bf5bf7ed34",
       "id": "B014",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:25",
       "verify_reason": "The regex has no word boundary after 'ha', so 'habitaciones' and 'hab' match as hectares. `meli_acres('2 habitaciones')` returns 4.94 acres instead of None. `meli_acres('3 hab | 500 m² totales')` returns 7.41 acres instead of 500 m² (about 0.124 acres). Both tests fail on the current code. The trigger is realistic because `parse_meli` joins Mercado Libre `attributes_list` texts, which for house listings include bedroom counts. I didn't run `parse_meli` itself; the tests call `meli_acres` directly.",
-      "test_file": "tests/test_bughunt_b014.py"
+      "test_file": "tests/test_bughunt_b014.py",
+      "root_cause": "R03 Mercado Libre bedrooms as hectares, Mexican decimals; Ieichiba building area as land",
+      "duplicate_of": "B013",
+      "commit": "c499bf3"
     },
     {
       "file": "landfinder.py",
@@ -266,10 +301,13 @@
       "fp": "0ce404cccc",
       "id": "B015",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:25",
       "verify_reason": "meli_acres' regex has no word boundary after 'ha', so '3 habitaciones' or '3 hab.' matches as 3 hectares (7.41 acres). parse_meli passes the scraped attributes_list text straight into it, so real house listings hit this. All 3 tests fail on current code: a full parse_meli page returns acres != None, '3 hab. | 2 baños' returns a value, and a real '500 m² totales' after the bedroom count is never reached.",
-      "test_file": "tests/test_bughunt_b015.py"
+      "test_file": "tests/test_bughunt_b015.py",
+      "root_cause": "R03 Mercado Libre bedrooms as hectares, Mexican decimals; Ieichiba building area as land",
+      "duplicate_of": "B013",
+      "commit": "c499bf3"
     },
     {
       "file": "landfinder.py",
@@ -284,10 +322,13 @@
       "fp": "14675c6d48",
       "id": "B016",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:25",
       "verify_reason": "JP_LAND_RX accepts a bare '面積', so it matches the tail of '建物面積' and '延床面積'. jp_acres('建物面積 80㎡ 土地面積 500㎡') returns 0.0198 acres (80 m²) instead of 500 m², and jp_acres('延床面積 80㎡ 築30年') returns 0.0198 acres instead of None. parse_ieichiba passes real listing descriptions straight into jp_acres, and the code's own JP_HOUSE_RX expects '建物面積 N㎡' in those descriptions, so the trigger is realistic. I did not build a full Ieichiba card to run through parse_ieichiba. The tests call jp_acres directly.",
-      "test_file": "tests/test_bughunt_b016.py"
+      "test_file": "tests/test_bughunt_b016.py",
+      "root_cause": "R03 Mercado Libre bedrooms as hectares, Mexican decimals; Ieichiba building area as land",
+      "duplicate_of": "B013",
+      "commit": "c499bf3"
     },
     {
       "file": "landfinder.py",
@@ -302,10 +343,12 @@
       "fp": "89b196fbd1",
       "id": "B017",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:25",
       "verify_reason": "The test feeds crawl_kijiji a 200-status block page with no __NEXT_DATA__. parse_kijiji returns ([], None), and crawl_kijiji then marks the page URL as done (pages_done.txt) and records stop='end of results', not 'fetch failed'. On resume, search_pages skips the search because it is 'finished', so the page is never retried. The test fails on the current code.",
-      "test_file": "tests/test_bughunt_b017.py"
+      "test_file": "tests/test_bughunt_b017.py",
+      "root_cause": "R04 blocked Kijiji/LandWatch page recorded as end of results",
+      "commit": "8f2f562"
     },
     {
       "file": "landfinder.py",
@@ -320,10 +363,13 @@
       "fp": "de7cf6bdc1",
       "id": "B018",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:27",
       "verify_reason": "The regex in `meli_acres` has no word boundary after `ha`, so `3 habitaciones` is read as 3 ha. `meli_acres('161 m² cubiertos | 3 habitaciones')` returns about 7.41 acres instead of None, and `parse_meli` feeds it real card attribute text. The new test fails on the current code. Tests b014 and b015 already cover the same root cause.",
-      "test_file": "tests/test_bughunt_b018.py"
+      "test_file": "tests/test_bughunt_b018.py",
+      "root_cause": "R03 Mercado Libre bedrooms as hectares, Mexican decimals; Ieichiba building area as land",
+      "duplicate_of": "B013",
+      "commit": "c499bf3"
     },
     {
       "file": "landfinder.py",
@@ -338,10 +384,13 @@
       "fp": "5590c87bcd",
       "id": "B019",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:27",
       "verify_reason": "parse_ieichiba passes the listing description straight to jp_acres. JP_LAND_RX's alternation includes bare '面積', so on '建物面積：80㎡ 土地面積：200㎡' it matches inside '建物面積' first and returns 0.0198 acres (80 m²) instead of 0.0494 (200 m²). The test calls jp_acres directly and fails on the current code. I did not build a full Ieichiba page, but the description text is real scraped data and the call path is direct.",
-      "test_file": "tests/test_bughunt_b019.py"
+      "test_file": "tests/test_bughunt_b019.py",
+      "root_cause": "R03 Mercado Libre bedrooms as hectares, Mexican decimals; Ieichiba building area as land",
+      "duplicate_of": "B013",
+      "commit": "c499bf3"
     },
     {
       "file": "landfinder.py",
@@ -356,10 +405,13 @@
       "fp": "9f31a8c927",
       "id": "B020",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:27",
       "verify_reason": "br.get returns the page HTML when the ready check times out and the title isn't in BLOCK_TITLES, so a placard-less interstitial reaches parse_landwatch. crawl_landwatch_one then calls store.page, which marks the URL done, and store.stop(sid, 'end of results'), which makes search_pages skip the search on resume. The test fails on the current code with stops == ['end of results'] and the page marked done. One caveat: a genuine past-the-end LandWatch page may also have no placards, so a fix has to tell the two apart, for example by checking for the 'N Listings' count.",
-      "test_file": "tests/test_bughunt_b020.py"
+      "test_file": "tests/test_bughunt_b020.py",
+      "root_cause": "R04 blocked Kijiji/LandWatch page recorded as end of results",
+      "duplicate_of": "B017",
+      "commit": "8f2f562"
     },
     {
       "file": "landfinder.py",
@@ -374,10 +426,13 @@
       "fp": "5a56572c75",
       "id": "B021",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:56",
       "verify_reason": "The regex `(m²|ha)\\s*(\\w*)` matches the 'ha' at the start of 'habitaciones' and 'hab'. `parse_meli` passes the card's joined attribute strings to `meli_acres`, so a house card with '3 habitaciones' can trigger it. Both tests fail on the current code: `meli_acres` returns 7.41 acres instead of None, and with '1.000 m² totales' also on the card it still returns 7.41 acres instead of 0.25.",
-      "test_file": "tests/test_bughunt_b021.py"
+      "test_file": "tests/test_bughunt_b021.py",
+      "root_cause": "R03 Mercado Libre bedrooms as hectares, Mexican decimals; Ieichiba building area as land",
+      "duplicate_of": "B013",
+      "commit": "c499bf3"
     },
     {
       "file": "landfinder.py",
@@ -392,10 +447,13 @@
       "fp": "29c993916f",
       "id": "B022",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:56",
       "verify_reason": "`meli_acres` strips every '.' before parsing, so '1.5 ha totales' becomes 15 ha and '0.25 ha totales' becomes 25 ha (61.8 acres). MELI_SITES includes Mexico, which writes decimal points, so real listings can hit this. Both tests fail on the current code.",
-      "test_file": "tests/test_bughunt_b022.py"
+      "test_file": "tests/test_bughunt_b022.py",
+      "root_cause": "R03 Mercado Libre bedrooms as hectares, Mexican decimals; Ieichiba building area as land",
+      "duplicate_of": "B013",
+      "commit": "c499bf3"
     },
     {
       "file": "landfinder.py",
@@ -410,10 +468,13 @@
       "fp": "dd2883fa81",
       "id": "B023",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:56",
       "verify_reason": "A Kijiji page that returns 200 with `__NEXT_DATA__` but no `__APOLLO_STATE__` makes `parse_kijiji` return ([], None). `crawl_kijiji` then records the stop reason as 'end of results' and writes the page URL to pages_done.txt. The test fails on the current code, and a rerun would skip that search. `crawl_search` already handles this case correctly: it reports 'fetch failed' and leaves the page unmarked.",
-      "test_file": "tests/test_bughunt_b023.py"
+      "test_file": "tests/test_bughunt_b023.py",
+      "root_cause": "R04 blocked Kijiji/LandWatch page recorded as end of results",
+      "duplicate_of": "B017",
+      "commit": "8f2f562"
     },
     {
       "file": "landfinder.py",
@@ -428,10 +489,13 @@
       "fp": "14935b3f78",
       "id": "B024",
       "chunk": "parsers_a",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:57:58",
       "verify_reason": "`meli_acres('3 habitaciones | 2 baños')` returns 7.41 acres instead of None, because the regex has no word boundary after `ha` and the `kind` text 'bitaciones' isn't in the skip list. `parse_meli` passes real card attribute text to this function, so real data can trigger it. The new test fails on the current code. Tests b014, b015, b018 and b021 already cover the same root cause, so this finding is a duplicate.",
-      "test_file": "tests/test_bughunt_b024.py"
+      "test_file": "tests/test_bughunt_b024.py",
+      "root_cause": "R03 Mercado Libre bedrooms as hectares, Mexican decimals; Ieichiba building area as land",
+      "duplicate_of": "B013",
+      "commit": "c499bf3"
     },
     {
       "file": "landfinder.py",
@@ -446,10 +510,12 @@
       "fp": "dfe8b14da7",
       "id": "B025",
       "chunk": "parsers_b",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:59:03",
       "verify_reason": "When the LandWatch ad page returns nothing (removed or blocked), `recheck` still calls `store.add([rec])`. `Store.add` stamps `scraped_at` with now, so the dead listing looks freshly scraped. The test seeds a record dated 2026-10-01 and runs `verify_cheapest` with a browser that returns None. It fails because the latest `scraped_at` is now 2026-11-08T04:07:06, not the old date.",
-      "test_file": "tests/test_bughunt_b025.py"
+      "test_file": "tests/test_bughunt_b025.py",
+      "root_cause": "R05 failed LandWatch re-check saved as fresh and verified",
+      "commit": "87ea63d"
     },
     {
       "file": "landfinder.py",
@@ -464,10 +530,13 @@
       "fp": "83d1cc6a7e",
       "id": "B026",
       "chunk": "parsers_b",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:59:03",
       "verify_reason": "In `recheck`, the LandWatch branch sets `verified_at` at line 1957 and calls `store.add([rec])` even when `get` returns None or no description is parsed. The test uses a browser whose `get` always returns None, and the saved record still gets today's `verified_at`, so the `todo` filter skips it for the rest of the day. The test fails on the current code.",
-      "test_file": "tests/test_bughunt_b026.py"
+      "test_file": "tests/test_bughunt_b026.py",
+      "root_cause": "R05 failed LandWatch re-check saved as fresh and verified",
+      "duplicate_of": "B025",
+      "commit": "87ea63d"
     },
     {
       "file": "landfinder.py",
@@ -482,10 +551,12 @@
       "fp": "9280c252b3",
       "id": "B027",
       "chunk": "parsers_b",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:59:03",
       "verify_reason": "`parse_zillow` on a `__NEXT_DATA__` page with `listResults: null` raises `TypeError: 'NoneType' object is not iterable` at landfinder.py:1737, outside the try block. Neither `crawl_search` nor `crawl_zillow` catches it, and the `timed` wrapper in `main` doesn't either. The exception therefore ends the whole Zillow thread. The test fails on the current code. I didn't check whether Zillow actually serves `null` there, so the trigger is plausible rather than observed.",
-      "test_file": "tests/test_bughunt_b027.py"
+      "test_file": "tests/test_bughunt_b027.py",
+      "root_cause": "R06 null Zillow listResults kills the Zillow thread",
+      "commit": "0da0ece"
     },
     {
       "file": "landfinder.py",
@@ -500,10 +571,13 @@
       "fp": "a9fc72d004",
       "id": "B028",
       "chunk": "parsers_b",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:59:12",
       "verify_reason": "With a LandWatch browser whose get() always returns None, verify_cheapest still stores the record with verified_at set to today, so later rounds skip it (test fails on 'assert not latest.get(\"verified_at\")'). A blocked or timed-out LandWatch fetch can happen with real scraping, and the same defect is already caught by the existing failing test tests/test_bughunt_b026.py.",
-      "test_file": "tests/test_bughunt_b028.py"
+      "test_file": "tests/test_bughunt_b028.py",
+      "root_cause": "R05 failed LandWatch re-check saved as fresh and verified",
+      "duplicate_of": "B025",
+      "commit": "87ea63d"
     },
     {
       "file": "landfinder.py",
@@ -518,10 +592,12 @@
       "fp": "166060b476",
       "id": "B029",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T03:59:12",
       "verify_reason": "build_outputs runs a record titled `</script><img src=x onerror=alert(1)>` through json.dumps and inserts it as-is into `const D=`. The generated report.html has a raw `</script>` inside the data array, so the script block ends at the title and the rest is parsed as HTML. The test fails on the current code. Titles and regions come from scraped listings, so real data can trigger this.",
-      "test_file": "tests/test_bughunt_b029.py"
+      "test_file": "tests/test_bughunt_b029.py",
+      "root_cause": "R07 </script> in a title injects HTML into report.html",
+      "commit": "1aec7e1"
     },
     {
       "file": "landfinder.py",
@@ -536,10 +612,12 @@
       "fp": "f2de846f6c",
       "id": "B030",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T04:00:03",
       "verify_reason": "Three landwatch listings with the same price and acres, different URLs, and titles '•', '-' and '' all normalize to '', so same_title() treats them as equal. build_outputs keeps only the first, and the test fails because results.csv has only lot/1. The trigger is realistic: site_template.html already says some listings have no title or just a '•'.",
-      "test_file": "tests/test_bughunt_b030.py"
+      "test_file": "tests/test_bughunt_b030.py",
+      "root_cause": "R08 dedupe keeps stale repost / merges empty or generic titles",
+      "commit": "c7ea565"
     },
     {
       "file": "landfinder.py",
@@ -554,10 +632,13 @@
       "fp": "ac6427d286",
       "id": "B031",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T04:00:03",
       "verify_reason": "build_outputs puts json.dumps(slim) into the report's inline <script> block without escaping '<'. A scraped title of '</script><img src=x onerror=alert(1)>' therefore appears verbatim in report.html and closes the script block early. The test fails on the current code. A scraped listing title can carry this text, so the trigger is realistic.",
-      "test_file": "tests/test_bughunt_b031.py"
+      "test_file": "tests/test_bughunt_b031.py",
+      "root_cause": "R07 </script> in a title injects HTML into report.html",
+      "duplicate_of": "B029",
+      "commit": "1aec7e1"
     },
     {
       "file": "landfinder.py",
@@ -572,10 +653,13 @@
       "fp": "596e195867",
       "id": "B032",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T04:00:03",
       "verify_reason": "The test fails on the current code. The dedupe in build_outputs keeps the stale old-URL record, because it sorts first, and drops the fresh repost. build_site then filters the stale record out by scraped_at (another fresh listing keeps the cutoff at the new run), so the listing is missing from data.json. Store.add stamps scraped_at on every write and Store.all keeps first-seen order, so real scraped data can hit this.",
-      "test_file": "tests/test_bughunt_b032.py"
+      "test_file": "tests/test_bughunt_b032.py",
+      "root_cause": "R08 dedupe keeps stale repost / merges empty or generic titles",
+      "duplicate_of": "B030",
+      "commit": "c7ea565"
     },
     {
       "file": "landfinder.py",
@@ -590,10 +674,13 @@
       "fp": "86b8f380c3",
       "id": "B033",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T04:00:03",
       "verify_reason": "Two MX listings from one source with the same generic title 'Terreno en venta', 100000 MXN, 0.25 acres, different URLs and regions were passed through build_outputs. Only one reached results.csv, because the dedupe key ignores region and URL and equal normalized titles count as the same listing. Generic titles on distinct parcels are realistic scraped data, so this can happen in practice. The test fails on the current code.",
-      "test_file": "tests/test_bughunt_b033.py"
+      "test_file": "tests/test_bughunt_b033.py",
+      "root_cause": "R08 dedupe keeps stale repost / merges empty or generic titles",
+      "duplicate_of": "B030",
+      "commit": "c7ea565"
     },
     {
       "file": "landfinder.py",
@@ -626,10 +713,13 @@
       "fp": "7d0da2c10b",
       "id": "B035",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T04:00:03",
       "verify_reason": "build_outputs pastes json.dumps(slim) into report_template.html without escaping '<' or '/'. A listing with title '</script><img src=x onerror=alert(1)>' ends up unescaped in report.html, which closes the script block early. The test fails on the current code on the assertion that the injected img tag is absent. Scraped titles are untrusted input, so this can happen with real data.",
-      "test_file": "tests/test_bughunt_b035.py"
+      "test_file": "tests/test_bughunt_b035.py",
+      "root_cause": "R07 </script> in a title injects HTML into report.html",
+      "duplicate_of": "B029",
+      "commit": "1aec7e1"
     },
     {
       "file": "landfinder.py",
@@ -644,10 +734,13 @@
       "fp": "31757a0f1c",
       "id": "B036",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T04:00:03",
       "verify_reason": "build_outputs pastes json.dumps(slim) into report.html without escaping '<'. A listing titled '</script><script>alert(1)</script>' ends the data script block at the first '</script>', and the test fails on the current code because of that. Titles and regions come from scraped third-party ads, so real data can trigger it.",
-      "test_file": "tests/test_bughunt_b036.py"
+      "test_file": "tests/test_bughunt_b036.py",
+      "root_cause": "R07 </script> in a title injects HTML into report.html",
+      "duplicate_of": "B029",
+      "commit": "1aec7e1"
     },
     {
       "file": "functions/api/visitors.js",
@@ -662,10 +755,12 @@
       "fp": "0daea0dda7",
       "id": "B037",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T04:00:03",
       "verify_reason": "The test runs the real onRequestPost under node with a fake D1 and a `null` JSON body. It fails with \"TypeError: Cannot read properties of null (reading 'first')\", where it should return 200 with the total. The page itself only sends {first:true}, so only a hand-built or odd client can hit this. It is still a real unhandled path: `await request.json()` returns null without throwing, so the try/catch doesn't cover it.",
-      "test_file": "tests/test_bughunt_b037.py"
+      "test_file": "tests/test_bughunt_b037.py",
+      "root_cause": "R10 visitors API 500s on a null body",
+      "commit": "8b8c807"
     },
     {
       "file": "landfinder.py",
@@ -680,10 +775,13 @@
       "fp": "3a6631218c",
       "id": "B038",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T04:00:03",
       "verify_reason": "build_outputs embeds json.dumps(slim) into report_template.html unescaped, so a title like 'Lot </script><script>alert(document.cookie)</script>' appears raw inside the `const D=` data script. The test builds the report from a record with that title, and the first </script> after the data comes before the template's own code, so it fails on the current code. Titles come from scraped listings.",
-      "test_file": "tests/test_bughunt_b038.py"
+      "test_file": "tests/test_bughunt_b038.py",
+      "root_cause": "R07 </script> in a title injects HTML into report.html",
+      "duplicate_of": "B029",
+      "commit": "1aec7e1"
     },
     {
       "file": "landfinder.py",
@@ -698,10 +796,13 @@
       "fp": "91831aacf8",
       "id": "B039",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T04:00:03",
       "verify_reason": "In `build_outputs`, a stale record and a fresh repost with the same source, country, price, acres and title come out of `store.all()` older first. The stable price sort keeps that order, so the dedup keeps the old URL and drops the new one. With another fresh listing in the store to set the cutoff, `build_site` then filters out the stale record, and `site/data.json` shows only the other parcel. The test fails on the current code: it asserts the fresh repost's URL is in the site rows. Note that with no other fresh records, the stale record becomes the newest, so the old URL shows instead.",
-      "test_file": "tests/test_bughunt_b039.py"
+      "test_file": "tests/test_bughunt_b039.py",
+      "root_cause": "R08 dedupe keeps stale repost / merges empty or generic titles",
+      "duplicate_of": "B030",
+      "commit": "c7ea565"
     },
     {
       "file": "functions/api/visitors.js",
@@ -716,10 +817,13 @@
       "fp": "849a4e8ddf",
       "id": "B040",
       "chunk": "outputs",
-      "status": "confirmed",
+      "status": "fixed",
       "found_at": "2026-11-08T04:00:03",
       "verify_reason": "The test runs the real functions/api/visitors.js under node with a fake D1 and a `null` JSON body. It fails with `TypeError: Cannot read properties of null (reading 'first')`, so the uncaught throw means a 500. The bundled page always sends `{first:true}`, so only a direct client request triggers it, and the endpoint is public. The `try/catch` around `request.json()` shows malformed bodies were meant to be tolerated. Note that tests/test_bughunt_b037.py already tests this same defect, so b040 duplicates it.",
-      "test_file": "tests/test_bughunt_b040.py"
+      "test_file": "tests/test_bughunt_b040.py",
+      "root_cause": "R10 visitors API 500s on a null body",
+      "duplicate_of": "B037",
+      "commit": "8b8c807"
     }
   ]
 }
