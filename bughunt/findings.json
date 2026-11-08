@@ -13,8 +13,10 @@
       "fp": "9a3053de3b",
       "id": "B001",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:15"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:15",
+      "verify_reason": "acres_from_text returns 4.0 for '1/4 acre lot', 2.0 for '1/2 acre lot' and 2.0 for '2 1/2 acres'. The regex matches only the digits after the slash. The real Kijiji path, finalize(), re-reads a title such as '1/4 acre lot' and overwrites a correct 0.25 with 4.0, and all 4 tests in the new file fail on the current code.",
+      "test_file": "tests/test_bughunt_b001.py"
     },
     {
       "file": "landfinder.py",
