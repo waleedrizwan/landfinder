@@ -680,8 +680,10 @@
       "fp": "3a6631218c",
       "id": "B038",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "build_outputs embeds json.dumps(slim) into report_template.html unescaped, so a title like 'Lot </script><script>alert(document.cookie)</script>' appears raw inside the `const D=` data script. The test builds the report from a record with that title, and the first </script> after the data comes before the template's own code, so it fails on the current code. Titles come from scraped listings.",
+      "test_file": "tests/test_bughunt_b038.py"
     },
     {
       "file": "landfinder.py",
