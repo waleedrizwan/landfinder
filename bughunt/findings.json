@@ -140,8 +140,10 @@
       "fp": "eb52c71bf8",
       "id": "B008",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:23"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:23",
+      "verify_reason": "Both tests fail on the current code. acres_from_text('1/4 acre lot') returns 4.0 instead of 0.25, and finalize() on a Kijiji record with title '1/4 acre lot' and a correct acres=0.25 overwrites it with 4.0. finalize() re-parses every Kijiji title and description (lines 553-556), so real scraped listings hit this.",
+      "test_file": "tests/test_bughunt_b008.py"
     },
     {
       "file": "landfinder.py",
