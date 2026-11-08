@@ -590,8 +590,10 @@
       "fp": "86b8f380c3",
       "id": "B033",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "Two MX listings from one source with the same generic title 'Terreno en venta', 100000 MXN, 0.25 acres, different URLs and regions were passed through build_outputs. Only one reached results.csv, because the dedupe key ignores region and URL and equal normalized titles count as the same listing. Generic titles on distinct parcels are realistic scraped data, so this can happen in practice. The test fails on the current code.",
+      "test_file": "tests/test_bughunt_b033.py"
     },
     {
       "file": "landfinder.py",
