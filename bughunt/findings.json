@@ -392,8 +392,10 @@
       "fp": "29c993916f",
       "id": "B022",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:56"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:56",
+      "verify_reason": "`meli_acres` strips every '.' before parsing, so '1.5 ha totales' becomes 15 ha and '0.25 ha totales' becomes 25 ha (61.8 acres). MELI_SITES includes Mexico, which writes decimal points, so real listings can hit this. Both tests fail on the current code.",
+      "test_file": "tests/test_bughunt_b022.py"
     },
     {
       "file": "landfinder.py",
