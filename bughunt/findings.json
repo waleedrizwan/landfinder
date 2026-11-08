@@ -158,8 +158,10 @@
       "fp": "6caf6c5e0c",
       "id": "B009",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:23"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:23",
+      "verify_reason": "acres_from_text('Terreno 1.250 m²') returns 0.000309 acres (1.25 m²) and '12.500 m2' returns 0.0031, instead of 1,250 and 12,500 m². Both parametrized cases fail on the current code. Callers pass real scraped titles, descriptions and lotAreaString to this function (lines 554, 1389, 1751). I tested only the m² half of the report. The '1.250 ha' half is ambiguous, because it could legitimately mean 1.25 ha. The bug also overlaps with the existing tests b003 and b007, which fail for the same reason.",
+      "test_file": "tests/test_bughunt_b009.py"
     },
     {
       "file": "landfinder.py",
