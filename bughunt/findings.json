@@ -374,8 +374,10 @@
       "fp": "5a56572c75",
       "id": "B021",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:56"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:56",
+      "verify_reason": "The regex `(m²|ha)\\s*(\\w*)` matches the 'ha' at the start of 'habitaciones' and 'hab'. `parse_meli` passes the card's joined attribute strings to `meli_acres`, so a house card with '3 habitaciones' can trigger it. Both tests fail on the current code: `meli_acres` returns 7.41 acres instead of None, and with '1.000 m² totales' also on the card it still returns 7.41 acres instead of 0.25.",
+      "test_file": "tests/test_bughunt_b021.py"
     },
     {
       "file": "landfinder.py",
