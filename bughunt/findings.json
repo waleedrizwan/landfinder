@@ -248,8 +248,10 @@
       "fp": "bf5bf7ed34",
       "id": "B014",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:25"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:25",
+      "verify_reason": "The regex has no word boundary after 'ha', so 'habitaciones' and 'hab' match as hectares. `meli_acres('2 habitaciones')` returns 4.94 acres instead of None. `meli_acres('3 hab | 500 m² totales')` returns 7.41 acres instead of 500 m² (about 0.124 acres). Both tests fail on the current code. The trigger is realistic because `parse_meli` joins Mercado Libre `attributes_list` texts, which for house listings include bedroom counts. I didn't run `parse_meli` itself; the tests call `meli_acres` directly.",
+      "test_file": "tests/test_bughunt_b014.py"
     },
     {
       "file": "landfinder.py",
