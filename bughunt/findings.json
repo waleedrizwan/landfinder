@@ -338,8 +338,10 @@
       "fp": "5590c87bcd",
       "id": "B019",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:27"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:27",
+      "verify_reason": "parse_ieichiba passes the listing description straight to jp_acres. JP_LAND_RX's alternation includes bare '面積', so on '建物面積：80㎡ 土地面積：200㎡' it matches inside '建物面積' first and returns 0.0198 acres (80 m²) instead of 0.0494 (200 m²). The test calls jp_acres directly and fails on the current code. I did not build a full Ieichiba page, but the description text is real scraped data and the call path is direct.",
+      "test_file": "tests/test_bughunt_b019.py"
     },
     {
       "file": "landfinder.py",
