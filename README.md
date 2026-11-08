@@ -63,13 +63,25 @@ exact low price repeated on many different-size plots. So when a seller fills th
 placeholder price, the search keeps going past them. It also stops when the results run out, or after 30 pages
 (`--pages`).
 
-After scraping, landfinder opens the 60 cheapest believable listings on LandWatch and on Kijiji and re-reads
-their full description, because search results cut it short. That catches sellers who enter a down payment or
-monthly payment as the price ("Only $2,700 cash! ... $380 down"). When the text gives the real cash price, that
-price is used; otherwise the listing is hidden. On Kijiji it catches rentals: real estate agents' REALTOR.ca
-listings include homes and land for rent, priced at the monthly rent, which land in Kijiji's land-for-sale
-section. Use `--verify 0` to skip this step or `--verify-only` to run it alone. It follows `--sources`, so
-`--verify-only --sources kijiji` checks Kijiji alone, without opening Chrome.
+After scraping, landfinder opens the 60 cheapest believable listings on LandWatch, Kijiji and Properstar and
+re-reads their full description, because search results cut it short (Properstar's carry none at all). That
+catches sellers who enter a down payment or monthly payment as the price ("Only $2,700 cash! ... $380 down").
+When the text gives the real cash price, that price is used; otherwise the listing is hidden. It also catches
+rentals: real estate agents' REALTOR.ca listings include homes and land for rent, priced at the monthly rent,
+which land in Kijiji's land-for-sale section, and Properstar's agencies post land for rent as "for sale" with
+the rent as the price ("Terreno en venta o renta", "$100 pesos m2 renta"). Use `--verify 0` to skip this step
+or `--verify-only` to run it alone. It follows `--sources`, so `--verify-only --sources kijiji` checks Kijiji
+alone, without opening Chrome.
+
+Rentals are also caught from the words sellers use, in a dozen languages ("for lease", "renta", "wynajem",
+"оренда", 借地...), and on Kijiji by what the ad is: a REALTOR.ca commercial or industrial lot in Canada at a
+few thousand dollars, with no talk of buyers, offers or the seller, is a lease at its monthly rent.
+
+The same parcel often turns up several times: an agency's listing fed to Properstar twice under different
+titles, a REALTOR.ca lot on two MLS boards, a Kijiji ad reposted under a new id, the same plot on OLX and
+Properstar, or a seller posting a row of identical lots one ad each. Listings in the same country at the same
+price are folded into one when they share a title, a location and size, or the same opening description text
+and size. The site shows the fullest one with "+2 similar" after the site name.
 
 Stopping with Ctrl-C is safe: progress is saved in `data/`, and running the same command again resumes.
 

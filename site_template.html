@@ -228,11 +228,12 @@ footer p{margin:4px 0}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
-// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type, town, price, currency, tags, province]
+// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type, town, price, currency, tags, province, similar]
 // title and region are in English; originalTitle is set when the title was translated; type is a TYPES key;
 // town is "" when the listing doesn't say, and "Deming, NM" in the US and Canada; price is in the listing's own currency;
 // tags holds SPECIAL keys: a ruin or fixer-upper, a castle or manor, a church or chapel; province is the state,
-// province or region ("" when unknown)
+// province or region ("" when unknown); similar is how many near-identical listings (reposts, the same lot on two
+// sites, a seller's row of identical lots) this one stands for
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let regionNames, currencyNames;
@@ -492,6 +493,8 @@ function renderChips(){
 // the listing is priced in another currency, so the big price was converted from its own
 const converted = r => r[15] && r[15] !== CUR;
 const place = r => [r[4], cname(r[3])].filter(Boolean).join(", ");
+// "Deming, United States, on LandWatch · +2 similar": where it is, which site, and how many like it were folded in
+const whereLine = r => `<div class="where">${esc(place(r))}, on ${srcName(r[6])}${r[18] ? ` · <span title="${r[18]} more ${r[18] === 1 ? "listing" : "listings"} of this parcel or lots just like it">+${r[18]} similar</span>` : ""}</div>`;
 const warning = r => clean(r) || houseOnly(r) ? "" : `<div class="w">${[...r[7]].filter(f => f !== "H").map(f => FLAGS[f]).filter(Boolean).join(". ")}</div>`;
 const specials = r => [...(r[16] || "")].map(t => `<span class="sp">${SPECIAL[t]}</span>`).join("");
 const priceCell = r => `<span class="p">${money(price(r))}</span>${converted(r) && r[14] ? `<span class="own">${digits(r[14])} ${r[15]}</span>` : ""}`;
@@ -511,7 +514,7 @@ function renderList(){
     <td class="rank">${i + 1}</td>
     <td class="price">${priceCell(r)}</td>
     <td class="land">${landCell(r)}</td>
-    <td class="what">${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div>${warning(r)}</td>
+    <td class="what">${titleLink(r)}${whereLine(r)}${warning(r)}</td>
     <td class="type">${TYPES[r[12]] || "Land"}${specials(r)}</td></tr>`).join("");
   $("empty").hidden = VIEW.length > 0;
   $("more").hidden = shown >= VIEW.length;
@@ -564,7 +567,7 @@ function renderMap(){
       r.pin = L.marker([r[9], r[10]], {row: r, icon: L.divIcon({className: "pin", iconSize: [0, 0],
         html: `<div class="${clean(r) ? "" : "flag"}">${short(price(r))}</div>`})});
       r.pin.bindPopup(() => `<div class="pop">${priceCell(r)}<div class="ppa">${r[2] != null ? acres(r[2]) + (r[2] === 1 ? " acre, " : " acres, ") : ""}${(TYPES[r[12]] || "Land").toLowerCase()}</div>
-        ${titleLink(r)}<div class="where">${esc(place(r))}, on ${srcName(r[6])}</div>${specials(r)}${warning(r)}
+        ${titleLink(r)}${whereLine(r)}${specials(r)}${warning(r)}
         ${r[6] === "landwatch" ? `<div class="ppa">Pin shows the ZIP code area</div>` : ""}</div>`, {minWidth: 220, maxWidth: 280});
     }
     on.push(r.pin);

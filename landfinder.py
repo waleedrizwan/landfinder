@@ -217,8 +217,24 @@ WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of|i will b
 MIN_PRICE = 1500  # USD-ish floor for Properstar and Mercado Libre searches; cheaper "prices" there are per-m2 or placeholders
 TILE_SCALE = 0.5  # tiled windows draw pages at half size
 CLAIM_RX = re.compile(r"\b(access deeds?|membership|timeshare|mining claims?|lode claims?|placer claims?|gold claims?|mineral claims?|mineral rights?|unpatented|lode gold|mining|prospecting)\b", re.I)
-LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\b(?:sub-?)?lease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenants?\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b"
-                      r"|dzier[żz]aw|wynaj[eę]|do wynaj|оренд|аренд|\bздам\b|\bздаю\b|\bсдам\b|\bсдаю\b|под наем|[iî]nchiri|arrend|\balug|\bijara|\ben renta\b|\bse renta\b)", re.I)
+LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\b(?:sub-?)?lease[ds]?\b|\bleasing\b|\bleasehold\b|\bground rent\b|\bfor rent\b|\brental\b|\brenting\b"
+                      r"|\b(?:and|or|&|/)\s*rent\b|à louer|\btenants?\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\balquiler\b|\barriendo\b"
+                      r"|dzier[żz]aw|wynaj[eę]|do wynaj|оренд|аренд|\bздам\b|\bздаю\b|\bсдам\b|\bсдаю\b|под наем|[iî]nchiri|arrend|\balug|\bijara"
+                      # Mexican agencies write "renta" for rent ("Terreno en venta o renta"); Properstar translates it as "sale and rent"
+                      r"|\ben renta\b|\bse renta\b|\brentar\b|\brenta\b|\bse rentan\b"
+                      # Turkish, Italian, German, Dutch, Czech and Croatian rentals
+                      r"|kiral[ıi]k|\baffitt|\bmiete\b|vermiet|\bte huur\b|pron[aá]jem|\bnajam\b|iznajm)", re.I)
+# Japanese leasehold (借地権付き): the house is sold, the land under it stays rented. Only the title counts: descriptions
+# say "賃貸も可能" (could also be rented out) about land that is for sale.
+JP_LEASEHOLD_RX = re.compile(r"借地")
+# REALTOR.ca feeds commercial land for lease into Kijiji's land-for-sale section, priced at the monthly rent, with nothing
+# in the ad saying so ("Great functional open space in an industrial area", CAD 5,000). An agent's industrial or commercial
+# lot in Canada doesn't sell for that; a real sale ad talks of buyers, offers or the seller.
+REALTOR_RX = re.compile(r"\(id:\d+\)|MLS®|\bMLS\b")
+LEASE_USE_RX = re.compile(r"\b(industrial|commercial|development land|storage|parking|warehouse|retail|offices?|business|employment"
+                           r"|yard space|open space|laydown|outdoor storage)\b", re.I)
+SALE_WORDS_RX = re.compile(r"\b(purchas\w*|buyers?|sellers?|all offers|offers? to purchase|sale|sold|own(?:ership)?|invest\w*|title|deed|taxes)\b", re.I)
+KIJIJI_LEASE_UNDER_USD = 8000  # the leases seen run CAD 5,000-8,500 a month; Prairie-town commercial lots sell from ~CAD 15,000
 PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|hect|ha\b|sotk|square met)"
                          r"|(?:(?:\bza|\bза|\bpe|\bper|\bx)\s+|/\s*)(?:1\s*)?(m2\b|m²|mp\b|metr|сот|м2|м²|кв\.?\s*м|ar\b|ara\b)"
                          r"|\b(?:so|su)[‘'ʻ’`]?t(?:ig[‘'ʻ’`]?i|ixi|kasi)\s*\$?\s*\d|сотк[аи]\s*[-–—:]?\s*\$?\s*\d", re.I)  # Uzbek/Russian "its sotka [costs] 500"
@@ -283,9 +299,12 @@ def flag(rec):
         f.append("house listing - not vacant land")
     if rec.get("source") == "kijiji" and usd is not None and usd < 3000:
         f.append("price too low for Canada - likely a deposit, lease or placeholder")
+    elif (rec.get("source") == "kijiji" and usd is not None and usd < KIJIJI_LEASE_UNDER_USD and REALTOR_RX.search(text)
+          and LEASE_USE_RX.search(text) and not SALE_WORDS_RX.search(text)):
+        f.append("lease/rental - a REALTOR.ca commercial lot at a monthly rent, not a sale price")
     if rec.get("source") == "properstar" and usd is not None and usd < 1500:
         f.append("price may be per m2/acre/hectare (agency listing under $1,500)")
-    if LEASE_RX.search(text):
+    if LEASE_RX.search(text) or JP_LEASEHOLD_RX.search(rec.get("title") or ""):
         f.append("lease/rental - not a sale price")
     if placeholder_price(rec.get("price")) and not real:
         f.append("placeholder price")
@@ -643,7 +662,9 @@ class Store:
             with open(self.search_path, "a") as f:
                 f.write(json.dumps(e) + "\n")
 
-    def add(self, recs):
+    def add(self, recs, seen=True):
+        """Append listings. seen=False keeps their scraped_at: a listing re-read for verification wasn't seen in a
+        search, and stamping it now would move the site's 3-day window past everything scraped before it."""
         new = 0
         with self.lock, open(self.path, "a") as f:
             for r in recs:
@@ -652,7 +673,8 @@ class Store:
                 if r["url"] not in self.urls:
                     self.urls.add(r["url"])
                     new += 1
-                r["scraped_at"] = datetime.now().isoformat(timespec="seconds")
+                if seen or not r.get("scraped_at"):
+                    r["scraped_at"] = datetime.now().isoformat(timespec="seconds")
                 f.write(json.dumps(r) + "\n")
         return new
 
@@ -1642,14 +1664,37 @@ def kijiji_full_ad(html, url):
     return None
 
 
+def properstar_full_listing(html, url):
+    """A Properstar listing from its own page: the agency's full description (every language it comes in, so the
+    price checks can read it) and whether the listing has ended. None if the page has no listing data."""
+    lid = url.rstrip("/").rsplit("/", 1)[-1]
+    m = re.search(r"window\.__INITIAL_STATE__\s*=\s*(\{.*?\});?\s*</script>", html or "", re.S)
+    try:
+        L = json.loads(m.group(1))["entities"]["listing"][lid]
+    except Exception:
+        return None
+    texts = []
+    for key in ("title", "descriptionFull", "description"):
+        for t in L.get(key) or []:
+            s = re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", (t or {}).get("text") or ""))).strip()
+            if s and s not in texts:
+                texts.append(s)
+    return {"description": " | ".join(texts), "archived": bool(L.get("isArchived"))}
+
+
+VERIFY_SOURCES = ("landwatch", "kijiji", "properstar")
+VERIFY_READY = {"landwatch": LANDWATCH_AD_READY, "properstar": PROPERSTAR_READY}
+
+
 def verify_cheapest(store, a, n=60, rounds=4):
-    """Open the cheapest believable LandWatch and Kijiji listings and re-check them against their full description.
-    Search cards cut descriptions short, which hides 'Only $2,700 cash ... $380 down' style pricing on LandWatch,
-    and on Kijiji, homes and land for rent whose price is the monthly rent ('... for tenants', 'Lease expires 2030').
-    Only listings the site will show are checked. LandWatch ads open in several Chrome windows at once (--workers),
-    and Kijiji's load over plain HTTP alongside them."""
+    """Open the cheapest believable LandWatch, Kijiji and Properstar listings and re-check them against their full
+    description. Search cards cut descriptions short, which hides 'Only $2,700 cash ... $380 down' style pricing on
+    LandWatch, and on Kijiji, homes and land for rent whose price is the monthly rent ('... for tenants', 'Lease expires
+    2030'). Properstar search results carry no description at all, and its agencies post rentals and per-m2 prices as
+    sales ('$100 pesos m2 renta'); the listing page has the full text. Only listings the site will show are checked.
+    LandWatch and Properstar pages open in several Chrome windows at once (--workers), Kijiji's load over plain HTTP."""
     today = datetime.now().strftime("%Y-%m-%d")
-    sources = [s for s in ("landwatch", "kijiji") if s in csv_list(a.sources, [])]
+    sources = [s for s in VERIFY_SOURCES if s in csv_list(a.sources, [])]
     plain, gone = Plain(delay=max(1.0, a.delay / 2)), set()
     queues = {s: queue.Queue() for s in sources}
 
@@ -1662,12 +1707,18 @@ def verify_cheapest(store, a, n=60, rounds=4):
                 gone.add(r["url"])
                 return
             rec["description"], rec["acres"] = ad["description"], kijiji_acres(ad)
+        elif r["source"] == "properstar":
+            L = properstar_full_listing(get(r["url"]) or "", r["url"])
+            if not L or L["archived"]:  # ended, or the page wouldn't load: leave it for the next run
+                gone.add(r["url"])
+                return
+            rec["description"] = " | ".join(x for x in (rec.get("description"), L["description"]) if x)  # keeps the search title
         else:
             html = get(r["url"])
             desc = landwatch_full_description(html) if html else None
             if desc:
                 rec["description"] = desc
-        store.add([rec])
+        store.add([rec], seen=False)
 
     def worker(src):
         br = None
@@ -1685,7 +1736,7 @@ def verify_cheapest(store, a, n=60, rounds=4):
                         if br is None:
                             br = Browser(headless=a.headless, delay=a.delay, slot=None, block=not a.load_all)
                         br.label = "verify " + job[0]["url"][-12:]
-                        recheck(job[0], job[1], lambda u: br.get(u, ready=LANDWATCH_AD_READY, what="verify"))
+                        recheck(job[0], job[1], lambda u: br.get(u, ready=VERIFY_READY[src], what="verify"))
                 except Exception as e:
                     log("  verifying %s failed: %s" % (job[0]["url"], str(e)[:120]))
                 finally:
@@ -1697,8 +1748,9 @@ def verify_cheapest(store, a, n=60, rounds=4):
             if br:
                 br.close()
 
+    chrome = [s for s in sources if s in VERIFY_READY]  # the Chrome windows are shared out between these sources
     threads = [(s, threading.Thread(target=worker, args=(s,), name="V%s%d" % (s[0].upper(), i + 1), daemon=True))
-               for s in sources for i in range(max(1, a.workers) if s == "landwatch" else 1)]
+               for s in sources for i in range(max(1, a.workers // len(chrome)) if s in chrome else 1)]
     for _, t in threads:
         t.start()
     try:
@@ -1845,7 +1897,63 @@ def add_english(recs):
 # ----------------------------------------------------------------------------- output
 
 COLS =["price_usd", "usd_per_acre", "acres", "type", "tags", "country", "region", "title", "price", "currency",
-        "source", "flags", "url", "lat", "lon", "scraped_at"]
+        "source", "flags", "url", "lat", "lon", "scraped_at", "similar"]
+
+
+# words that vary between two postings of the same address: "4 SANDPIPER AVENUE Manitouwadge" / "4 Sandpiper AVE Manitouwadge"
+ADDRESS_WORDS_RX = re.compile(r"\b(street|st|avenue|ave?|road|rd|drive|dr|crescent|cres|boulevard|blvd|court|crt|ct|lane|ln|highway|hwy"
+                              r"|route|rte|place|pl|trail|trl|circle|cir|lots?|unit|parcel|county)\b", re.I)
+
+
+def title_key(t):
+    """A title reduced to what identifies the parcel: no "(TB-73)" board codes, street-type words, case or punctuation.
+    Keeps Japanese and Cyrillic letters."""
+    t = re.sub(r"\([^)]*\)", " ", (t or "").lower())
+    return re.sub(r"[\W_]", "", ADDRESS_WORDS_RX.sub(" ", re.sub(r"^\s*lot\b", "", t)))
+
+
+def collapse_similar(recs):
+    """One row per parcel. The same land turns up several times: an agency's listing fed to Properstar twice under
+    different titles, a REALTOR.ca lot on two MLS boards ("(TB-73)"), a Kijiji ad reposted under a new id, the same
+    plot on OLX and Properstar, or a seller's row of identical lots posted one ad each. Listings in the same country
+    at the same US dollar price are one parcel when they share a title (per site, or in English across sites), a
+    location and size, or the same opening description text and size. The fullest listing of each group stays, with
+    similar = how many others it stands for. recs come cheapest first."""
+    parent = list(range(len(recs)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    first = {}
+    for i, r in enumerate(recs):
+        cc, usd, acres = r.get("country"), round(r.get("price_usd") or 0), r.get("acres")
+        a2 = None if acres is None else round(acres, 2)
+        keys = [("t", r.get("source"), title_key(r.get("title")), acres)]
+        if r.get("title_en") or r.get("title"):
+            keys.append(("e", title_key(r.get("title_en") or r.get("title")), a2))
+        if r.get("lat") is not None and r.get("source") != "landwatch":  # LandWatch pins sit at the ZIP code's center
+            keys.append(("g", round(r["lat"], 3), round(r["lon"], 3), a2))
+        desc = re.sub(r"[\W_]", "", (r.get("description") or "").lower())
+        if len(desc) >= 60:
+            keys.append(("d", r.get("source"), desc[:120], acres))
+        for k in keys:
+            k = (cc, usd) + k
+            if k in first:
+                parent[find(i)] = find(first[k])
+            else:
+                first[k] = i
+    groups = {}
+    for i in range(len(recs)):
+        groups.setdefault(find(i), []).append(i)
+    out = []
+    for members in groups.values():  # a flagged copy stands for the group (what one copy says applies to the parcel), else the fullest
+        best = min(members, key=lambda i: (believable_flags(recs[i].get("flags")), recs[i].get("acres") is None, recs[i].get("lat") is None, i))
+        recs[best]["similar"] = len(members) - 1
+        out.append(best)
+    return [recs[i] for i in sorted(out)]
 
 
 def build_outputs(store, english=True):
@@ -1885,16 +1993,7 @@ def build_outputs(store, english=True):
         if m and r["usd_per_acre"] and r["usd_per_acre"] < m / 250 and r.get("source") not in CHEAP_IS_REAL:
             r["flags"] = "; ".join(x for x in (r["flags"], "far below other listings in this country") if x)
     recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # cheapest total price first
-    # same parcel reposted under a new URL ("Lot (PID 123) X" vs "(PID 123) X") -> keep one
-    seen, uniq = set(), []
-    for r in recs:
-        t = re.sub(r"[\W_]", "", re.sub(r"^\s*lot\b", "", (r.get("title") or "").lower()))  # keeps Japanese and Cyrillic letters
-        key = (r.get("source"), r.get("country"), round(r.get("price") or 0), r.get("acres"), t)
-        if key in seen:
-            continue
-        seen.add(key)
-        uniq.append(r)
-    recs = uniq
+    recs = collapse_similar(recs)
     csv_path = os.path.join(HERE, "results.csv")
     with open(csv_path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=COLS, extrasaction="ignore")
@@ -2089,7 +2188,8 @@ def build_site(recs, rates):
                      r["title"][:110] if r.get("title_en") else None,  # the original title, when translated
                      TYPE_CODES.get(r.get("type"), "V"), place,
                      rnd(r.get("price"), 2), (r.get("currency") or "USD").upper(),  # the price in its own currency
-                     "".join(TAG_CODES[t] for t in (r.get("tags") or "").split(",") if t), prov])
+                     "".join(TAG_CODES[t] for t in (r.get("tags") or "").split(",") if t), prov,
+                     r.get("similar") or 0])  # how many near-identical listings this row stands for (collapse_similar)
     data = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"),
             "countries": len(countries), "rows": rows, "rates": rates,
             "populations": town_populations({(row[3], row[13]) for row in rows if row[13]})}
