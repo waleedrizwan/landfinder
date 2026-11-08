@@ -2108,7 +2108,9 @@ def build_outputs(store, english=True):
             w.writerow(row)
     slim = [{k: r.get(k) for k in COLS if k not in ("lat", "lon", "scraped_at")} for r in recs]
     tpl = open(os.path.join(HERE, "report_template.html")).read()
-    html = tpl.replace("/*DATA*/[]", json.dumps(slim).replace("</", "<\\/")).replace(
+    # escape <, > and & so a scraped title containing "</script>" can't end the data script and inject HTML
+    data = json.dumps(slim).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    html = tpl.replace("/*DATA*/[]", data).replace(
         "{{GENERATED}}", datetime.now().strftime("%Y-%m-%d %H:%M"))
     open(os.path.join(HERE, "report.html"), "w").write(html)
     build_site(recs, rates)
