@@ -464,8 +464,10 @@
       "fp": "83d1cc6a7e",
       "id": "B026",
       "chunk": "parsers_b",
-      "status": "found",
-      "found_at": "2026-11-08T03:59:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:59:03",
+      "verify_reason": "In `recheck`, the LandWatch branch sets `verified_at` at line 1957 and calls `store.add([rec])` even when `get` returns None or no description is parsed. The test uses a browser whose `get` always returns None, and the saved record still gets today's `verified_at`, so the `todo` filter skips it for the rest of the day. The test fails on the current code.",
+      "test_file": "tests/test_bughunt_b026.py"
     },
     {
       "file": "landfinder.py",
