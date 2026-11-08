@@ -168,18 +168,26 @@ def acres_from_text(text):
     t = re.sub(r"https?://\S+", " ", text.lower())  # a link's "-chemin-des-jardins-" doesn't make the text French
     t = FLOOR_AREA_RX.sub(" ", t)
     romance = bool(re.search(r"\b(de|des|la|le|du|à|superficie|terrain|terre|hectares? de|à vendre|venta|terreno)\b", t))
+    # "1/4 acre", "2 1/2 acres" -> "0.25 acre", "2.5 acres" (otherwise the regex reads only the "4" or the "2")
+    t = re.sub(r"\b(?:(\d+)\s+)?(\d+)\s*/\s*([1-9]\d*)(?=\s*(?:acres?|ac\b|hectares?|ha\b|hect))",
+               lambda m: "%g" % (int(m.group(1) or 0) + int(m.group(2)) / int(m.group(3))), t)
     pats = [
         (r"((?:\d[\d,]*)?\.?\d+)\s*(?:acres?|ac\b|acre lot)", 1.0),
         (r"([\d][\d,]*\.?\d*)\s*(?:hectares?|ha\b|hect)", 2.4710538),
         (r"([\d][\d,]*\.?\d*)\s*" + SQFT, 1 / 43560.0),
-        (r"([\d][\d,]*\.?\d*)\s*(?:m²|m2\b|sq\.?\s*m\b|square\s*met)", 1 / ACRE_M2),
+        (r"(\d{1,3}(?:\.\d{3})+(?:,\d+)?|[\d][\d,]*\.?\d*)\s*(?:m²|m2\b|sq\.?\s*m\b|square\s*met)", 1 / ACRE_M2),
     ]
     for pat, factor in pats:
         m = re.search(pat, t)
         if m:
             raw = m.group(1).rstrip(".,")
-            # "5,62 ha" and French/Spanish "1,140 hectare" use a decimal comma; no plot is "13,712" = 13.7 sq ft or m²
-            if re.search(r",\d{1,2}$", raw) or (romance and factor >= 1 and re.fullmatch(r"\d{1,3},\d{3}", raw)):
+            # "1.250 m²" and "1.250,00 m²": a dot thousands separator. No plot is 1.25 m², so this is safe for m²
+            # (not for hectares, where "1.250 ha" may really be 1.25 ha)
+            if factor == 1 / ACRE_M2 and re.fullmatch(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?", raw):
+                raw = raw.replace(".", "").replace(",", ".")
+            # "5,62 ha" and French/Spanish "1,140 hectare" use a decimal comma; no plot is "13,712" = 13.7 sq ft or m².
+            # Only for hectares: "1,000 acres" is a thousand in every language, and "LA" (Louisiana) sets `romance`
+            elif re.search(r",\d{1,2}$", raw) or (romance and factor > 1 and re.fullmatch(r"\d{1,3},\d{3}", raw)):
                 raw = raw.replace(".", "").replace(",", ".")
             v = num(raw)
             if v and v > 0:
