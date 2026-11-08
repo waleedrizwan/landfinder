@@ -428,8 +428,10 @@
       "fp": "14935b3f78",
       "id": "B024",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:58"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:58",
+      "verify_reason": "`meli_acres('3 habitaciones | 2 baños')` returns 7.41 acres instead of None, because the regex has no word boundary after `ha` and the `kind` text 'bitaciones' isn't in the skip list. `parse_meli` passes real card attribute text to this function, so real data can trigger it. The new test fails on the current code. Tests b014, b015, b018 and b021 already cover the same root cause, so this finding is a duplicate.",
+      "test_file": "tests/test_bughunt_b024.py"
     },
     {
       "file": "landfinder.py",
