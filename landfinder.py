@@ -223,19 +223,26 @@ def load_fx():
     """USD exchange rates, cached for the day."""
     path = os.path.join(DATA, "fx.json")
     today = datetime.now().strftime("%Y-%m-%d")
-    if os.path.exists(path):
-        d = json.load(open(path))
-        if d.get("date") == today:
-            return d["rates"]
+    cached = None
+    try:
+        with open(path) as f:
+            cached = json.load(f)
+        if cached.get("date") == today:
+            return cached["rates"]
+    except (OSError, ValueError, KeyError, AttributeError):  # missing, or left half-written by a killed run
+        cached = None
     try:
         r = requests.get("https://open.er-api.com/v6/latest/USD", timeout=20)
         rates = r.json()["rates"]
-        json.dump({"date": today, "rates": rates}, open(path, "w"))
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"date": today, "rates": rates}, f)
+        os.replace(tmp, path)  # atomic: a run killed mid-write can't leave a truncated fx.json
         return rates
     except Exception as e:
-        if os.path.exists(path):
+        if cached and cached.get("rates"):
             log("FX fetch failed (%s); using cached rates" % e)
-            return json.load(open(path))["rates"]
+            return cached["rates"]
         raise
 
 
