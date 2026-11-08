@@ -1765,6 +1765,8 @@ def parse_zillow(html, state, kind="land"):
         res = json.loads(m.group(1))["props"]["pageProps"]["searchPageState"]["cat1"]["searchResults"]["listResults"]
     except Exception:
         return None
+    if not isinstance(res, list):  # null or missing: not a results page, so let crawl_search retry it
+        return None
     out = []
     for L in res:
         info = (L.get("hdpData") or {}).get("homeInfo") or {}
