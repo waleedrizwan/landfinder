@@ -86,8 +86,10 @@
       "fp": "aaba56250d",
       "id": "B005",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:23"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:23",
+      "verify_reason": "Both tests fail on the current code. `acres_from_text('1/2 acre lot')` returns 2.0 instead of 0.5. `finalize` on a Kijiji record titled '1/2 acre lot near lake' with scraped acres=0.5 overwrites it with 2.0, so the bug is reachable from real scraped titles.",
+      "test_file": "tests/test_bughunt_b005.py"
     },
     {
       "file": "landfinder.py",
