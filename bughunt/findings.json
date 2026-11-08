@@ -68,8 +68,10 @@
       "fp": "64a38c5ee4",
       "id": "B004",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:15"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:15",
+      "verify_reason": "flag() builds its text from the title, title_en and description. `PER_UNIT_RX` has no trailing word boundary after `metro`, so ordinary phrases like 'the Metro area' match. The test passes a $5,000, 1-acre listing titled 'Lot 20 min from the Metro area' to flag() and gets 'price may be per m2/acre/hectare'. believable_flags() is therefore false, and the test fails on the current code.",
+      "test_file": "tests/test_bughunt_b004.py"
     },
     {
       "file": "landfinder.py",
