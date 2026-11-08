@@ -1553,12 +1553,25 @@ def crawl_olx(fetch, store, countries, a, rates, kinds=("land",)):
         log("olx        [%d/%d] %-28s +%d listings" % (i, len(jobs), sid.split(" ", 1)[1], total_new))
 
 
+def meli_number(n):
+    """A Mercado Libre number in either convention: Argentina writes '6.179' (thousands) and '1,5', Mexico
+    writes '1,000' and '1.5'. A separator followed by exactly 3 digits groups thousands; otherwise it's a decimal."""
+    n = n.strip(".,")
+    if "." in n and "," in n:  # '1.250,50' or '1,250.50': the last separator is the decimal one
+        dec = "," if n.rfind(",") > n.rfind(".") else "."
+        return num(n.replace("." if dec == "," else ",", "").replace(",", "."))
+    sep = "." if "." in n else "," if "," in n else None
+    if sep and (n.count(sep) > 1 or re.search(r"\%s\d{3}$" % sep, n)):
+        return num(n.replace(sep, ""))
+    return num(n.replace(",", "."))
+
+
 def meli_acres(attrs):
     """'6.179 m² totales' or '10 ha totales' -> acres. Built area ('161 m² cubiertos') is skipped."""
-    for n, unit, kind in re.findall(r"([\d.,]+)\s*(m²|ha)\s*(\w*)", attrs):
+    for n, unit, kind in re.findall(r"([\d.,]+)\s*(m²|ha\b)\s*(\w*)", attrs):  # \b: '3 habitaciones' isn't 3 ha
         if kind.lower().startswith(("cubiert", "constru", "útil", "util")):
             continue
-        v = num(n.replace(".", "").replace(",", "."))
+        v = meli_number(n)
         if v:
             return v * 2.4710538 if unit == "ha" else v / ACRE_M2
     return None
@@ -1637,7 +1650,7 @@ def crawl_meli(fetch, store, countries, a, rates, kinds=("land",)):
 
 
 YEN_RX = re.compile(r"(?:([\d,.]+)\s*億)?\s*(?:([\d,.]+)\s*万)?\s*(?:([\d,]+))?\s*円")
-JP_LAND_RX = re.compile(r"(?:土地|敷地|面積)[^\d\n]{0,8}([\d,]+(?:\.\d+)?)\s*(㎡|m2|m²|平米|平方メートル|坪)")
+JP_LAND_RX = re.compile(r"(?:土地|敷地|(?<![物床築有])面積)[^\d\n]{0,8}([\d,]+(?:\.\d+)?)\s*(㎡|m2|m²|平米|平方メートル|坪)")
 # a building on the plot ("住宅地", a residential area, and "別荘を建てたい", to build a holiday home, don't count)
 JP_HOUSE_RX = re.compile(r"建物(?:面積)?\s*[：:]?\s*[\d,.]+\s*(?:㎡|m2|m²|坪)|空き家|空家|古家|古屋|中古住宅|家屋|戸建|平屋|古民家|母屋"
                          r"|住宅付|家付|築\d+年|昭和\d+年築|平成\d+年築|築古|住宅です|和風住宅|建てた(?:家|住宅|和)")
