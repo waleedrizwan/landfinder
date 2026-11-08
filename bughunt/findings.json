@@ -104,8 +104,10 @@
       "fp": "6af4913381",
       "id": "B006",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:23"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:23",
+      "verify_reason": "acres_from_text('Rolling terrain, 1,500 acres ranch'), 'Ranch near La Junta, CO - 2,500 acres' and '1,250 acres terrain' return 1.5, 2.5 and 1.25 instead of 1500, 2500 and 1250. The `romance and factor >= 1` rule at line 182 treats the thousands comma as a decimal comma. Callers pass scraped titles, descriptions and lotAreaString to this function (lines 554, 1389, 1751), so real listings can hit it. All 3 parametrized cases fail on the current code.",
+      "test_file": "tests/test_bughunt_b006.py"
     },
     {
       "file": "landfinder.py",
