@@ -146,10 +146,19 @@ def log(msg):
 # ----------------------------------------------------------------------------- helpers
 
 def num(s):
+    """float of '1,250' or 3.5; None for text, and for nan/inf (which would reach data.json as NaN, which no
+    browser's JSON.parse accepts: one such value takes the whole site down)."""
     try:
-        return float(str(s).replace(",", "").strip())
+        v = float(str(s).replace(",", "").strip())
     except Exception:
         return None
+    return v if math.isfinite(v) else None
+
+
+def safe_url(u):
+    """Only http(s) links go on the site: a listing URL is put in an href as-is, so any other scheme
+    (javascript:, data:) copied from a listing site would run or render in the visitor's browser."""
+    return isinstance(u, str) and u.startswith(("http://", "https://"))
 
 
 SQFT = r"(?:sq\.?\s*ft|sqft|square\s*feet|ft²|ft2)"
@@ -236,7 +245,11 @@ def to_usd(amount, currency, rates):
         return None
     cur = (currency or "USD").upper()
     rate = rates.get(cur)
-    return amount / rate if rate else None
+    try:
+        usd = amount / rate if rate else None
+    except TypeError:
+        return None
+    return usd if usd is not None and math.isfinite(usd) else None
 
 
 # English, French and Spanish, plus the OLX languages: Polish, Ukrainian/Russian, Romanian, Bulgarian, Portuguese, Uzbek
@@ -246,10 +259,13 @@ WANTED_RX = re.compile(r"^\s*(wanted|wtb|looking for|iso\b|in search of|i will b
 MIN_PRICE = 1500  # USD-ish floor for Properstar and Mercado Libre searches; cheaper "prices" there are per-m2 or placeholders
 TILE_SCALE = 0.5  # tiled windows draw pages at half size
 CLAIM_RX = re.compile(r"\b(access deeds?|membership|timeshare|mining claims?|lode claims?|placer claims?|gold claims?|mineral claims?|mineral rights?|unpatented|lode gold|mining|prospecting)\b", re.I)
-LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\b(?:sub-?)?lease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenants?\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b"
+LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\bto let\b|\bp/m\b|\bpcm\b|\b(?:sub-?)?lease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenants?\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b"
                       r"|dzier[żz]aw|wynaj[eę]|do wynaj|оренд|аренд|\bздам\b|\bздаю\b|\bсдам\b|\bсдаю\b|под наем|[iî]nchiri|arrend|\balug|\bijara|\ben renta\b|\bse renta\b|\bin affitto\b|\baffittasi\b)", re.I)
-PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|hect|ha\b|sotk|square met)"
-                         r"|(?:(?:\bza|\bза|\bpe|\bper|\bx)\s+|/\s*)(?:1\s*)?(m2\b|m²|mp\b|metr|сот|м2|м²|кв\.?\s*м|ar\b|ara\b)"
+PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|ac\b|hect|ha\b|sotk|square met)"
+                         r"|(?:(?:\bza|\bза|\bpe|\bper|\bx)\s+|/\s*)(?:1\s*)?(m2\b|m²|mp\b|mkw\b|m\s*kw\b|metr|сот|м2|м²|кв\.?\s*м|ar\b|ara\b"
+                         r"|га\b|гектар|hektar|hectar|ha\b|dekar|декар|дка\b)"
+                         r"|\bна\s+(?:1\s*)?(?:декар|дка\b|сотк|кв\.?\s*м|м2|м²)"  # Bulgarian "цена на декар"
+                         r"|\$\s?\d[\d.,]*\s*k?\s*(?:an|a|per|/)\s*(?:acre\b|ac\b|hectare|ha\b|m2\b|m²)"  # "$1,500 an acre", "$1,500/ac"
                          r"|\b(?:so|su)[‘'ʻ’`]?t(?:ig[‘'ʻ’`]?i|ixi|kasi)\s*\$?\s*\d|сотк[аи]\s*[-–—:]?\s*\$?\s*\d", re.I)  # Uzbek/Russian "its sotka [costs] 500"
 # "1/8 udziału", "udział 1/4 w prawie własności", "1/2 interest": only part of the property is for sale
 SHARE_RX = re.compile(r"(\b\d+\s*/\s*\d+\s*(?:udzia|cz[eę][sś]ci|w drodze|w prawie|частк|долю|доли|долі|share|interest)|udzia[łl]\w*\s+\d+\s*/\s*\d+|\(\s*1\s*/\s*\d+\s*\)"
@@ -342,6 +358,20 @@ DOWN_RX = re.compile(r"\$\s?([\d,]+(?:\.\d\d)?)\s*(?:down\b|dp\b|deposit|to star
 CASH_RX = re.compile(r"(?:(?:only|just|cash price(?: of| is)?|full price(?: of| is)?|total price(?: of| is)?|price(?: is)?:?|asking|for)\s*\$\s?([\d,]{3,}))"
                      r"|(?:\$\s?([\d,]{3,})\s*(?:cash|total|full price|obo|firm|or best))", re.I)
 FINANCE_RX = re.compile(r"\b(seller financ|owner financ|financing available|down payment|\bdown\b|per month|/mo\b|monthly)", re.I)
+
+
+MONTH_RX = r"\s*(?:/|per|a|each|pcm|p/m)?\s*(?:mo\b|month|p/m\b|pcm\b|pm\b)"
+
+
+def monthly_rent(rec):
+    """True when the text quotes the listing's own price as a monthly amount: '4,500 per month', '4500 p/m',
+    '$4,500 a month'. Only the price itself counts, so a sale that mentions taxes of $50 a month stays a sale."""
+    p = rec.get("price")
+    if not p:
+        return False
+    text = " ".join(str(rec.get(k) or "") for k in ("title", "title_en", "description"))
+    amt = re.escape("{:,.0f}".format(p)).replace(",", ",?")
+    return bool(re.search(r"(?<![\d.])\$?\s?%s(?!\d)%s" % (amt, MONTH_RX), text, re.I))
 
 
 def fix_down_payment(rec):
@@ -550,19 +580,20 @@ def special_tags(rec):
 
 def finalize(rec, rates):
     down_only = rec.get("source") == "landwatch" and fix_down_payment(rec)
-    if rec.get("source") == "kijiji":  # re-read area with the current parser (fixes older scrapes)
-        a = acres_from_text(rec.get("title")) or acres_from_text(rec.get("description"))
-        if a:
-            rec["acres"] = a
+    if rec.get("source") == "kijiji" and not rec.get("acres"):  # no "Size (acres)" field: what the text says
+        # (only then: the text also mentions nearby parks and farms, "minutes from the 300 acre park")
+        rec["acres"] = acres_from_text(rec.get("title")) or acres_from_text(rec.get("description"))
     if rec.get("source") == "landwatch" and rec.get("lat") is None:  # place it at its ZIP code's center
         ll = zip_location(rec.get("title")) or zip_location(rec.get("description"))
         if ll:
             rec["lat"], rec["lon"] = ll
     rec["price_usd"] = to_usd(rec.get("price"), rec.get("currency"), rates)
     a = rec.get("acres")
-    rec["acres"] = round(a, 4) if a else None
+    a = rec["acres"] = round(a, 4) if isinstance(a, (int, float)) and math.isfinite(a) and a > 0 else None
     rec["usd_per_acre"] = (rec["price_usd"] / a) if (rec["price_usd"] and a) else None
     rec["flags"] = flag(rec)
+    if monthly_rent(rec) and "lease/rental" not in rec["flags"]:
+        rec["flags"] = "; ".join(x for x in (rec["flags"], "lease/rental - the price is a monthly rent") if x)
     rec["type"] = property_type(rec)
     rec["tags"] = ",".join(special_tags(rec))
     if down_only:
@@ -677,7 +708,7 @@ class Store:
         new = 0
         with self.lock, open(self.path, "a") as f:
             for r in recs:
-                if not r.get("url"):
+                if not safe_url(r.get("url")):
                     continue
                 if r["url"] not in self.urls:
                     self.urls.add(r["url"])
@@ -1277,6 +1308,8 @@ def parse_landwatch(html, state, kind="land"):
             "kind": kind,
         })
     m = re.search(r">\s*([\d,]+)\s+Listings?\s*<", html)
+    if not out and not m:
+        return None, None  # neither listings nor a result count: not a search page (an error page served with 200)
     return out, (int(num(m.group(1))) if m else None)
 
 
@@ -1294,6 +1327,10 @@ def crawl_landwatch_one(br, store, st, a, kind="land"):
             store.stop(sid, "fetch failed")
             break
         recs, total = parse_landwatch(html, st, kind)
+        if recs is None:
+            log("landwatch %s page %d: no listings on the page (blocked, or they never appeared), skipping the rest" % (st, p))
+            store.stop(sid, "fetch failed")
+            break
         total_new += store.page(sid, url, recs, total)
         if not recs:
             store.stop(sid, "end of results")
@@ -1394,11 +1431,11 @@ def parse_kijiji(html, prov, kind="land"):
     soup = BeautifulSoup(html, "lxml")
     nd = soup.find("script", id="__NEXT_DATA__")
     if not nd:
-        return [], None
+        return None, None  # not a search page (a block page served with 200): the caller retries later
     try:
         apollo = json.loads(nd.string)["props"]["pageProps"]["__APOLLO_STATE__"]
     except Exception:
-        return [], None
+        return None, None
     total = next((v["pagination"].get("totalCount") for k, v in (apollo.get("ROOT_QUERY") or {}).items()
                   if k.startswith("searchResultsPageByUrl") and isinstance((v or {}).get("pagination"), dict)), None)
     out = []
@@ -1443,6 +1480,10 @@ def crawl_kijiji(fetch, store, provinces, a, kinds=("land",)):
                 store.stop(sid, "fetch failed")
                 break
             recs, total = parse_kijiji(html, prov, kind)
+            if recs is None:
+                log("kijiji %s page %d: no listing data on the page (blocked?), skipping the rest" % (prov, p))
+                store.stop(sid, "fetch failed")
+                break
             urls = {r["url"] for r in recs}
             if not recs or urls <= prev:  # Kijiji repeats the last page past the end
                 store.page(sid, url, [], total)
@@ -1665,6 +1706,10 @@ def crawl_ieichiba(fetch, store, a):
                 store.stop(sid, "fetch failed")
                 break
             recs, n = parse_ieichiba(html)
+            if not n and p == 1:  # the first page of a band always has cards: this is a block or error page
+                log("ieichiba %s: no listings on the first page (blocked?), skipping the band" % band)
+                store.stop(sid, "fetch failed")
+                break
             total_new += store.page(sid, url, recs)
             if not n:
                 store.stop(sid, "end of results")
@@ -2163,7 +2208,7 @@ def same_title(t1, raw1, t2, raw2, source):
 
 def build_outputs(store, english=True):
     rates = load_fx()
-    recs = store.all()
+    recs = [r for r in store.all() if safe_url(r.get("url"))]  # older data may hold links in other schemes
     cutoff = site_cutoff(recs)
     if english and cutoff:  # before finalize, so the price checks also read the English titles
         add_english([r for r in recs if (r.get("scraped_at") or "") >= cutoff])
@@ -2221,7 +2266,7 @@ def build_outputs(store, english=True):
             w.writerow(row)
     slim = [{k: r.get(k) for k in COLS if k not in ("lat", "lon", "scraped_at")} for r in recs]
     tpl = open(os.path.join(HERE, "report_template.html")).read()
-    html = tpl.replace("/*DATA*/[]", json.dumps(slim)).replace(
+    html = tpl.replace("/*DATA*/[]", json.dumps(slim).replace("</", "<\\/")).replace(
         "{{GENERATED}}", datetime.now().strftime("%Y-%m-%d %H:%M"))
     open(os.path.join(HERE, "report.html"), "w").write(html)
     build_site(recs, rates)
@@ -2365,11 +2410,14 @@ def build_site(recs, rates):
                      TYPE_CODES.get(r.get("type"), "V"), place,
                      rnd(r.get("price"), 2), (r.get("currency") or "USD").upper(),  # the price in its own currency
                      "".join(TAG_CODES[t] for t in (r.get("tags") or "").split(",") if t)])
-    data = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"),
+    newest = datetime.fromisoformat(max(r["scraped_at"] for r in recs if r.get("scraped_at")))
+    if newest < datetime.now() - timedelta(days=1):
+        log("site: WARNING - the newest listing was scraped %s; the site is being rebuilt from old data" % newest.strftime("%Y-%m-%d %H:%M"))
+    data = {"generated": newest.astimezone().isoformat(timespec="seconds"),  # shown as "Updated ..." on the site
             "countries": len(countries), "rows": rows, "rates": rates,
             "populations": town_populations({(row[3], row[13]) for row in rows if row[13]})}
     with open(os.path.join(SITE, "data.json"), "w") as f:
-        json.dump(data, f, separators=(",", ":"))
+        json.dump(data, f, separators=(",", ":"), allow_nan=False)
     with open(os.path.join(HERE, "site_template.html")) as f:
         html = f.read()
     with open(os.path.join(SITE, "index.html"), "w") as f:

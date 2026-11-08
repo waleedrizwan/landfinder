@@ -41,9 +41,40 @@ def test_no_area(rates):
     ({"title": "Lote 500 m2, precio por m2"}, "per m2/acre/hectare"),
     ({"description": "Sold at auction, starting bid $5,000"}, "auction/tender"),
     ({"title": "WANTED: 5 acres near Calgary"}, "wanted ad"),
+    # rents and per-unit prices that used to pass as totals
+    ({"source": "kijiji", "currency": "CAD", "price": 4500, "description": "Available 4500 per month, long term"}, "monthly rent"),
+    ({"source": "kijiji", "currency": "CAD", "price": 4500, "description": "4500 p/m"}, "lease/rental"),
+    ({"source": "kijiji", "currency": "CAD", "price": 4500, "title": "Farm land to let"}, "lease/rental"),
+    ({"source": "landwatch", "price": 2500, "description": "Pay just 2500 a month"}, "monthly rent"),
+    ({"source": "olx", "country": "UA", "currency": "UAH", "price": 60000, "title": "Земля 5 га, ціна за гектар"}, "per m2/acre/hectare"),
+    ({"source": "olx", "country": "UA", "currency": "UAH", "price": 60000, "description": "ціна за 1 га"}, "per m2/acre/hectare"),
+    ({"source": "olx", "country": "PL", "currency": "PLN", "price": 50000, "title": "Działka rolna 10 ha, cena za hektar"}, "per m2/acre/hectare"),
+    ({"source": "olx", "country": "PL", "currency": "PLN", "price": 1500, "description": "Cena 1500 zł/mkw"}, "per m2/acre/hectare"),
+    ({"source": "olx", "country": "BG", "currency": "EUR", "price": 500, "description": "цена на декар 500 евро", "acres": 2.47}, "per m2/acre/hectare"),
+    ({"source": "olx", "country": "RO", "currency": "EUR", "price": 2000, "title": "Teren 5 ha, pret pe hectar"}, "per m2/acre/hectare"),
+    ({"source": "landwatch", "price": 1500, "acres": 40, "description": "price is $1,500 an acre"}, "per m2/acre/hectare"),
+    ({"source": "landwatch", "price": 1500, "acres": 40, "description": "$1,500/ac"}, "per m2/acre/hectare"),
+    ({"source": "landwatch", "price": 1500, "acres": 40, "description": "$1,500 per ac"}, "per m2/acre/hectare"),
 ])
 def test_flags(rates, kw, expected):
     assert expected in flags_for(rates, **kw)
+
+
+@pytest.mark.parametrize("kw", [
+    {"description": "Taxes are about $50 a month"},                 # another amount, not the price
+    {"description": "Closing possible within a month"},
+    {"description": "Sits on an acre of mature trees"},             # "an acre" without a price
+    {"source": "landwatch", "price": 20000, "description": "Owner financing: $500 a month for 40 months"},
+])
+def test_sale_mentions_of_months_and_acres_are_not_flagged(rates, kw):
+    assert "lease/rental" not in flags_for(rates, **kw)
+    assert "per m2/acre/hectare" not in flags_for(rates, **kw)
+
+
+def test_nan_or_negative_area_is_no_area(rates):
+    assert lf.finalize(rec(acres=float("nan")), rates)["acres"] is None
+    assert lf.finalize(rec(acres=-2), rates)["acres"] is None
+    assert "no land area listed" in lf.finalize(rec(acres=float("inf")), rates)["flags"]
 
 
 @pytest.mark.parametrize("source", ["homes", "ieichiba"])

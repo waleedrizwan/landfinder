@@ -6,6 +6,7 @@ import landfinder as lf
 
 @pytest.mark.parametrize("raw, expected", [
     ("1,250", 1250.0), (" 3.5 ", 3.5), (42, 42.0), ("abc", None), (None, None), ("", None),
+    ("nan", None), ("inf", None), ("1e400", None), (float("nan"), None),  # NaN in data.json would break the whole site
 ])
 def test_num(raw, expected):
     assert lf.num(raw) == expected
@@ -45,6 +46,8 @@ def test_to_usd(rates):
 def test_to_usd_unknown_or_missing(rates):
     assert lf.to_usd(100, "XYZ", rates) is None
     assert lf.to_usd(None, "USD", rates) is None
+    assert lf.to_usd(float("nan"), "USD", rates) is None
+    assert lf.to_usd(float("inf"), "USD", rates) is None
 
 
 @pytest.mark.parametrize("price, expected", [

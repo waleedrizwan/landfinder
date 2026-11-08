@@ -44,8 +44,14 @@ def test_landwatch():
     assert all(r["url"].startswith("https://www.landwatch.com/") and "/pid/" in r["url"] for r in recs)
 
 
-def test_landwatch_empty_page():
-    assert lf.parse_landwatch("<html><body>No results</body></html>", "ohio") == ([], None)
+def test_landwatch_page_without_listing_data_is_not_a_result():
+    # an error or block page served with 200 has neither cards nor a listing count: None, so the crawl retries
+    # later instead of ending the state with zero listings
+    assert lf.parse_landwatch("<html><body>Something went wrong</body></html>", "ohio") == (None, None)
+
+
+def test_landwatch_empty_results_page():
+    assert lf.parse_landwatch("<html><body><span>0 Listings</span></body></html>", "ohio") == ([], 0)
 
 
 def test_landwatch_full_description():
@@ -77,8 +83,14 @@ def test_kijiji_skips_non_fixed_prices():
     assert len(lf.parse_kijiji(html, "nova-scotia")[0]) == 5
 
 
-def test_kijiji_without_next_data():
-    assert lf.parse_kijiji("<html><body></body></html>", "ontario") == ([], None)
+def test_kijiji_without_next_data_is_not_a_result():
+    assert lf.parse_kijiji("<html><body></body></html>", "ontario") == (None, None)
+
+
+@pytest.mark.parametrize("url", ["javascript:alert(1)", "data:text/html,hi", "//evil.example/x", "", None])
+def test_unsafe_urls_are_dropped(url):
+    assert not lf.safe_url(url)
+    assert lf.safe_url("https://www.kijiji.ca/v-land-for-sale/x/1")
 
 
 def castle_page(listings, total):
