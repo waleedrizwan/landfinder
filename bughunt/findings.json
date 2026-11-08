@@ -698,8 +698,10 @@
       "fp": "91831aacf8",
       "id": "B039",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "In `build_outputs`, a stale record and a fresh repost with the same source, country, price, acres and title come out of `store.all()` older first. The stable price sort keeps that order, so the dedup keeps the old URL and drops the new one. With another fresh listing in the store to set the cutoff, `build_site` then filters out the stale record, and `site/data.json` shows only the other parcel. The test fails on the current code: it asserts the fresh repost's URL is in the site rows. Note that with no other fresh records, the stale record becomes the newest, so the old URL shows instead.",
+      "test_file": "tests/test_bughunt_b039.py"
     },
     {
       "file": "functions/api/visitors.js",
