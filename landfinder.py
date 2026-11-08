@@ -2040,9 +2040,14 @@ def collapse_similar(recs):
     for i, r in enumerate(recs):
         cc, usd, acres = r.get("country"), round(r.get("price_usd") or 0), r.get("acres")
         a2 = None if acres is None else round(acres, 2)
-        keys = [("t", r.get("source"), title_key(r.get("title")), acres)]
-        if r.get("title_en") or r.get("title"):
-            keys.append(("e", title_key(r.get("title_en") or r.get("title")), a2))
+        # Two 'Terreno en venta' at one price in different towns are different parcels, so the region is part of the
+        # title keys; a title with no letters or digits ('•', '-', '') says nothing about which parcel it is
+        region = title_key(r.get("region"))
+        tk = title_key(r.get("title"))
+        keys = [("t", r.get("source"), region, tk, acres)] if tk else []
+        ek = title_key(r.get("title_en") or r.get("title"))
+        if ek:
+            keys.append(("e", title_key(r.get("region_en") or r.get("region")), ek, a2))
         if r.get("lat") is not None and r.get("source") != "landwatch":  # LandWatch pins sit at the ZIP code's center
             keys.append(("g", round(r["lat"], 3), round(r["lon"], 3), a2))
         desc = re.sub(r"[\W_]", "", (r.get("description") or "").lower())
@@ -2101,7 +2106,8 @@ def build_outputs(store, english=True):
         m = med.get(r.get("country"))
         if m and r["usd_per_acre"] and r["usd_per_acre"] < m / 250 and r.get("source") not in CHEAP_IS_REAL:
             r["flags"] = "; ".join(x for x in (r["flags"], "far below other listings in this country") if x)
-    recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # cheapest total price first
+    recs.sort(key=lambda r: r.get("scraped_at") or "", reverse=True)  # newest first among equal prices, so a
+    recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # repost keeps its live URL; cheapest first
     recs = collapse_similar(recs)
     csv_path = os.path.join(HERE, "results.csv")
     with open(csv_path, "w", newline="") as f:
@@ -2284,6 +2290,7 @@ def build_site(recs, rates):
     cutoff = site_cutoff(recs)
     if not cutoff:
         return
+    newest = datetime.fromisoformat(max(r["scraped_at"] for r in recs if r.get("scraped_at")))  # before the filter: it may keep nothing
     recs = [r for r in recs if (r.get("scraped_at") or "") >= cutoff and r.get("price_usd") is not None]
     rows, countries = [], set()
     for r, place, prov in zip(recs, towns(recs), provinces(recs)):
@@ -2301,7 +2308,6 @@ def build_site(recs, rates):
                      rnd(r.get("price"), 2), (r.get("currency") or "USD").upper(),  # the price in its own currency
                      "".join(TAG_CODES[t] for t in (r.get("tags") or "").split(",") if t), prov,
                      r.get("similar") or 0])  # how many near-identical listings this row stands for (collapse_similar)
-    newest = datetime.fromisoformat(max(r["scraped_at"] for r in recs if r.get("scraped_at")))
     if newest < datetime.now() - timedelta(days=1):
         log("site: WARNING - the newest listing was scraped %s; the site is being rebuilt from old data" % newest.strftime("%Y-%m-%d %H:%M"))
     data = {"generated": newest.astimezone().isoformat(timespec="seconds"),  # shown as "Updated ..." on the site
