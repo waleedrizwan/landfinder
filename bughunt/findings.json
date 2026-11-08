@@ -176,8 +176,10 @@
       "fp": "ed6f0b3668",
       "id": "B010",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:25"
+      "status": "not_a_bug",
+      "found_at": "2026-11-08T03:56:25",
+      "verify_reason": "The dot-as-thousands misparse is real when called directly: 'Terreno de 1.250 m2' returns 0.0003 acres. But acres_from_text has only four call sites: Kijiji (Canada) at lines 554 and 1389, and Zillow's lotAreaString (US) at line 1751. Properstar, OLX, MercadoLibre, Immobiliare and Encuentra24 never call it, so Spanish, Italian or Polish text can't reach it. Canadian and US listings use comma or space thousands, which the code already handles, so I found no real scraped input that triggers this.",
+      "test_file": null
     },
     {
       "file": "landfinder.py",
@@ -192,8 +194,10 @@
       "fp": "f314190d9a",
       "id": "B011",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:25"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:25",
+      "verify_reason": "load_fx calls json.load(open(path)) at line 219 with no try block, and line 225 writes the cache with open(path, 'w'), which truncates the file and is not atomic. The test leaves a truncated fx.json in a temp data dir and fakes a working API. load_fx raises JSONDecodeError instead of re-fetching, so the test fails on the current code. It would pass once the corrupt cache is ignored.",
+      "test_file": "tests/test_bughunt_b011.py"
     },
     {
       "file": "landfinder.py",
