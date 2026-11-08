@@ -230,8 +230,10 @@
       "fp": "57c6fc983d",
       "id": "B013",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:25"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:25",
+      "verify_reason": "JP_LAND_RX includes a bare '面積', so jp_acres('建物面積 80㎡ 土地面積 200㎡') returns 0.0198 acres (80 m²) instead of 200 m², and a building-only or 延床面積-only text gets an invented lot size instead of None. The trigger is realistic: jp_acres runs on scraped Ieichiba card descriptions in parse_ieichiba, and JP_HOUSE_RX already expects '建物面積 N㎡' text there. Both tests in the new file fail on the current code.",
+      "test_file": "tests/test_bughunt_b013.py"
     },
     {
       "file": "landfinder.py",
