@@ -1302,6 +1302,12 @@ def crawl_landwatch_one(br, store, st, a, kind="land"):
             store.stop(sid, "fetch failed")
             break
         recs, total = parse_landwatch(html, st, kind)
+        if not recs and total is None:
+            # no listings and no "N Listings" count: a bot check or an error page, not the end of the results.
+            # Leave it unmarked so a rerun retries it (at worst a real last page gets fetched again)
+            log("landwatch %s %s page %d: no results data on the page (blocked?), skipping the rest" % (st, kind, p))
+            store.stop(sid, "fetch failed")
+            break
         total_new += store.page(sid, url, recs, total)
         if not recs:
             store.stop(sid, "end of results")
@@ -1451,6 +1457,11 @@ def crawl_kijiji(fetch, store, provinces, a, kinds=("land",)):
                 store.stop(sid, "fetch failed")
                 break
             recs, total = parse_kijiji(html, prov, kind)
+            if not recs and "__APOLLO_STATE__" not in html:
+                # a bot check or a changed layout, not a results page: leave it unmarked so a rerun retries it
+                log("kijiji %s %s page %d: no results data on the page (blocked?), skipping the rest" % (prov, kind, p))
+                store.stop(sid, "fetch failed")
+                break
             urls = {r["url"] for r in recs}
             if not recs or urls <= prev:  # Kijiji repeats the last page past the end
                 store.page(sid, url, [], total)
