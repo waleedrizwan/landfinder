@@ -9,11 +9,18 @@ Sources
   kijiji        every Canadian province, land-for-sale sorted cheapest first
   olx           classifieds in Poland, Ukraine, Romania, Portugal, Bulgaria, Kazakhstan, Uzbekistan
   mercadolibre  classifieds in Argentina and Mexico
+  ieichiba      Japanese owners selling empty houses (akiya) and land themselves
+  homes         HOME'S akiya bank: land and empty houses in all 47 Japanese prefectures (houses ranked with the land)
+  castles       Properstar's castle listings in the same countries as properstar
+  zillow        lots and land in all 50 US states
+  immobiliare   land for sale across Italy
+  encuentra24   lots and land in Costa Rica, Panama, Nicaragua, Honduras, Guatemala and El Salvador
 
 Usage
   ./run.sh                                       # everything: 250 believable listings per country/state/province
   ./run.sh --sources properstar --listings 500   # go deeper on one source
   ./run.sh --countries paraguay,bolivia          # only these countries (Properstar, OLX, Mercado Libre)
+  ./run.sh --sources homes --prefectures nagano  # one Japanese prefecture on HOME'S akiya bank
   ./run.sh --report-only                         # rebuild results.csv / report.html from saved data
 
 Output (in this folder)
@@ -98,6 +105,28 @@ KINDS = ("land", "houses")
 # Ieichiba (家いちば): Japanese owners selling empty houses (akiya) and land themselves, often for under ¥1M. Its
 # listings are grouped in price bands, newest first; we take every live listing up to ¥10M (about $65k).
 IEICHIBA_BANDS = ("0-100manyen", "100-200manyen", "200-1000manyen")
+
+# Zillow's search URLs use the state's postal code
+US_STATE_ABBR = dict(zip(US_STATES, """
+AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR
+PA RI SC SD TN TX UT VT VA WA WV WI WY""".split()))
+
+# Encuentra24 country sites (Central America), in English
+ENCUENTRA24_COUNTRIES = {"CR": "costa-rica-en", "PA": "panama-en", "NI": "nicaragua-en", "HN": "honduras-en",
+                         "GT": "guatemala-en", "SV": "el-salvador-en"}
+
+# LIFULL HOME'S akiya bank (homes.co.jp/akiyabank): municipal empty-house banks, one search per prefecture
+HOMES_PREFECTURES = """
+tohoku/hokkaido tohoku/aomori tohoku/iwate tohoku/miyagi tohoku/akita tohoku/yamagata tohoku/fukushima
+kanto/tokyo kanto/kanagawa kanto/saitama kanto/chiba kanto/ibaraki kanto/tochigi kanto/gunma
+hokuriku/niigata hokuriku/toyama hokuriku/ishikawa hokuriku/fukui hokuriku/yamanashi hokuriku/nagano
+tokai/aichi tokai/gifu tokai/shizuoka tokai/mie kinki/osaka kinki/hyogo kinki/kyoto kinki/shiga kinki/nara
+kinki/wakayama chugoku/tottori chugoku/shimane chugoku/okayama chugoku/hiroshima chugoku/yamaguchi
+chugoku/tokushima chugoku/kagawa chugoku/ehime chugoku/kochi kyushu/fukuoka kyushu/saga kyushu/nagasaki
+kyushu/kumamoto kyushu/oita kyushu/miyazaki kyushu/kagoshima kyushu/okinawa""".split()
+HOMES_CATEGORIES = {"land": "102", "houses": "101"}  # for sale only; the 30x categories are rentals
+
+ALL_SOURCES = "properstar,castles,landwatch,kijiji,olx,mercadolibre,ieichiba,homes,zillow,immobiliare,encuentra24"
 
 AREA_TO_M2 = {"SquareMeter": 1.0, "SquareFoot": 0.09290304, "Hectare": 10000.0,
               "Acre": ACRE_M2, "SquareKilometer": 1e6, "SquareYard": 0.83612736}
@@ -293,7 +322,7 @@ def placeholder_price(p):
 
 # one exact price under $5,000 on 5+ different-size plots is a placeholder or a per-m2 price, not a real total
 PLACEHOLDER_UNDER_USD, PLACEHOLDER_SIZES = 5000, 5
-AUCTION_RX = re.compile(r"\b(auction|tender|bid|starting bid)\b|przetarg|licytac|licita[tț]i|аукці|аукци|\bторги\b|subasta|leil[aã]o|leilões", re.I)
+AUCTION_RX = re.compile(r"\b(auction|tender|bid|starting bid)\b|przetarg|licytac|licita[tț]i|аукці|аукци|\bторги\b|subasta|leil[aã]o|leilões|all'asta|\basta giudiziaria", re.I)
 
 
 def burial_plot(title):
@@ -303,7 +332,8 @@ def burial_plot(title):
 
 # sites where owners really do sell (or give away) houses and land for next to nothing, so a tiny or round price
 # is the price: Japanese owners of empty houses pay to keep them and will take ¥0 or ¥10,000 to be rid of them
-CHEAP_IS_REAL = ("ieichiba",)
+CHEAP_IS_REAL = ("ieichiba", "homes")
+AKIYA = ("ieichiba", "homes")  # empty houses rank with the land: on these sites the house is what you buy
 # Homes listed at a monthly rent: a sale is never under $40 per m2 of floor space (a Bulgarian village house at
 # EUR 3,000 for 80 m2 is $44), while rents run $5-30 per m2 a month; a Manhattan rent is higher per m2, but no home
 # in a rich country sells for under $10,000. Cheap ruins in Portugal, Italy, Spain, France and the Balkans are real,
@@ -335,7 +365,7 @@ def flag(rec):
             f.append("wrong currency - the title gives a much higher US dollar price")
     if rec.get("source") == "olx" and rec.get("country") == "PL" and ALLOTMENT_RX.search(text):
         f.append("allotment garden plot - usage rights, not land ownership")
-    house = rec.get("kind") == "houses" or "homes-for-sale" in (rec.get("url") or "")
+    house = (rec.get("kind") == "houses" and rec.get("source") not in AKIYA) or "homes-for-sale" in (rec.get("url") or "")
     if house:
         f.append("house listing - not vacant land")
     # a home priced at a few dollars per m2 of floor, or a few thousand dollars where no home sells for that, is a
@@ -932,7 +962,7 @@ class Browser:
     browsers, so by default a visible Chrome window opens and is reused for every page."""
 
     BLOCK_TITLES = ("access denied", "service unavailable", "just a moment", "attention required",
-                    "are you a robot", "pardon our interruption")
+                    "are you a robot", "pardon our interruption", "azure waf", "verification required")
 
     def __init__(self, headless=False, delay=2.5, slot=None, block=True):
         """slot = (x, y, w, h) to show a small tiled window; None = off-screen and minimized.
@@ -1052,6 +1082,13 @@ class Browser:
                 lap("ready")
                 stage = "read"
                 title = (self.page.title() or "").lower()
+                # JavaScript bot checks (Azure WAF on Properstar, Cloudflare) usually pass on their own
+                # within a few seconds and then load the real page
+                for _ in range(8):
+                    if not any(b in title for b in self.BLOCK_TITLES):
+                        break
+                    self.page.wait_for_timeout(2500)
+                    title = (self.page.title() or "").lower()
                 if any(b in title for b in self.BLOCK_TITLES):
                     wait = 20 * (attempt + 1)
                     log("  blocked (%r), waiting %ds then retrying" % (title[:40], wait))
@@ -1236,11 +1273,15 @@ def parse_properstar(html, slug, kind="land"):
         loc = L.get("location") or {}
         title = L.get("automaticTitle") or ""
         en = [t["text"] for t in (L.get("title") or []) if t.get("language") == "en"]
+        castle = ((L.get("subType") or {}).get("id")) == "Castle"
+        name = (en[0] if en else "") or title
+        if castle and not CASTLE_RX.search(name):
+            name = "Castle: " + name  # Properstar titles castles "Home for sale in ..."
         out.append({
             "source": "properstar",
             "country": loc.get("countryISO") or slug,
             "region": loc.get("city") or "",
-            "title": (en[0] if en else "") or title,
+            "title": name,
             "description": title,
             "price": pv.get("value"),
             "currency": pv.get("currencyId"),
@@ -1254,14 +1295,22 @@ def parse_properstar(html, slug, kind="land"):
     return out, int(res.get("total") or 0)
 
 
+def properstar_url(slug, p, kind="land"):
+    if kind == "castles":  # Properstar's castle subtype: /buy/castle on its own isn't a real search and lists everything
+        url = "https://www.properstar.com/%s/buy/house/castle/price-low-to-high" % slug
+        return url + ("?p=%d" % p if p > 1 else "")
+    # price.min skips the "EUR 5" listings that are really per-m2 prices or placeholders
+    url = "https://www.properstar.com/%s/buy/%s/price-low-to-high?price.min=%d" % (
+        slug, "land-plot" if kind == "land" else "house", MIN_PRICE)
+    return url + ("&p=%d" % p if p > 1 else "")
+
+
 def crawl_properstar_one(br, store, slug, a, kind="land"):
-    sid, total_new = search_id("properstar", slug, kind), 0
-    for p in search_pages(store, sid, a, kind=kind):
-        # price.min skips the "EUR 5" listings that are really per-m2 prices or placeholders
-        url = "https://www.properstar.com/%s/buy/%s/price-low-to-high?price.min=%d" % (
-            slug, "land-plot" if kind == "land" else "house", MIN_PRICE)
-        if p > 1:
-            url += "&p=%d" % p
+    """kind: land, houses, or castles (the castle subtype of houses, so castles beyond the cheapest houses show up)."""
+    src = "castles" if kind == "castles" else "properstar"
+    sid, total_new = search_id(src, slug, "land" if kind == "castles" else kind), 0
+    for p in search_pages(store, sid, a, kind="land" if kind == "land" else "houses"):
+        url = properstar_url(slug, p, kind)
         if url in store.done:
             continue
         br.label = "%s %s  page %d  (properstar)" % (slug, kind, p)
@@ -1269,7 +1318,7 @@ def crawl_properstar_one(br, store, slug, a, kind="land"):
         if not html:
             store.stop(sid, "fetch failed")
             break
-        recs, total = parse_properstar(html, slug, kind)
+        recs, total = parse_properstar(html, slug, "houses" if kind == "castles" else kind)
         if recs is None:  # a bot check or a new page layout, not the end of the results
             store.stop(sid, "fetch failed")
             break
@@ -1390,7 +1439,7 @@ def run_pool(jobs, store, a):
                     src, key, kind = q.get_nowait()
                 except queue.Empty:
                     break
-                fn = crawl_properstar_one if src == "properstar" else crawl_landwatch_one
+                fn = BROWSER_CRAWLERS[src]
                 t, pages = time.time(), br.pages
                 try:
                     new = fn(br, store, key, a, kind)
@@ -1411,6 +1460,18 @@ def run_pool(jobs, store, a):
     while any(t.is_alive() for t in threads):
         for t in threads:
             t.join(0.5)
+
+
+BROWSER_CRAWLERS = {  # sources that need a real Chrome window: fn(browser, store, key, a, kind) -> new listings
+    "properstar": crawl_properstar_one,
+    "castles": lambda br, store, key, a, kind: crawl_properstar_one(br, store, key, a, "castles"),
+    "landwatch": crawl_landwatch_one,
+    "immobiliare": lambda br, store, key, a, kind: crawl_search(br, store, "immobiliare", key, a, immobiliare_url,
+                                                                parse_immobiliare),
+    "encuentra24": lambda br, store, key, a, kind: crawl_search(br, store, "encuentra24", key, a, encuentra24_url,
+                                                                parse_encuentra24),
+    "homes": lambda br, store, key, a, kind: crawl_search(br, store, "homes", key, a, homes_url, parse_homes, kind),
+}
 
 
 def kijiji_acres(v):
@@ -1739,6 +1800,244 @@ def crawl_ieichiba(fetch, store, a):
         log("ieichiba   [%d/%d] %-28s +%d listings" % (i, len(IEICHIBA_BANDS), band, total_new))
 
 
+def crawl_search(fetch, store, src, key, a, url_for, parse, kind="land"):
+    """Page through one cheapest-first search. url_for(key, p, kind) gives the page URL; parse(html, key, kind)
+    returns a list of records, or None when the page isn't a results page at all (a bot check or an error page):
+    that page is left unmarked so a rerun retries it."""
+    sid, total_new, seen = search_id(src, key, kind), 0, set()
+    for p in search_pages(store, sid, a, kind=kind):
+        url = url_for(key, p, kind)
+        if url in store.done:
+            continue
+        fetch.label = "%s %s  page %d  (%s)" % (key, kind, p, src)
+        html = fetch.get(url)
+        if not html:
+            store.stop(sid, "fetch failed")
+            break
+        recs = parse(html, key, kind)
+        if recs is None:
+            log("%s %s page %d: no results data on the page (blocked?), skipping the rest" % (src, key, p))
+            store.stop(sid, "fetch failed")
+            break
+        urls = {r["url"] for r in recs if r.get("url")}
+        if not recs or urls <= seen:  # empty, or the site repeats its last page past the end
+            store.mark(url)
+            store.stop(sid, "end of results")
+            break
+        seen |= urls
+        total_new += store.page(sid, url, recs)
+    return total_new
+
+
+def strip_tags(s):
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", s or "")).strip()
+
+
+def eu_number(s):
+    """'10.000' or '1.335,5' (European thousands dots / decimal comma) -> float."""
+    s = (s or "").strip()
+    if re.fullmatch(r"\d{1,3}(\.\d{3})+(,\d+)?", s) or "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    return num(s)
+
+
+# ---- Zillow: lots and land in every US state (plain HTTP; results are JSON in __NEXT_DATA__)
+
+def zillow_url(state, p, kind="land"):
+    fs = {k: {"value": False} for k in ("sf", "tow", "mf", "con", "apa", "manu", "apco")}  # land only
+    fs.update({"sort": {"value": "pricea"}, "price": {"min": 1000}})
+    sq = {"pagination": {"currentPage": p} if p > 1 else {}, "isMapVisible": False, "isListVisible": True,
+          "filterState": fs}
+    return "https://www.zillow.com/%s/land/%s?searchQueryState=%s" % (
+        US_STATE_ABBR[state].lower(), "%d_p/" % p if p > 1 else "",
+        requests.utils.quote(json.dumps(sq, separators=(",", ":")), safe=""))
+
+
+def parse_zillow(html, state, kind="land"):
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+    if not m:
+        return None
+    try:
+        res = json.loads(m.group(1))["props"]["pageProps"]["searchPageState"]["cat1"]["searchResults"]["listResults"]
+    except Exception:
+        return None
+    out = []
+    for L in res:
+        info = (L.get("hdpData") or {}).get("homeInfo") or {}
+        if info.get("homeType", "LOT") != "LOT" or not L.get("unformattedPrice") or not L.get("detailUrl"):
+            continue
+        ll = L.get("latLong") or {}
+        url = L["detailUrl"]
+        out.append({
+            "source": "zillow",
+            "country": "US",
+            "region": ", ".join(x for x in (L.get("addressCity"), L.get("addressState")) if x) or state.replace("-", " ").title(),
+            "title": L.get("address") or "",
+            "description": " | ".join(x for x in (L.get("statusText"), L.get("flexFieldText"), L.get("lotAreaString")) if x),
+            "price": float(L["unformattedPrice"]),
+            "currency": "USD",
+            "acres": acres_from_text(L.get("lotAreaString")),
+            "lat": ll.get("latitude"), "lon": ll.get("longitude"),
+            "url": url if url.startswith("http") else "https://www.zillow.com" + url,
+        })
+    return out
+
+
+def crawl_zillow(fetch, store, states, a):
+    for i, st in enumerate(states, 1):
+        if STOP.is_set():
+            break
+        n = crawl_search(fetch, store, "zillow", st, a, zillow_url, parse_zillow)
+        log("zillow     [%d/%d] %-28s +%d listings" % (i, len(states), st, n))
+
+
+# ---- Immobiliare.it: all of Italy (real Chrome; results are JSON in __NEXT_DATA__)
+
+def immobiliare_url(key, p, kind="land"):
+    # under €1,000 is almost all "price on request" placeholders and €1 auction lots
+    return "https://www.immobiliare.it/vendita-terreni/%s/?criterio=prezzo&ordine=asc&prezzoMinimo=1000%s" % (
+        key, "&pag=%d" % p if p > 1 else "")
+
+
+def parse_immobiliare(html, key, kind="land"):
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))["props"]["pageProps"]["dehydratedState"]["queries"][0]["state"]["data"]
+        res = data["results"]
+    except Exception:
+        return None
+    out = []
+    for r in res:
+        e = r.get("realEstate") or {}
+        price = (e.get("price") or {}).get("value")
+        url = (r.get("seo") or {}).get("url")
+        if not price or not url:
+            continue
+        p = (e.get("properties") or [{}])[0]
+        loc = p.get("location") or {}
+        sm = re.match(r"\s*([\d.,]+)\s*(m²|m2|ha)", p.get("surface") or "")
+        m2 = eu_number(sm.group(1)) * (10000 if sm.group(2) == "ha" else 1) if sm else None
+        desc = strip_tags(p.get("description") or p.get("caption") or "")[:1500]
+        if e.get("contract") == "auction":
+            desc = "Auction. " + desc
+        out.append({
+            "source": "immobiliare",
+            "country": "IT",
+            "region": ", ".join(x for x in (loc.get("city"), loc.get("region")) if x),
+            "title": e.get("title") or "",
+            "description": desc,
+            "price": float(price),
+            "currency": "EUR",
+            "acres": (m2 / ACRE_M2) if m2 else None,
+            "lat": loc.get("latitude"), "lon": loc.get("longitude"),
+            "url": url,
+        })
+    return out
+
+
+# ---- HOME'S akiya bank: Japan (real Chrome, at the normal slow pace)
+
+def homes_url(pref, p, kind="land"):
+    """pref = "region/prefecture", kind = land or houses. Cheapest first; GET parameters work as well as the form."""
+    return "https://www.homes.co.jp/akiyabank/%s/?sort=price_asc&categories%%5B%%5D=%s%s" % (
+        pref, HOMES_CATEGORIES[kind], "&page=%d" % p if p > 1 else "")
+
+
+def homes_m2(text):
+    m = re.match(r"\s*([\d,.]+)\s*(m²|m2|㎡|坪)", text or "")
+    if not m:
+        return None
+    v = num(m.group(1))
+    return v * 3.305785 if (v and m.group(2) == "坪") else v
+
+
+def parse_homes(html, pref, kind="land"):
+    soup = BeautifulSoup(html, "html.parser")
+    boxes = soup.select(".sec-resultList .mod-result-bukkenBox")
+    if not boxes:
+        title = soup.title.get_text() if soup.title else ""
+        return [] if "空き家バンク" in title else None  # a real page with no results, or a block page
+    out = []
+    for b in boxes:
+        a = b.select_one('a[href*="/akiyabank/b-"]')
+        if not a:
+            continue
+        spec = {dt.get_text(strip=True).lstrip("・"): dd.get_text(" ", strip=True)
+                for dt, dd in zip(b.select(".specText dt"), b.select(".specText dd"))}
+        price = yen(spec.get("価格"))
+        if price is None:
+            continue
+        cat = b.select_one(".categoryTag")
+        addr = b.select_one(".bukkenTitle .address")
+        point = b.select_one(".pointText p")
+        m2 = homes_m2(spec.get("土地面積"))
+        name = addr.get_text(" ", strip=True) if addr else ""
+        out.append({
+            "source": "homes",
+            "country": "JP",
+            "region": spec.get("所在地", ""),
+            "title": ("House: " if kind == "houses" else "Land: ") + (name or spec.get("所在地", "")),
+            "description": " | ".join(x for x in ((cat.get_text(strip=True) if cat else ""),
+                                                  (point.get_text(" ", strip=True).replace("Point", "", 1).strip()
+                                                   if point else "")) if x),
+            "price": price,
+            "currency": "JPY",
+            "acres": (m2 / ACRE_M2) if m2 else None,
+            "lat": None, "lon": None,
+            "url": a["href"].split("?")[0],
+            "kind": kind,
+        })
+    return out
+
+
+# ---- Encuentra24: Central America (real Chrome; Cloudflare blocks plain requests)
+
+E24_CURRENCY = [("C$", "NIO"), ("₡", "CRC"), ("US$", "USD"), ("$", "USD"), ("Q", "GTQ"), ("L", "HNL")]
+
+
+def encuentra24_url(cc, p, kind="land"):
+    return "https://www.encuentra24.com/%s/real-estate-for-sale-lots-land%s?sort=f_price&dir=asc" % (
+        ENCUENTRA24_COUNTRIES[cc], ".%d" % p if p > 1 else "")
+
+
+def parse_encuentra24(html, cc, kind="land"):
+    soup = BeautifulSoup(html, "lxml")
+    tiles = soup.select("div.d3-ad-tile")
+    if not tiles and not soup.select_one(".d3-category-list__wrapper"):
+        return None
+    out = []
+    for t in tiles:
+        a = t.find("a", href=re.compile(r"/real-estate-for-sale-lots-land/[^/?]+/\d+$"))
+        pr = t.select_one(".d3-ad-tile__price")
+        txt = pr.get_text(" ", strip=True) if pr else ""
+        pm = re.search(r"([\d][\d,]*(?:\.\d+)?)", txt)
+        if not a or not pm:
+            continue
+        cur = next((c for sym, c in E24_CURRENCY if txt.lstrip().startswith(sym)), "USD")
+        area = None
+        for d in t.select(".d3-ad-tile__details-item"):
+            dm = re.search(r"([\d][\d,]*(?:\.\d+)?)\s*m\s*2", d.get_text(" ", strip=True))
+            if dm:
+                area = num(dm.group(1)) / ACRE_M2
+                break
+        get = lambda sel: (t.select_one(sel).get_text(" ", strip=True) if t.select_one(sel) else "")
+        out.append({
+            "source": "encuentra24",
+            "country": cc,
+            "region": get(".d3-ad-tile__location"),
+            "title": get(".d3-ad-tile__title"),
+            "description": get(".d3-ad-tile__short-description")[:1500],
+            "price": num(pm.group(1)),
+            "currency": cur,
+            "acres": area,
+            "lat": None, "lon": None,
+            "url": "https://www.encuentra24.com" + a["href"],
+        })
+    return out
+
+
 # ----------------------------------------------------------------------------- verification
 
 def landwatch_full_description(html):
@@ -1987,7 +2286,7 @@ def jp_place(rec):
 def add_english(recs):
     """Set title_en on non-English listings (OLX, Mercado Libre, French Kijiji ads, foreign-looking Properstar
     titles, anything in Cyrillic, Ieichiba's Japanese) and region_en on place names in Cyrillic or Japanese, for the site."""
-    titled = [r for r in recs if r.get("title") and (r.get("source") in ("olx", "mercadolibre", "ieichiba") or CYRILLIC_RX.search(r["title"])
+    titled = [r for r in recs if r.get("title") and (r.get("source") in ("olx", "mercadolibre", "ieichiba", "homes", "immobiliare", "encuentra24") or CYRILLIC_RX.search(r["title"])
                                                      or (r.get("source") == "kijiji" and FRENCH_RX.search(r["title"]))
                                                      or (r.get("source") == "properstar" and FOREIGN_RX.search(r["title"])))]
     placed = [r for r in recs if CYRILLIC_RX.search(r.get("region") or "") or JAPANESE_RX.search(r.get("region") or "")]
@@ -1999,7 +2298,7 @@ def add_english(recs):
         if r["region"] in tr:
             r["region_en"] = tr[r["region"]]
     for r in recs:
-        if r.get("source") == "ieichiba":
+        if r.get("source") in AKIYA:
             r["region_en"] = jp_place(r)
 
 
@@ -2070,6 +2369,20 @@ def collapse_similar(recs):
     return [recs[i] for i in sorted(out)]
 
 
+KIJIJI_TITLE_MAX = 64  # Kijiji cuts titles off at this many characters
+
+
+def same_title(t1, raw1, t2, raw2, source):
+    """Normalized titles t1/t2 name the same listing: equal, or (Kijiji) one is the other cut off at 64 chars,
+    as in '(PID 123) Old Port Road, Nova Scotia' vs 'Lot (PID 123) Old Port Road, Nova Scot'."""
+    if t1 == t2:
+        return True
+    if source != "kijiji":
+        return False
+    (short, raw_short), long_ = ((t1, raw1), t2) if len(t1) < len(t2) else ((t2, raw2), t1)
+    return len(raw_short) >= KIJIJI_TITLE_MAX and long_.startswith(short)
+
+
 def build_outputs(store, english=True):
     rates = load_fx()
     recs = [r for r in store.all() if safe_url(r.get("url"))]  # older data may hold links in other schemes
@@ -2089,7 +2402,7 @@ def build_outputs(store, english=True):
     # a "total" price that would only buy ~20 m2 at that country's typical price per m2 is a per-m2 price
     m2p = {}
     for r in recs:
-        if r["price_usd"] and r.get("acres") and not r["flags"]:
+        if r["price_usd"] and r.get("acres") and not r["flags"] and r.get("kind") != "houses":  # land prices only
             m2p.setdefault(r.get("country"), []).append(r["price_usd"] / (r["acres"] * ACRE_M2))
     med_m2 = {c: sorted(v)[len(v) // 2] for c, v in m2p.items() if len(v) >= 20}
     for r in recs:
@@ -2138,9 +2451,16 @@ def build_outputs(store, english=True):
 SITE = os.path.join(HERE, "site")
 FLAG_CODES = [("price too low", "L"), ("payment plan", "P"), ("auction", "A"), ("wanted ad", "W"),
               ("no land area", "N"), ("under $10/acre", "C"), ("lease/rental", "R"), ("placeholder", "X"),
-              ("per m2/acre", "U"), ("far below other", "O"),
+              ("per m2/acre", "U"), ("price may be per m2", "U"), ("far below other", "O"),
               ("mining claim", "M"), ("house listing", "H"), ("too low for Canada", "L"),
               ("share of a property", "S"), ("allotment garden", "S"), ("burial plot", "S"), ("wrong currency", "L")]
+
+
+def site_codes(flags):
+    """One letter per kind of warning in a listing's flags text, each letter once."""
+    return "".join(dict.fromkeys(c for txt, c in FLAG_CODES if txt in (flags or "")))
+
+
 TYPE_CODES = {"vacant land": "V", "building lot": "L", "farmland": "F", "forest": "T", "recreational": "R", "waterfront": "W",
               "commercial": "C", "dacha plot": "G", "land with house": "B", "house": "H"}  # labels are in site_template.html
 TAG_CODES = {"ruin": "R", "castle": "K", "church": "C"}  # special_tags(); labels are in site_template.html
@@ -2294,7 +2614,7 @@ def build_site(recs, rates):
     recs = [r for r in recs if (r.get("scraped_at") or "") >= cutoff and r.get("price_usd") is not None]
     rows, countries = [], set()
     for r, place, prov in zip(recs, towns(recs), provinces(recs)):
-        codes = "".join(c for txt, c in FLAG_CODES if txt in (r.get("flags") or ""))
+        codes = site_codes(r.get("flags"))
         if "W" in codes:
             continue
         rnd = lambda v, d: None if v is None else round(v, d)
@@ -2324,7 +2644,8 @@ def build_site(recs, rates):
 
 
 COVERAGE_COLS = ["source", "search", "site_total", "fetched", "fetched_pct", "on_site", "pages", "reached_usd", "stopped"]
-SOURCE_ORDER = ["properstar", "landwatch", "kijiji", "olx", "mercadolibre", "ieichiba"]
+SOURCE_ORDER = ["properstar", "castles", "landwatch", "zillow", "kijiji", "olx", "mercadolibre", "ieichiba", "homes",
+                "immobiliare", "encuentra24"]
 
 
 def write_coverage(store, recs, cutoff):
@@ -2388,7 +2709,7 @@ TEST_DEFAULTS = dict(states="arizona,maine", countries="portugal,mexico", provin
 def main():
     global DATA
     ap = argparse.ArgumentParser(description="Find the cheapest land listings worldwide.")
-    ap.add_argument("--sources", default="properstar,landwatch,kijiji,olx,mercadolibre,ieichiba")
+    ap.add_argument("--sources", default=ALL_SOURCES, help="comma-separated, default: " + ALL_SOURCES)
     ap.add_argument("--listings", type=int, default=250,
                     help="believable listings to collect per country/state/province on each site before moving on")
     ap.add_argument("--house-listings", type=int, default=60,
@@ -2397,7 +2718,9 @@ def main():
     ap.add_argument("--pages", type=int, default=30,
                     help="most pages per country/state/province (20-48 listings each), however few are believable")
     ap.add_argument("--countries", help="country slugs for Properstar, OLX and Mercado Libre, comma-separated (default: all)")
-    ap.add_argument("--states", help="US state slugs for LandWatch, e.g. new-mexico,arizona (default: all)")
+    ap.add_argument("--states", help="US state slugs for LandWatch and Zillow, e.g. new-mexico,arizona (default: all)")
+    ap.add_argument("--central-america", help="Encuentra24 countries, e.g. CR,PA (default: %s)" % ",".join(ENCUENTRA24_COUNTRIES))
+    ap.add_argument("--prefectures", help="Japanese prefectures for HOME'S akiya bank, e.g. nagano,shimane (default: all)")
     ap.add_argument("--provinces", help="Kijiji provinces, e.g. nova-scotia,saskatchewan (default: all)")
     ap.add_argument("--workers", type=int, default=4, help="Chrome windows scraping in parallel")
     ap.add_argument("--tile", choices=["right", "full"], default="right",
@@ -2440,6 +2763,12 @@ def main():
         countries = csv_list(a.countries, PROPERSTAR_COUNTRIES)
         states = csv_list(a.states, US_STATES)
         provs = {p: KIJIJI_PROVINCES[p] for p in csv_list(a.provinces, list(KIJIJI_PROVINCES))}
+        unknown = set(sources) - set(ALL_SOURCES.split(","))
+        if unknown:
+            ap.error("unknown source(s): %s (choose from %s)" % (",".join(sorted(unknown)), ALL_SOURCES))
+        e24 = [c.upper() for c in csv_list(a.central_america, list(ENCUENTRA24_COUNTRIES))]
+        prefs = [next((h for h in HOMES_PREFECTURES if h.endswith("/" + x)), x)  # "nagano" is enough
+                 for x in csv_list(a.prefectures, HOMES_PREFECTURES)]
         log("starting: sources=%s, %d believable listings per search, at most %d pages (%d already-scraped listings on disk)" % (
             ",".join(sources), a.listings, a.pages, len(store.urls)))
         br = None
@@ -2456,6 +2785,8 @@ def main():
                 plain.append((crawl_meli, (wanted(MELI_SITES), a, rates, kinds)))
             if "ieichiba" in sources and (not a.countries or "japan" in countries):
                 plain.append((crawl_ieichiba, (a,)))
+            if "zillow" in sources:
+                plain.append((crawl_zillow, (states, a)))
             def timed(fn):
                 def run(*args):
                     with METRICS.phase(fn.__name__.replace("crawl_", "http ")):
@@ -2466,12 +2797,21 @@ def main():
                                         name="P%d" % (i + 1), daemon=True) for i, (fn, args) in enumerate(plain)]
             for t in threads:
                 t.start()
-            jobs = []
             # on each site the land searches come before the house searches
-            lw = [("landwatch", st, k) for k in kinds for st in states] if "landwatch" in sources else []
-            ps = [("properstar", c, k) for k in kinds for c in countries] if "properstar" in sources else []
-            for i in range(max(len(lw), len(ps))):  # interleave so no single site gets every window at once
-                jobs += lw[i:i + 1] + ps[i:i + 1]
+            japan = not a.countries or "japan" in countries
+            per_source = {
+                "landwatch": [(st, k) for k in kinds for st in states],
+                "properstar": [(c, k) for k in kinds for c in countries],
+                "castles": [(c, "houses") for c in countries],
+                "immobiliare": [("italia", "land")] if not a.countries or "italy" in countries else [],
+                "encuentra24": [(cc, "land") for cc in e24],
+                "homes": [(pf, k) for k in kinds for pf in prefs] if japan else [],
+            }
+            lists = [[(src, key, k) for key, k in keys] for src, keys in per_source.items() if src in sources]
+            jobs = []
+            for i in range(max([len(l) for l in lists] or [0])):  # interleave so no single site gets every window at once
+                for l in lists:
+                    jobs += l[i:i + 1]
             if jobs:
                 log("%d browser jobs across %d Chrome windows" % (len(jobs), min(a.workers, len(jobs))))
                 with METRICS.phase("chrome pool"):

@@ -4,6 +4,13 @@ Find the cheapest land for sale anywhere on earth. landfinder scrapes land listi
 portals, converts every price to US dollars, and ranks them by **total price**, i.e. the cheapest piece of land you can
 actually buy. Price per acre is shown too. Every row links to the live listing.
 
+The results are published daily at **https://cheapest-land.pages.dev**.
+
+| Desktop | Phone (dark mode) |
+|---|---|
+| ![Home page: today's cheapest listing and the runners-up](docs/screenshots/home.png) | <img src="docs/screenshots/phone.png" alt="Home page on a phone in dark mode" width="260"> |
+| ![Map of every listing with coordinates, coloured by total price](docs/screenshots/map.png) | ![Listings table filtered to Poland, at least 1 acre](docs/screenshots/listings.png) |
+
 ## Sources
 
 | Source | Coverage | How it's fetched |
@@ -88,6 +95,18 @@ and size. The site shows the fullest one with "+2 similar" after the site name.
 
 Stopping with Ctrl-C is safe: progress is saved in `data/`, and running the same command again resumes.
 
+### Looking at the site locally
+
+Every run writes the site to `site/`. To view it, serve that folder (opening `index.html` as a file won't
+work, because the page fetches `data.json`):
+
+```sh
+python3 -m http.server 8000 --directory site    # then open http://localhost:8000
+```
+
+After editing `site_template.html` you can rebuild the page from the existing `site/data.json`, without
+scraping: `.venv/bin/python tools/rebuild_site.py`.
+
 ## Website and daily updates
 
 Every run also builds a small static website in `site/`: every listing seen in the last 3 days, cheapest
@@ -152,7 +171,9 @@ text is only sent once and a daily run only translates new listings. Hover a tit
 original; searching in the original language still works. `--no-translate` skips the step, and without the
 `claude` CLI the original text is kept.
 
-- `./publish.sh` deploys `site/` to Cloudflare Pages with `wrangler`. Run `npx wrangler login` once first.
+- `./publish.sh` deploys `site/` to the Cloudflare Pages project `cheapest-land` with `wrangler`. Run
+  `npx wrangler login` once first. `site/` is plain static files (`index.html`, `data.json`) and is not checked
+  into git; the `functions/` folder (password gate, visitor counter) deploys with it.
 - The site asks for a password (`functions/_middleware.js`): every page, `data.json` and the API answer only to a
   browser that has logged in, and the login sets a cookie that lasts 30 days. The password is the project's
   `SITE_PASSWORD` secret; set or change it with `npx wrangler pages secret put SITE_PASSWORD --project-name cheapest-land`
@@ -191,6 +212,59 @@ Bulgarian, Portuguese, Uzbek), e.g. leases, payment plans, auctions and prices p
 
 Exchange rates come from [open.er-api.com](https://open.er-api.com) and are cached daily.
 
+## Tests
+
+```sh
+./test.sh                 # sets up .venv like run.sh, adds pytest, runs everything (about 3 seconds)
+./test.sh -m "not e2e"    # skip the browser tests
+./test.sh -k kijiji       # just the tests with "kijiji" in the name
+```
+
+The suite never touches the network: exchange rates are fixed, and the source parsers run against trimmed copies
+of real search pages in `tests/fixtures/` (contact details replaced).
+
+- `test_helpers.py`: number and area parsing (`acres_from_text`, decimal commas), currency conversion, placeholder prices
+- `test_flags.py`: every sanity flag, the down-payment fix, and the flag-to-site-code mapping
+- `test_parsers.py`: the Properstar (land and castles), LandWatch, Kijiji and HOME'S parsers and the LandWatch
+  full-description reader
+- `test_outputs.py`: `build_outputs` end to end in a temp folder: per-m2 and placeholder detection, reposts,
+  castles, `results.csv`, `report.html`, `coverage.csv` and the rows of `site/data.json`
+- `test_e2e.py`: builds the site from the fixtures and loads it in headless Chromium at 1440x900 and 390x844
+  (country filter, search, empty state, flagged listings, the map tab, the error message when `data.json`
+  fails). If a `site/` build exists it is checked too.
+
+The browser tests use Playwright's Chromium (`.venv/bin/playwright install chromium`); if that isn't installed
+they fall back to any headless shell already in the Playwright cache, and skip if there is none.
+
+When a site changes its markup, refresh the matching fixture by saving one search page and trimming it to a few
+listings; the parser tests show which fields are expected.
+
+## How it works
+
+Everything is in `landfinder.py`:
+
+1. **Scrape.** Kijiji, OLX, Mercado Libre, Ieichiba and Zillow are fetched with `requests` (`Plain`), one thread
+   each. Properstar (land, houses and castles), LandWatch, Immobiliare.it, Encuentra24 and HOME'S akiya bank are
+   loaded in real Chrome through Playwright (`Browser`), several windows at once, each taking the next search off a
+   shared queue (`run_pool`, `BROWSER_CRAWLERS`). Each source has a parser that turns a search page into records;
+   `crawl_search` pages through the simpler ones until `search_pages` says the search has enough believable
+   listings.
+2. **Store.** `Store` appends every record to `data/listings.jsonl` and every finished page URL to
+   `data/pages_done.txt`. The newest line per listing URL wins, so prices stay current and a stopped run resumes.
+3. **Verify.** `verify_cheapest` opens the cheapest believable LandWatch listings and re-reads their full description.
+4. **Score.** `finalize` converts prices to USD (`load_fx`, `to_usd`), swaps down payments for the real cash price
+   (`fix_down_payment`), works out USD per acre and adds warning flags (`flag`). `build_outputs` then adds the checks
+   that need the whole dataset: one price repeated on many plot sizes, a "total" that would only buy ~20 m² at
+   the country's usual price, prices far below the rest of the country, and reposts of the same parcel.
+5. **Publish.** `build_outputs` writes `results.csv`, `report.html` and `coverage.csv`. `build_site` keeps listings
+   seen in the last 3 days, turns each listing's flags into one-letter codes (`site_codes`), writes
+   `site/data.json` and copies `site_template.html` to `site/index.html`, which draws the list, the filters and the
+   Leaflet map from `data.json`.
+
+A listing counts as believable when it has no flags, or only "no land area listed" (house listings also show when
+you pick House or Castles). Only those appear in the list and on the map until you tick "Include flagged listings".
+Empty houses on the Japanese akiya sites (Ieichiba, HOME'S) rank with the land: there the house is what you buy.
+
 ## Adding a source
 
 1. Write `parse_<site>()`, which turns one search page into listing dicts (`source`, `country`, `region`,
@@ -210,4 +284,5 @@ Exchange rates come from [open.er-api.com](https://open.er-api.com) and are cach
   delays between page loads, and check each site's terms.
 - Cheap per-acre land is often remote, landlocked or unbuildable, and many countries restrict
   foreign ownership. Verify access, zoning, title and ownership rules before buying anything.
-- `tools/` has small probe scripts used to work out Properstar's URL parameters.
+- `tools/` has small probe scripts used to work out Properstar's URL parameters and LandWatch's page structure,
+  and `rebuild_site.py` (see above).

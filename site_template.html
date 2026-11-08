@@ -9,7 +9,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3CclipPath id='r'%3E%3Crect width='32' height='32' rx='7'/%3E%3C/clipPath%3E%3Cg clip-path='url(%23r)'%3E%3Crect width='32' height='32' fill='%233d8fd6'/%3E%3Cpath d='M0 21c6-5 12-6 19-2s10 3 13 1v12H0z' fill='%236cc36c'/%3E%3Cpath d='M0 27c8-4 17-4 32 1v4H0z' fill='%232e8b4a'/%3E%3Crect x='15' y='14' width='2.4' height='13' fill='%237a4b2a'/%3E%3Crect x='7' y='5' width='18.5' height='12' rx='2.5' fill='%23fff'/%3E%3Cpath d='M19.0 9.2c-.8-.8-1.9-1.2-3-1.2-1.7 0-3 .9-3 2.2 0 3 6 1.6 6 4.6 0 1.4-1.4 2.4-3.2 2.4-1.2 0-2.4-.5-3.2-1.3M16.0 6.5v12' transform='translate(16.2 11.0) scale(0.78) translate(-16 -12.5)' stroke='%231f6f43' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <style>
@@ -20,7 +20,7 @@
   :root{--paper:#161a21;--ink:#e8ebf0;--soft:#9aa3b2;--rule:#2b313b;--tint:#1f242d;--blue:#8ea8ff;--mark:#36311a;--warn:#f0a070;--bar:#4a5d8f}
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 "Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 Overpass,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums}
 a{color:var(--blue);text-decoration:none}
 a:hover{text-decoration:underline}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
@@ -96,9 +96,9 @@ td.type{width:160px;font-size:14px}
 #map{height:calc(100vh - 190px);height:calc(100dvh - 190px);min-height:420px;border:1px solid var(--rule);border-radius:4px;margin-top:14px}
 #map.full{position:fixed!important;inset:0;z-index:1000;height:auto;min-height:0;border:0;border-radius:0;margin:0}  /* full screen map */
 body.mapfull{overflow:hidden}
-.fsbtn a{display:flex;align-items:center;justify-content:center;width:auto!important;padding:0 10px;font:600 13px/30px "Public Sans",sans-serif;color:#222;cursor:pointer;white-space:nowrap}
+.fsbtn a{display:flex;align-items:center;justify-content:center;width:auto!important;padding:0 10px;font:600 13px/30px Overpass,sans-serif;color:#222;cursor:pointer;white-space:nowrap}
 @media (prefers-color-scheme:dark){#map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}}
-.pin div,.cl div{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:999px;cursor:pointer;font:700 12px/1 "Public Sans",sans-serif}
+.pin div,.cl div{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:999px;cursor:pointer;font:700 12px/1 Overpass,sans-serif}
 .pin div{background:var(--paper);color:var(--ink);border:1px solid var(--rule);padding:5px 8px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .pin div:hover{border-color:var(--ink)}
 .pin div.flag{border-color:var(--warn);color:var(--warn)}
@@ -106,12 +106,34 @@ body.mapfull{overflow:hidden}
 .cl div b{font-weight:700}
 .cl div.big{padding:9px 13px;font-size:13px}
 .cl div.huge{padding:11px 15px;font-size:14px}
-.leaflet-container{font-family:"Public Sans",sans-serif}
+.leaflet-container{font-family:Overpass,sans-serif}
 .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--paper);color:var(--ink)}
 .leaflet-popup-content{margin:14px 16px;font-size:14px;line-height:1.45}
 .pop .p{margin-bottom:2px}
 .pop .t{margin-top:6px}
 .note{color:var(--soft);font-size:13px;margin:10px 0 0}
+.tyin{display:none}
+.fees{font-size:13px;line-height:1.45;color:var(--soft);margin-top:4px;max-width:62ch}
+.fees summary{cursor:pointer;color:var(--warn);width:fit-content}
+.fees p{margin:6px 0 2px;padding-left:10px;border-left:2px solid var(--rule)}
+.mapcount{font-weight:600;color:var(--ink)}
+/* a listing row under the pointer lights up its pin, or the group it's in */
+.leaflet-marker-icon.hot{z-index:100000!important}
+.pin.hot div{background:var(--blue);border-color:var(--blue);color:#fff}
+.cl.hot div{background:var(--blue)}
+
+/* wide screens: the map is a third column beside the list, the full height of the window, and stays put as you scroll */
+@media (min-width:1280px){
+  .layout{grid-template-columns:260px minmax(0,1fr) minmax(360px,30vw);max-width:none}
+  .tabs{display:none}
+  #fcur{margin-left:auto}
+  #p-map{position:sticky;top:0;align-self:start;height:100vh;height:100dvh;display:flex;flex-direction:column;border-left:1px solid var(--rule)}
+  #p-map #map{flex:1;height:auto;min-height:0;margin:0;border:0;border-radius:0}
+  #p-map .note{margin:0;padding:10px 18px 14px;border-top:1px solid var(--rule)}
+  td.rank,td.type,thead th:first-child,thead th:last-child{display:none}  /* the type moves under the listing */
+  .tyin{display:block;color:var(--soft);font-size:14px}
+  .tyin .sp{display:inline;margin-left:8px}
+}
 
 footer{color:var(--soft);font-size:13px;padding:28px 0 36px;max-width:80ch}
 footer p{margin:4px 0}
@@ -156,7 +178,7 @@ footer p{margin:4px 0}
   <select id="fcur" aria-label="Currency"></select>
 </header>
 
-<div class="layout">
+<div class="layout" id="layout">
   <aside id="side" aria-label="Filters">
     <h2><label for="q">Search</label></h2>
     <input id="q" type="search" placeholder="Town, region or words in the title">
@@ -189,7 +211,7 @@ footer p{margin:4px 0}
     <label class="chk"><input id="farea" type="checkbox"> Area listed only</label>
 
     <h2>Listings</h2>
-    <label class="field">Source<select id="fsrc"><option value="">All sources</option><option value="properstar">Properstar</option><option value="landwatch">LandWatch</option><option value="kijiji">Kijiji</option><option value="olx">OLX</option><option value="mercadolibre">Mercado Libre</option><option value="ieichiba">Ieichiba</option></select></label>
+    <label class="field">Source<select id="fsrc"><option value="">All sources</option><option value="properstar">Properstar</option><option value="landwatch">LandWatch</option><option value="kijiji">Kijiji</option><option value="olx">OLX</option><option value="mercadolibre">Mercado Libre</option><option value="ieichiba">Ieichiba</option><option value="homes">HOME'S Akiya Bank</option><option value="zillow">Zillow</option><option value="immobiliare">Immobiliare.it</option><option value="encuentra24">Encuentra24</option></select></label>
     <label class="chk"><input id="fflag" type="checkbox"> Include flagged listings</label>
     <button class="linkbtn" id="reset" type="button" style="margin-top:14px">Clear all filters</button>
     <button class="done" id="done" type="button">Show listings</button>
@@ -208,19 +230,19 @@ footer p{margin:4px 0}
         <thead><tr><th>#</th><th>Price</th><th>Land</th><th>Listing</th><th>Type</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
-      <div class="empty" id="empty" hidden>No listings match these filters. <button class="linkbtn" type="button" onclick="resetAll()">Clear all filters</button></div>
+      <div class="empty" id="empty" hidden><span id="emptymsg">No listings match these filters.</span> <button class="linkbtn" type="button" onclick="resetAll()">Clear all filters</button></div>
       <button class="more" id="more" type="button" hidden>Show more</button>
     </section>
 
     <section id="p-map" hidden>
       <div id="map"></div>
-      <p class="note">Click a group to zoom in and a price to see the listing. Pick a continent, country or town to jump to it.
-        LandWatch listings are pinned at their ZIP code's center. Mercado Libre and Ieichiba listings have no location, so they aren't on the map.</p>
+      <p class="note"><span class="mapcount" id="mapcount"></span> Click a group to zoom in and a price to see the listing. Pick a continent, country or town to jump to it.
+        LandWatch listings are pinned at their ZIP code's center. Mercado Libre, Ieichiba, HOME'S and Encuentra24 listings have no location, so they aren't on the map.</p>
     </section>
 
     <footer>
       <p><span id="updated"></span></p>
-      <p>Prices are converted at the exchange rates of the last update. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Kijiji, OLX, Mercado Libre, Ieichiba. A free (¥0) Japanese house still costs transfer fees, registration and yearly property tax.</p>
+      <p>Prices are converted at the exchange rates of the last update. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Zillow, Kijiji, OLX, Mercado Libre, Ieichiba, HOME'S Akiya Bank, Immobiliare.it, Encuentra24. A free (¥0) Japanese house still costs transfer fees, registration and yearly property tax.</p>
     </footer>
   </main>
 </div>
@@ -247,7 +269,7 @@ const money = v => v == null ? "—" : v === 0 ? "Free" : withCur(digits(v));
 // a listing's price in the picked currency: its own price when it's listed in that currency, else converted from dollars
 const price = r => r[15] === CUR ? r[14] : r[1] * RATE;
 const acres = v => v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString("en-US");
-const srcName = s => ({properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji", olx:"OLX", mercadolibre:"Mercado Libre", ieichiba:"Ieichiba"})[s] || s;
+const srcName = s => ({properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji", olx:"OLX", mercadolibre:"Mercado Libre", ieichiba:"Ieichiba", homes:"HOME'S Akiya Bank", castles:"Properstar", zillow:"Zillow", immobiliare:"Immobiliare.it", encuentra24:"Encuentra24"})[s] || s;
 const PAGE = 60;
 const FLAGS = {L:"Price looks too low: may be a monthly payment, a per-m² price or in the wrong currency",
   S:"Only a share, usage rights or a burial plot, not land you'd own outright",
@@ -284,7 +306,9 @@ const clean = r => r[1] != null && (!r[7] || r[7] === "N");
 // its only flag says it's a house: shown when you pick House or one of the ruins, castles and churches
 const houseOnly = r => !r[7].replace(/[HN]/g, "");
 
-let ALL = [], VIEW = [], TOWNS = {}, PROVS = {}, POP = {}, PLACE = "prov", shown = PAGE, map, pins, mapAt = null, mapTimer;
+// AREA: the part of the map the visitor panned or zoomed to, which the list keeps to (null: anywhere).
+// MAPVIEW: what the map shows, every filter but AREA, so panning brings more pins into view
+let AREA = null, MAPVIEW = [], placeKey = "", ALL = [], VIEW = [], TOWNS = {}, PROVS = {}, POP = {}, PLACE = "prov", shown = PAGE, map, pins, mapAt = null, mapTimer;
 
 fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
   ALL = d.rows.filter(r => r[1] != null).sort((a, b) => a[1] - b[1]);
@@ -331,6 +355,7 @@ $("done").onclick = () => { openSide(false); $("fbtn").scrollIntoView({block: "s
 function resetAll(){
   for (const id of FILTERS) { const el = $(id); if (el.type === "checkbox") el.checked = false; else el.value = ""; }
   for (const f of Object.values(F)) f.clear();
+  AREA = null;
   refilter();
 }
 $("reset").onclick = resetAll;
@@ -345,9 +370,24 @@ $("m-city").onclick = () => placeMode("city");
 $("t-list").onclick = () => tab("list");
 $("t-map").onclick = () => tab("map");
 
+// 1280px and wider: the map is its own column beside the list (see the CSS); narrower, it's a tab
+const WIDE = matchMedia("(min-width:1280px)");
+const mapShown = () => !$("p-map").hidden;
+function placeMap(){
+  const wide = WIDE.matches, onMap = $("t-map").getAttribute("aria-selected") === "true";
+  if (wide) $("layout").append($("p-map"));
+  else $("p-list").after($("p-map"));
+  $("p-map").hidden = !wide && !onMap;
+  $("p-list").hidden = !wide && onMap;
+  if (ALL.length) update();
+  if (map) { touchedAt = 0; map.invalidateSize(); }
+}
+WIDE.addEventListener("change", placeMap);
+placeMap();
+
 function tab(name){
   for (const t of ["list", "map"]) { $("t-" + t).setAttribute("aria-selected", t === name); $("p-" + t).hidden = t !== name; }
-  if (name === "map" && window.L) { initMap(); map.invalidateSize(); renderMap(); }
+  if (name === "map" && window.L) { initMap(); touchedAt = 0; map.invalidateSize(); renderMap(); }
   else renderList();
 }
 
@@ -412,14 +452,22 @@ const F = {type: new Facet("ftype"), cont: new Facet("fcont"), country: new Face
 F.type.setItems([...Object.entries(TYPES).map(([k, v]) => ({value: k, label: v})),
   ...[["R", "Ruins & fixer-uppers"], ["K", "Castles & manors"], ["C", "Churches & chapels"]].map(([k, v]) => ({value: "s" + k, label: v, group: "Ruins, castles & churches"}))]);
 const refilter = () => { shown = PAGE; update(); };
+const inArea = r => {
+  if (r[9] == null || r[10] == null) return false;
+  if (AREA.getEast() - AREA.getWest() >= 360) return AREA.getSouth() <= r[9] && r[9] <= AREA.getNorth();
+  return [r[10], r[10] - 360, r[10] + 360].some(lng => AREA.contains([r[9], lng]));  // the map wraps around east-west
+};
 
-function update(){
+function update(fromMap){
   const conts = F.cont.sel, ccs = F.country.sel, towns = F.city.sel, provs = F.prov.sel, picks = F.type.sel,
         src = $("fsrc").value, q = $("q").value.trim().toLowerCase(),
         sps = [...picks].filter(p => p[0] === "s").map(p => p[1]), tys = new Set([...picks].filter(p => p[0] !== "s")),
         num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
         amn = num("facmin"), amx = num("facmax"), ppa = num("fppa"),
         area = $("farea").checked, fl = $("fflag").checked;
+  // picking a continent, country or town moves the map there, so the old map area no longer applies
+  const places = [conts, ccs, towns].map(m => [...m].sort().join(",")).join("|");
+  if (places !== placeKey) { placeKey = places; AREA = null; }
   // the filters that aren't checkbox lists
   const base = r => (!src || r[6] === src) && (isNaN(mn) || price(r) >= mn) && (isNaN(mx) || price(r) <= mx)
     && (!area || r[2] != null)
@@ -439,28 +487,39 @@ function update(){
   // one pass: the listings to show, and each list's counts under every filter but its own
   // (and the continents' under every filter but the places)
   const cn = {type: new Map(), cont: new Map(), country: new Map(), prov: new Map(), city: new Map()}, add = (m, k) => m.set(k, (m.get(k) || 0) + 1);
-  VIEW = [];
+  VIEW = []; MAPVIEW = [];
   for (const r of ALL) {
     if (!base(r)) continue;
+    // the map area narrows the list and the type counts. Not the places: picking one moves the map there and drops
+    // the area, so every continent, country and town stays on its list with its full count
+    const inA = !AREA || inArea(r);
     const ct = contOf(r[3]), inCont = !conts.size || conts.has(ct), inCountry = !ccs.size || ccs.has(r[3]),
           prov = r[3] + "|" + r[17], inProv = !provs.size || provs.has(prov),
           town = r[3] + "|" + r[13], inTown = !towns.size || towns.has(town), here = inCont && inCountry && inProv && inTown;
-    if (here) {  // type counts: what you'd see if you ticked only that type
+    if (here && inA) {  // type counts: what you'd see if you ticked only that type
       if (fl || clean(r) || (r[12] === "H" && houseOnly(r))) add(cn.type, r[12]);
       if (r[16] && (fl || clean(r) || houseOnly(r))) for (const s of r[16]) add(cn.type, "s" + s);
     }
     if (!ok(r) || !isType(r)) continue;
+    if (here) MAPVIEW.push(r);
     add(cn.cont, ct);  // every continent stays on the list, so you can widen the search from a country
     if (inCont) add(cn.country, r[3]);
     if (inCont && inCountry && inTown && r[17]) add(cn.prov, prov);
     if (inCont && inCountry && inProv && r[13]) add(cn.city, town);
-    if (here) VIEW.push(r);
+    if (here && inA) VIEW.push(r);
   }
   for (const k in F) { F[k].counts = cn[k]; F[k].render(); }
   $("placeblock").hidden = !F.city.items.length && !F.prov.items.length;
   renderChips();
   renderList();
-  if (map && !$("p-map").hidden) { clearTimeout(mapTimer); mapTimer = setTimeout(renderMap, 150); }
+  if (fromMap) {  // the map didn't change, only the list: bring its top into view
+    if ($("p-list").getBoundingClientRect().top < 0) window.scrollTo({top: 0});
+    return;
+  }
+  if (mapShown() && window.L) {
+    if (!map) { initMap(); renderMap(); }
+    else { clearTimeout(mapTimer); mapTimer = setTimeout(renderMap, 150); }
+  }
 }
 
 function setCurrency(c){
@@ -484,7 +543,8 @@ function renderChips(){
     ...["type", "cont", "country", "prov", "city"].flatMap(k => [...F[k].sel].map(v => ({label: F[k].labelOf(v), clear: () => F[k].sel.delete(v)}))),
     field("facmin", v => `${v}+ acres`), field("facmax", v => `Up to ${v} acres`), field("fppa", v => `Up to ${withCur(v)} an acre`),
     $("fsrc").value && {label: srcName($("fsrc").value), clear: () => { $("fsrc").value = ""; }},
-    tick("farea", "Area listed"), tick("fflag", "Flagged included")].filter(Boolean);
+    tick("farea", "Area listed"), tick("fflag", "Flagged included"),
+    AREA && {label: "In the map area", clear: () => { AREA = null; }}].filter(Boolean);
   $("chips").innerHTML = CHIPS.map((c, i) => `<button class="chip" type="button" data-chip="${i}" aria-label="Remove ${esc(c.label)}">${esc(c.label)}<span aria-hidden="true">×</span></button>`).join("")
     + (CHIPS.length > 1 ? `<button class="chip" type="button" onclick="resetAll()">Clear all</button>` : "");
   $("fbtn").textContent = CHIPS.length ? `Filters (${CHIPS.length})` : "Filters";
@@ -497,7 +557,21 @@ const place = r => [r[4], cname(r[3])].filter(Boolean).join(", ");
 const whereLine = r => `<div class="where">${esc(place(r))}, on ${srcName(r[6])}${r[18] ? ` · <span title="${r[18]} more ${r[18] === 1 ? "listing" : "listings"} of this parcel or lots just like it">+${r[18]} similar</span>` : ""}</div>`;
 const warning = r => clean(r) || houseOnly(r) ? "" : `<div class="w">${[...r[7]].filter(f => f !== "H").map(f => FLAGS[f]).filter(Boolean).join(". ")}</div>`;
 const specials = r => [...(r[16] || "")].map(t => `<span class="sp">${SPECIAL[t]}</span>`).join("");
-const priceCell = r => `<span class="p">${money(price(r))}</span>${converted(r) && r[14] ? `<span class="own">${digits(r[14])} ${r[15]}</span>` : ""}`;
+// under the price, always the currency: the listing's own price when it was converted, else the price in the picked currency
+// a free listing still costs money to take over: what the buyer pays, by country
+// [the one line shown, the full breakdown behind it]
+const FEES = {
+  JP: ["Still costs about ¥50,000–150,000 plus taxes to take over", "Free to take over, but the buyer still pays to transfer it: registration tax (about 1.5–2% of the government's assessed value, "
+    + "which is often low for an old rural house), real estate acquisition tax (about 3%), a judicial scrivener to register the "
+    + "transfer (often ¥50,000–150,000) and any fee the site charges. Property tax, 1.4% of the assessed value, is due every year after."],
+  "": ["Transfer costs and taxes still apply", "Free to take over, but the buyer still pays the transfer costs: recording and transfer fees, title or legal work, "
+    + "and property tax every year after."],
+};
+const free = r => price(r) === 0;
+const feeNote = r => { if (!free(r)) return ""; const [line, more] = FEES[r[3]] || FEES[""];
+  return `<details class="fees"><summary>${esc(line)}</summary><p>${esc(more)}</p></details>`; };
+const ownLine = r => free(r) ? "plus transfer costs" : converted(r) ? (r[14] ? `${digits(r[14])} ${r[15]}` : "") : (price(r) ? `${digits(price(r))} ${CUR}` : "");
+const priceCell = r => `<span class="p">${money(price(r))}</span>${ownLine(r) ? `<span class="own">${ownLine(r)}</span>` : ""}`;
 // the bar shows land on a log scale, so a 0.05-acre lot and a 500-acre ranch both read
 const barW = a => Math.max(2, Math.min(100, (Math.log10(a) + 2) / 5 * 100));
 const landCell = r => r[2] == null ? `<span class="ppa">Area not listed</span>`
@@ -509,14 +583,15 @@ const titleLink = r => `<a class="t" href="${esc(r[8])}" target="_blank" rel="no
 function renderList(){
   const page = VIEW.slice(0, shown);
   $("count").textContent = `${VIEW.length.toLocaleString("en-US")} ${VIEW.length === 1 ? "listing" : "listings"}`;
-  if ($("p-map").hidden) $("sub").textContent = "cheapest first";
-  $("rows").innerHTML = page.map((r, i) => `<tr>
+  if (!mapShown() || WIDE.matches) $("sub").textContent = AREA ? "in the map area, cheapest first" : "cheapest first";
+  $("rows").innerHTML = page.map((r, i) => `<tr data-i="${i}">
     <td class="rank">${i + 1}</td>
     <td class="price">${priceCell(r)}</td>
     <td class="land">${landCell(r)}</td>
-    <td class="what">${titleLink(r)}${whereLine(r)}${warning(r)}</td>
+    <td class="what">${titleLink(r)}${whereLine(r)}<div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${feeNote(r)}${warning(r)}</td>
     <td class="type">${TYPES[r[12]] || "Land"}${specials(r)}</td></tr>`).join("");
   $("empty").hidden = VIEW.length > 0;
+  $("emptymsg").textContent = AREA && MAPVIEW.length ? "No listings in this part of the map. Zoom out or drag the map to see more." : "No listings match these filters.";
   $("more").hidden = shown >= VIEW.length;
   $("more").textContent = `Show ${Math.min(PAGE, VIEW.length - shown)} more`;
 }
@@ -525,9 +600,34 @@ function renderList(){
 const short = v => v === 0 ? "Free" : withCur(v < 1e3 ? Math.round(v) : v < 1e6 ? (v < 1e4 ? (v / 1e3).toFixed(1).replace(/\.0$/, "") : Math.round(v / 1e3)) + "k"
   : v < 1e9 ? (v / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : (v / 1e9).toFixed(1).replace(/\.0$/, "") + "B");
 
+// the least zoom that still fills the map's height with tiles (no grey above and below the world). Whole zoom levels
+// only: in between, the tiles are scaled and show hairline seams
+const fillZoom = () => Math.max(1, Math.ceil(Math.log2(map.getSize().y / 256)));
+// the world view: as much of the inhabited world as fits, never zoomed out into grey
+const world = () => {
+  const z = Math.max(fillZoom(), Math.min(2, map.getBoundsZoom([[-48, -150], [68, 160]])));
+  map.setView([30, -45], z, {animate: false});  // the Atlantic: the Americas and Europe, where most listings are
+  map.panInsideBounds(map.options.maxBounds, {animate: false});
+};
+
 function initMap(){
   if (map) return;
-  map = L.map("map", {worldCopyJump: true, minZoom: 2}).setView([25, 0], 2);
+  // the edges of the world's tiles: panning stops there instead of showing grey (east-west it wraps around)
+  map = L.map("map", {worldCopyJump: true, maxBounds: [[-85.05, -1e4], [85.05, 1e4]], maxBoundsViscosity: 1});
+  map.setMinZoom(fillZoom());
+  map.on("resize", () => map.setMinZoom(fillZoom()));  // full screen, or the window resized
+  world();
+  // the visitor's own pans and zooms (drag, wheel, buttons, keys, clicking a group or a pin) set the list's area; the
+  // page's own moves (jumping to a picked country, resizing) don't. A gesture's moves end within a couple of seconds
+  const box = map.getContainer();
+  for (const ev of ["mousedown", "mouseup", "wheel", "touchstart", "touchend", "keydown"])
+    box.addEventListener(ev, () => { touchedAt = Date.now(); }, {passive: true});
+  map.on("moveend", () => {
+    if (Date.now() - touchedAt > 2000) return;
+    AREA = map.getBounds();
+    shown = PAGE;
+    update(true);
+  });
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     {maxZoom: 18, attribution: "&copy; OpenStreetMap contributors"}).addTo(map);
   // a button that fills the whole window with the map; Esc or the button again brings the page back
@@ -538,6 +638,7 @@ function initMap(){
     const set = on => {
       $("map").classList.toggle("full", on); document.body.classList.toggle("mapfull", on);
       a.textContent = on ? "✕ Exit full screen" : "⛶ Full screen"; a.title = on ? "Exit full screen (Esc)" : "Show the map full screen";
+      touchedAt = 0;
       map.invalidateSize();
     };
     set(false);
@@ -558,33 +659,48 @@ function initMap(){
     }}).addTo(map);
 }
 
+let hotEl = null, touchedAt = 0;
+function hot(tr){
+  const r = tr && VIEW[+tr.dataset.i], m = r && r.pin && pins && pins.hasLayer(r.pin) ? pins.getVisibleParent(r.pin) : null;
+  const el = m && m.getElement ? m.getElement() : null;
+  if (el === hotEl) return;
+  if (hotEl) hotEl.classList.remove("hot");
+  if (el) el.classList.add("hot");
+  hotEl = el;
+}
+$("rows").addEventListener("mouseover", e => { if (mapShown()) hot(e.target.closest("tr")); });
+$("rows").addEventListener("mouseleave", () => hot(null));
+
 function renderMap(){
   if (!pins) return;
   const on = [];
-  for (const r of VIEW) {
+  for (const r of MAPVIEW) {
     if (r[9] == null || r[10] == null || (r[9] === 0 && r[10] === 0)) continue;
     if (!r.pin) {  // made once per listing, reused as the filters change
       r.pin = L.marker([r[9], r[10]], {row: r, icon: L.divIcon({className: "pin", iconSize: [0, 0],
         html: `<div class="${clean(r) ? "" : "flag"}">${short(price(r))}</div>`})});
       r.pin.bindPopup(() => `<div class="pop">${priceCell(r)}<div class="ppa">${r[2] != null ? acres(r[2]) + (r[2] === 1 ? " acre, " : " acres, ") : ""}${(TYPES[r[12]] || "Land").toLowerCase()}</div>
-        ${titleLink(r)}${whereLine(r)}${specials(r)}${warning(r)}
+        ${titleLink(r)}${whereLine(r)}${specials(r)}${feeNote(r)}${warning(r)}
         ${r[6] === "landwatch" ? `<div class="ppa">Pin shows the ZIP code area</div>` : ""}</div>`, {minWidth: 220, maxWidth: 280});
     }
     on.push(r.pin);
   }
   pins.clearLayers();
   pins.addLayers(on);
-  const off = VIEW.length - on.length;
-  $("sub").textContent = `${on.length.toLocaleString("en-US")} on the map` + (off ? `, ${off.toLocaleString("en-US")} without a location` : "");
+  const off = MAPVIEW.length - on.length;
+  const where = `${on.length.toLocaleString("en-US")} on the map` + (off ? `, ${off.toLocaleString("en-US")} without a location` : "");
+  if (WIDE.matches) $("mapcount").textContent = where + ".";
+  else { $("mapcount").textContent = ""; $("sub").textContent = where; }
   const sel = [F.cont, F.country, F.prov, F.city].map(m => [...m.sel].sort().join(",")), town = F.city.sel.size;
   if (sel.join("|") !== mapAt) {  // place changed: show the picked continents, countries or towns, or the world for none
     mapAt = sel.join("|");
+    touchedAt = 0;  // the page's own move, not the visitor's
     if (sel.some(Boolean) && on.length) {
       // frame where most listings are: the outermost 5% (Alaska and Hawaii, mislocated pins) would zoom far out
       const span = v => { v.sort((a, b) => a - b); const k = Math.floor(v.length * .05); return [v[k], v[v.length - 1 - k]]; };
       const [s, n] = span(on.map(m => m.getLatLng().lat)), [w, e] = span(on.map(m => m.getLatLng().lng));
       map.fitBounds(L.latLngBounds([[s, w], [n, e]]).pad(.1), {padding: [30, 30], maxZoom: town ? 12 : 9, animate: false});
-    } else map.setView([25, 0], 2, {animate: false});
+    } else world();
   }
 }
 </script>
