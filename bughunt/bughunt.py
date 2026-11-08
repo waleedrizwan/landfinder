@@ -158,7 +158,8 @@ def fix(ledger, attempts=3):
             if r.get("status") == "fixed" and suite_passes():  # gate: don't trust the agent's word for it
                 git("add", "-A", "landfinder.py", "site_template.html", "report_template.html",
                     "functions", "tests", f["test_file"])
-                git("commit", "-q", "-m", f"Fix {f['id']}: {r.get('summary', f['function'])}")
+                git("commit", "-q", "-m", f"Fix {f['id']}: {r.get('summary', f['function'])}\n\n"
+                    "Found and fixed by the bughunt loop (bughunt/findings.json).")
                 f.update(status="fixed", fix_summary=r.get("summary"), commit=git("rev-parse", "--short", "HEAD").stdout.strip())
                 log(f"  fixed in {f['commit']}")
                 break
