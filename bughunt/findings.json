@@ -662,8 +662,10 @@
       "fp": "0daea0dda7",
       "id": "B037",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "The test runs the real onRequestPost under node with a fake D1 and a `null` JSON body. It fails with \"TypeError: Cannot read properties of null (reading 'first')\", where it should return 200 with the total. The page itself only sends {first:true}, so only a hand-built or odd client can hit this. It is still a real unhandled path: `await request.json()` returns null without throwing, so the try/catch doesn't cover it.",
+      "test_file": "tests/test_bughunt_b037.py"
     },
     {
       "file": "landfinder.py",
