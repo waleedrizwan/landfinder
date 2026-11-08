@@ -536,8 +536,10 @@
       "fp": "f2de846f6c",
       "id": "B030",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "Three landwatch listings with the same price and acres, different URLs, and titles '•', '-' and '' all normalize to '', so same_title() treats them as equal. build_outputs keeps only the first, and the test fails because results.csv has only lot/1. The trigger is realistic: site_template.html already says some listings have no title or just a '•'.",
+      "test_file": "tests/test_bughunt_b030.py"
     },
     {
       "file": "landfinder.py",
