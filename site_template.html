@@ -50,6 +50,9 @@ aside input:focus{background:var(--paper);border-color:var(--blue);outline:0}
 .facet .grp{font-size:12px;font-weight:600;color:var(--soft);padding:8px 0 2px}
 .facet .none{font-size:14px;color:var(--soft);padding:4px 0}
 .fsearch{margin-bottom:6px}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--tint);border-radius:4px;padding:3px;margin:0 0 10px}
+.seg button{background:none;border:0;border-radius:3px;padding:5px 4px;font-size:13px;font-weight:500;color:var(--soft);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--paper);color:var(--ink);font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.15)}
 .scroll{max-height:300px;overflow:auto;margin-right:-8px;padding-right:8px}
 .linkbtn{background:none;border:0;color:var(--blue);padding:4px 0;cursor:pointer;font-size:14px}
 .chk{display:flex;align-items:center;gap:9px;font-size:14px;padding:3px 0;cursor:pointer}
@@ -170,9 +173,14 @@ footer p{margin:4px 0}
     <h2>Country</h2>
     <div id="fc" data-label="Country" data-search="Search countries"></div>
 
-    <div id="cityblock" hidden>
-      <h2>City or town</h2>
-      <div id="fcity" data-label="City or town" data-search="Search towns"></div>
+    <div id="placeblock" hidden>
+      <h2>Narrow it down by</h2>
+      <div class="seg" role="group" aria-label="Narrow it down by">
+        <button type="button" id="m-prov" aria-pressed="true">Province / state</button>
+        <button type="button" id="m-city" aria-pressed="false">City or town</button>
+      </div>
+      <div id="fprov" data-label="Province or state" data-search="Search provinces and states"></div>
+      <div id="fcity" data-label="City or town" data-search="Search towns" hidden></div>
     </div>
 
     <h2>Land</h2>
@@ -220,10 +228,11 @@ footer p{margin:4px 0}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
-// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type, town, price, currency, tags]
+// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type, town, price, currency, tags, province]
 // title and region are in English; originalTitle is set when the title was translated; type is a TYPES key;
 // town is "" when the listing doesn't say, and "Deming, NM" in the US and Canada; price is in the listing's own currency;
-// tags holds SPECIAL keys: a ruin or fixer-upper, a castle or manor, a church or chapel
+// tags holds SPECIAL keys: a ruin or fixer-upper, a castle or manor, a church or chapel; province is the state,
+// province or region ("" when unknown)
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let regionNames, currencyNames;
@@ -274,7 +283,7 @@ const clean = r => r[1] != null && (!r[7] || r[7] === "N");
 // its only flag says it's a house: shown when you pick House or one of the ruins, castles and churches
 const houseOnly = r => !r[7].replace(/[HN]/g, "");
 
-let ALL = [], VIEW = [], TOWNS = {}, POP = {}, shown = PAGE, map, pins, mapAt = null, mapTimer;
+let ALL = [], VIEW = [], TOWNS = {}, PROVS = {}, POP = {}, PLACE = "prov", shown = PAGE, map, pins, mapAt = null, mapTimer;
 
 fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
   ALL = d.rows.filter(r => r[1] != null).sort((a, b) => a[1] - b[1]);
@@ -284,6 +293,7 @@ fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.js
   F.country.setItems(cs.map(c => ({value: c, label: cname(c)})));
   F.cont.setItems([...new Set(cs.map(contOf))].sort().map(ct => ({value: ct, label: ct})));
   for (const r of ALL) if (r[13]) (TOWNS[r[3]] ??= new Set()).add(r[13]);
+  for (const r of ALL) if (r[17]) (PROVS[r[3]] ??= new Set()).add(r[17]);
   POP = d.populations || {};
   RATES = d.rates || RATES;
   const wide = matchMedia("(min-width:861px)").matches;  // phones only have room for "USD"
@@ -324,6 +334,13 @@ function resetAll(){
 }
 $("reset").onclick = resetAll;
 $("chips").onclick = e => { const b = e.target.closest("[data-chip]"); if (b) { CHIPS[+b.dataset.chip].clear(); refilter(); } };
+// after picking a country: narrow it by province/state or by city, one list at a time
+function placeMode(m){
+  PLACE = m;
+  for (const k of ["prov", "city"]) { $("m-" + k).setAttribute("aria-pressed", k === m); $(k === "prov" ? "fprov" : "fcity").hidden = k !== m; }
+}
+$("m-prov").onclick = () => placeMode("prov");
+$("m-city").onclick = () => placeMode("city");
 $("t-list").onclick = () => tab("list");
 $("t-map").onclick = () => tab("map");
 
@@ -389,13 +406,14 @@ class Facet {
     this.btn.textContent = this.all ? "Show fewer" : `Show all ${list.length.toLocaleString("en-US")}`;
   }
 }
-const F = {type: new Facet("ftype"), cont: new Facet("fcont"), country: new Facet("fc", {top: 8}), city: new Facet("fcity", {top: 8})};
+const F = {type: new Facet("ftype"), cont: new Facet("fcont"), country: new Facet("fc", {top: 8}),
+           prov: new Facet("fprov", {top: 8}), city: new Facet("fcity", {top: 8})};
 F.type.setItems([...Object.entries(TYPES).map(([k, v]) => ({value: k, label: v})),
   ...[["R", "Ruins & fixer-uppers"], ["K", "Castles & manors"], ["C", "Churches & chapels"]].map(([k, v]) => ({value: "s" + k, label: v, group: "Ruins, castles & churches"}))]);
 const refilter = () => { shown = PAGE; update(); };
 
 function update(){
-  const conts = F.cont.sel, ccs = F.country.sel, towns = F.city.sel, picks = F.type.sel,
+  const conts = F.cont.sel, ccs = F.country.sel, towns = F.city.sel, provs = F.prov.sel, picks = F.type.sel,
         src = $("fsrc").value, q = $("q").value.trim().toLowerCase(),
         sps = [...picks].filter(p => p[0] === "s").map(p => p[1]), tys = new Set([...picks].filter(p => p[0] !== "s")),
         num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
@@ -410,18 +428,22 @@ function update(){
   // picking "House" or one of the ruins and castles shows house listings, which the "house listing" flag otherwise hides
   const ok = r => fl || clean(r) || ((tys.has("H") || sps.length) && houseOnly(r));
   const isType = r => !picks.size || tys.has(r[12]) || sps.some(s => (r[16] || "").includes(s));
+  // the province list: the picked countries' provinces and states (biggest first, as it's a long list)
+  F.prov.setItems(F.country.items.filter(c => ccs.has(c.value) && PROVS[c.value]).flatMap(c =>
+    [...PROVS[c.value]].map(p => ({value: c.value + "|" + p, label: p, group: ccs.size > 1 ? c.label : ""}))));
   // the town list: the picked countries' towns, biggest first
   F.city.setItems(F.country.items.filter(c => ccs.has(c.value) && TOWNS[c.value]).flatMap(c =>
     [...TOWNS[c.value]].sort((a, b) => ((POP[c.value] || {})[b] || 0) - ((POP[c.value] || {})[a] || 0))
       .map(t => ({value: c.value + "|" + t, label: t, group: ccs.size > 1 ? c.label : ""}))));
   // one pass: the listings to show, and each list's counts under every filter but its own
   // (and the continents' under every filter but the places)
-  const cn = {type: new Map(), cont: new Map(), country: new Map(), city: new Map()}, add = (m, k) => m.set(k, (m.get(k) || 0) + 1);
+  const cn = {type: new Map(), cont: new Map(), country: new Map(), prov: new Map(), city: new Map()}, add = (m, k) => m.set(k, (m.get(k) || 0) + 1);
   VIEW = [];
   for (const r of ALL) {
     if (!base(r)) continue;
     const ct = contOf(r[3]), inCont = !conts.size || conts.has(ct), inCountry = !ccs.size || ccs.has(r[3]),
-          town = r[3] + "|" + r[13], inTown = !towns.size || towns.has(town), here = inCont && inCountry && inTown;
+          prov = r[3] + "|" + r[17], inProv = !provs.size || provs.has(prov),
+          town = r[3] + "|" + r[13], inTown = !towns.size || towns.has(town), here = inCont && inCountry && inProv && inTown;
     if (here) {  // type counts: what you'd see if you ticked only that type
       if (fl || clean(r) || (r[12] === "H" && houseOnly(r))) add(cn.type, r[12]);
       if (r[16] && (fl || clean(r) || houseOnly(r))) for (const s of r[16]) add(cn.type, "s" + s);
@@ -429,11 +451,12 @@ function update(){
     if (!ok(r) || !isType(r)) continue;
     add(cn.cont, ct);  // every continent stays on the list, so you can widen the search from a country
     if (inCont) add(cn.country, r[3]);
-    if (inCont && inCountry && r[13]) add(cn.city, town);
+    if (inCont && inCountry && inTown && r[17]) add(cn.prov, prov);
+    if (inCont && inCountry && inProv && r[13]) add(cn.city, town);
     if (here) VIEW.push(r);
   }
   for (const k in F) { F[k].counts = cn[k]; F[k].render(); }
-  $("cityblock").hidden = !F.city.items.length;
+  $("placeblock").hidden = !F.city.items.length && !F.prov.items.length;
   renderChips();
   renderList();
   if (map && !$("p-map").hidden) { clearTimeout(mapTimer); mapTimer = setTimeout(renderMap, 150); }
@@ -457,7 +480,7 @@ function renderChips(){
   const val = id => $(id).value.trim(), field = (id, label) => val(id) && {label: label(val(id)), clear: () => { $(id).value = ""; }};
   const tick = (id, label) => $(id).checked && {label, clear: () => { $(id).checked = false; }};
   CHIPS = [field("q", v => `“${v}”`), field("fmin", v => `From ${withCur(v)}`), field("fmax", v => `Up to ${withCur(v)}`),
-    ...["type", "cont", "country", "city"].flatMap(k => [...F[k].sel].map(v => ({label: F[k].labelOf(v), clear: () => F[k].sel.delete(v)}))),
+    ...["type", "cont", "country", "prov", "city"].flatMap(k => [...F[k].sel].map(v => ({label: F[k].labelOf(v), clear: () => F[k].sel.delete(v)}))),
     field("facmin", v => `${v}+ acres`), field("facmax", v => `Up to ${v} acres`), field("fppa", v => `Up to ${withCur(v)} an acre`),
     $("fsrc").value && {label: srcName($("fsrc").value), clear: () => { $("fsrc").value = ""; }},
     tick("farea", "Area listed"), tick("fflag", "Flagged included")].filter(Boolean);
@@ -550,7 +573,7 @@ function renderMap(){
   pins.addLayers(on);
   const off = VIEW.length - on.length;
   $("sub").textContent = `${on.length.toLocaleString("en-US")} on the map` + (off ? `, ${off.toLocaleString("en-US")} without a location` : "");
-  const sel = [F.cont, F.country, F.city].map(m => [...m.sel].sort().join(",")), town = F.city.sel.size;
+  const sel = [F.cont, F.country, F.prov, F.city].map(m => [...m.sel].sort().join(",")), town = F.city.sel.size;
   if (sel.join("|") !== mapAt) {  // place changed: show the picked continents, countries or towns, or the world for none
     mapAt = sel.join("|");
     if (sel.some(Boolean) && on.length) {

@@ -1982,6 +1982,52 @@ def towns(recs):
     return [spelling[key] for key in keys]
 
 
+def provinces(recs):
+    """State, province or region of each listing, for the site's Province/state list. LandWatch's region is the US
+    state. Others take the province of the nearest place with 1,000+ people in the same country
+    (geo/admin1_points.tsv.gz, built from GeoNames by tools/build_admin1.py); listings without a location take the
+    last part of their address ("Nasu, Tochigi"), spelled as GeoNames spells it when the names match."""
+    grid, spell = {}, {}  # (country, lat cell, lon cell) -> [(lat, lon, province)]; (country, key) -> province
+    want = {(r.get("country") or "").upper() for r in recs}
+    try:
+        with gzip.open(os.path.join(HERE, "geo", "admin1_points.tsv.gz"), "rt", encoding="utf-8") as f:
+            for line in f:
+                cc, lat, lon, prov = line.rstrip("\n").split("\t")
+                if cc in want:
+                    lat, lon = float(lat), float(lon)
+                    grid.setdefault((cc, math.floor(lat), math.floor(lon)), []).append((lat, lon, prov))
+                    spell[cc, place_key(prov)] = prov
+    except OSError:
+        log("geo/admin1_points.tsv.gz is missing: provinces come from addresses only")
+
+    def nearest(cc, lat, lon):
+        k = math.cos(math.radians(lat))
+        for reach in (1, 2, 4):  # the cells around the listing, then further out where places are sparse
+            pts = [p for i in range(-reach, reach + 1) for j in range(-reach, reach + 1)
+                   for p in grid.get((cc, math.floor(lat) + i, math.floor(lon) + j), ())]
+            if pts:
+                return min(pts, key=lambda p: (p[0] - lat) ** 2 + ((p[1] - lon) * k) ** 2)[2]
+        return ""
+
+    out = []
+    for r in recs:
+        cc = (r.get("country") or "").upper()
+        place = (r.get("region_en") or r.get("region") or "").strip()
+        prov = ""
+        if r.get("source") == "landwatch":
+            prov = place
+        elif r.get("lat") is not None and r.get("lon") is not None:
+            prov = nearest(cc, r["lat"], r["lon"])
+        if not prov and r.get("source") in ("olx", "ieichiba", "mercadolibre") and ", " in place:
+            last = place.rsplit(",", 1)[1].strip()
+            if cc == "AR" and re.match(r"bs\.? ?as\b|buenos aires\b", last, re.I):  # "Bs.As. G.B.A. Norte"
+                last = "Buenos Aires"
+            key = place_key(re.sub(r"\b(region|oblast|province|prefecture|county)\b", "", last, flags=re.I))
+            prov = spell.get((cc, key)) or spell.get((cc, place_key(last))) or last
+        out.append(prov[:60])
+    return out
+
+
 def site_cutoff(recs, fresh_days=3):
     """The site shows listings seen within a few days of the newest scrape."""
     stamps = [r.get("scraped_at") for r in recs if r.get("scraped_at")]
@@ -2030,7 +2076,7 @@ def build_site(recs, rates):
         return
     recs = [r for r in recs if (r.get("scraped_at") or "") >= cutoff and r.get("price_usd") is not None]
     rows, countries = [], set()
-    for r, place in zip(recs, towns(recs)):
+    for r, place, prov in zip(recs, towns(recs), provinces(recs)):
         codes = "".join(c for txt, c in FLAG_CODES if txt in (r.get("flags") or ""))
         if "W" in codes:
             continue
@@ -2043,7 +2089,7 @@ def build_site(recs, rates):
                      r["title"][:110] if r.get("title_en") else None,  # the original title, when translated
                      TYPE_CODES.get(r.get("type"), "V"), place,
                      rnd(r.get("price"), 2), (r.get("currency") or "USD").upper(),  # the price in its own currency
-                     "".join(TAG_CODES[t] for t in (r.get("tags") or "").split(",") if t)])
+                     "".join(TAG_CODES[t] for t in (r.get("tags") or "").split(",") if t), prov])
     data = {"generated": datetime.now().astimezone().isoformat(timespec="seconds"),
             "countries": len(countries), "rows": rows, "rates": rates,
             "populations": town_populations({(row[3], row[13]) for row in rows if row[13]})}
