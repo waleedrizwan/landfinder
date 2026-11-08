@@ -212,8 +212,10 @@
       "fp": "64ccdf2065",
       "id": "B012",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:25"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:25",
+      "verify_reason": "All 4 parametrized cases fail on the current code. 'Terreno de 1.250 m²' returns 0.000309 acres instead of 0.309, 'Terreno 12.500 m2 à vendre' returns 0.00309 instead of 3.09, and 'Terrain 1.250,00 m²' returns 0.0618 (250 m²). acres_from_text only normalises a decimal comma, so a dot thousands separator is parsed as a decimal point. It is called directly on scraped titles, descriptions and lotAreaString (lines 554, 1389, 1751), so real listings can hit it.",
+      "test_file": "tests/test_bughunt_b012.py"
     },
     {
       "file": "landfinder.py",
