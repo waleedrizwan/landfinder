@@ -148,18 +148,26 @@ def acres_from_text(text):
     t = re.sub(r"https?://\S+", " ", text.lower())  # a link's "-chemin-des-jardins-" doesn't make the text French
     t = FLOOR_AREA_RX.sub(" ", t)
     romance = bool(re.search(r"\b(de|des|la|le|du|à|superficie|terrain|terre|hectares? de|à vendre|venta|terreno)\b", t))
+    # "1/4 acre", "2 1/2 acres" -> "0.25 acre", "2.5 acres" (otherwise the regex reads only the "4" or the "2")
+    t = re.sub(r"\b(?:(\d+)\s+)?(\d+)\s*/\s*([1-9]\d*)(?=\s*(?:acres?|ac\b|hectares?|ha\b|hect))",
+               lambda m: "%g" % (int(m.group(1) or 0) + int(m.group(2)) / int(m.group(3))), t)
     pats = [
         (r"((?:\d[\d,]*)?\.?\d+)\s*(?:acres?|ac\b|acre lot)", 1.0),
         (r"([\d][\d,]*\.?\d*)\s*(?:hectares?|ha\b|hect)", 2.4710538),
         (r"([\d][\d,]*\.?\d*)\s*" + SQFT, 1 / 43560.0),
-        (r"([\d][\d,]*\.?\d*)\s*(?:m²|m2\b|sq\.?\s*m\b|square\s*met)", 1 / ACRE_M2),
+        (r"(\d{1,3}(?:\.\d{3})+(?:,\d+)?|[\d][\d,]*\.?\d*)\s*(?:m²|m2\b|sq\.?\s*m\b|square\s*met)", 1 / ACRE_M2),
     ]
     for pat, factor in pats:
         m = re.search(pat, t)
         if m:
             raw = m.group(1).rstrip(".,")
-            # "5,62 ha" and French/Spanish "1,140 hectare" use a decimal comma; no plot is "13,712" = 13.7 sq ft or m²
-            if re.search(r",\d{1,2}$", raw) or (romance and factor >= 1 and re.fullmatch(r"\d{1,3},\d{3}", raw)):
+            # "1.250 m²" and "1.250,00 m²": a dot thousands separator. No plot is 1.25 m², so this is safe for m²
+            # (not for hectares, where "1.250 ha" may really be 1.25 ha)
+            if factor == 1 / ACRE_M2 and re.fullmatch(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?", raw):
+                raw = raw.replace(".", "").replace(",", ".")
+            # "5,62 ha" and French/Spanish "1,140 hectare" use a decimal comma; no plot is "13,712" = 13.7 sq ft or m².
+            # Only for hectares: "1,000 acres" is a thousand in every language, and "LA" (Louisiana) sets `romance`
+            elif re.search(r",\d{1,2}$", raw) or (romance and factor > 1 and re.fullmatch(r"\d{1,3},\d{3}", raw)):
                 raw = raw.replace(".", "").replace(",", ".")
             v = num(raw)
             if v and v > 0:
@@ -195,19 +203,26 @@ def load_fx():
     """USD exchange rates, cached for the day."""
     path = os.path.join(DATA, "fx.json")
     today = datetime.now().strftime("%Y-%m-%d")
-    if os.path.exists(path):
-        d = json.load(open(path))
-        if d.get("date") == today:
-            return d["rates"]
+    cached = None
+    try:
+        with open(path) as f:
+            cached = json.load(f)
+        if cached.get("date") == today:
+            return cached["rates"]
+    except (OSError, ValueError, KeyError, AttributeError):  # missing, or left half-written by a killed run
+        cached = None
     try:
         r = requests.get("https://open.er-api.com/v6/latest/USD", timeout=20)
         rates = r.json()["rates"]
-        json.dump({"date": today, "rates": rates}, open(path, "w"))
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"date": today, "rates": rates}, f)
+        os.replace(tmp, path)  # atomic: a run killed mid-write can't leave a truncated fx.json
         return rates
     except Exception as e:
-        if os.path.exists(path):
+        if cached and cached.get("rates"):
             log("FX fetch failed (%s); using cached rates" % e)
-            return json.load(open(path))["rates"]
+            return cached["rates"]
         raise
 
 
@@ -251,7 +266,7 @@ LEASE_USE_RX = re.compile(r"\b(industrial|commercial|development land|storage|pa
                            r"|yard space|open space|laydown|outdoor storage)\b", re.I)
 SALE_WORDS_RX = re.compile(r"\b(purchas\w*|buyers?|sellers?|all offers|offers? to purchase|sale|sold|own(?:ership)?|invest\w*|title|deed|taxes)\b", re.I)
 KIJIJI_LEASE_UNDER_USD = 8000  # the leases seen run CAD 5,000-8,500 a month; Prairie-town commercial lots sell from ~CAD 15,000
-PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|ac\b|hect|ha\b|sotk|square met)"
+PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro\b(?!\s*(?:area|region|city|station|stop|line|bus|rail|access|transit))|sq\.?\s*m\b|vara|acre\b|ac\b|hect|ha\b|sotk|square met)"
                          r"|(?:(?:\bza|\bза|\bpe|\bper|\bx)\s+|/\s*)(?:1\s*)?(m2\b|m²|mp\b|mkw\b|m\s*kw\b|metr|сот|м2|м²|кв\.?\s*м|ar\b|ara\b"
                          r"|га\b|гектар|hektar|hectar|ha\b|dekar|декар|дка\b)"
                          r"|\bна\s+(?:1\s*)?(?:декар|дка\b|сотк|кв\.?\s*м|м2|м²)"  # Bulgarian "цена на декар"
@@ -1545,12 +1560,25 @@ def crawl_olx(fetch, store, countries, a, rates, kinds=("land",)):
         log("olx        [%d/%d] %-28s +%d listings" % (i, len(jobs), sid.split(" ", 1)[1], total_new))
 
 
+def meli_number(n):
+    """A Mercado Libre number in either convention: Argentina writes '6.179' (thousands) and '1,5', Mexico
+    writes '1,000' and '1.5'. A separator followed by exactly 3 digits groups thousands; otherwise it's a decimal."""
+    n = n.strip(".,")
+    if "." in n and "," in n:  # '1.250,50' or '1,250.50': the last separator is the decimal one
+        dec = "," if n.rfind(",") > n.rfind(".") else "."
+        return num(n.replace("." if dec == "," else ",", "").replace(",", "."))
+    sep = "." if "." in n else "," if "," in n else None
+    if sep and (n.count(sep) > 1 or re.search(r"\%s\d{3}$" % sep, n)):
+        return num(n.replace(sep, ""))
+    return num(n.replace(",", "."))
+
+
 def meli_acres(attrs):
     """'6.179 m² totales' or '10 ha totales' -> acres. Built area ('161 m² cubiertos') is skipped."""
-    for n, unit, kind in re.findall(r"([\d.,]+)\s*(m²|ha)\s*(\w*)", attrs):
+    for n, unit, kind in re.findall(r"([\d.,]+)\s*(m²|ha\b)\s*(\w*)", attrs):  # \b: '3 habitaciones' isn't 3 ha
         if kind.lower().startswith(("cubiert", "constru", "útil", "util")):
             continue
-        v = num(n.replace(".", "").replace(",", "."))
+        v = meli_number(n)
         if v:
             return v * 2.4710538 if unit == "ha" else v / ACRE_M2
     return None
@@ -1629,7 +1657,7 @@ def crawl_meli(fetch, store, countries, a, rates, kinds=("land",)):
 
 
 YEN_RX = re.compile(r"(?:([\d,.]+)\s*億)?\s*(?:([\d,.]+)\s*万)?\s*(?:([\d,]+))?\s*円")
-JP_LAND_RX = re.compile(r"(?:土地|敷地|面積)[^\d\n]{0,8}([\d,]+(?:\.\d+)?)\s*(㎡|m2|m²|平米|平方メートル|坪)")
+JP_LAND_RX = re.compile(r"(?:土地|敷地|(?<![物床築有])面積)[^\d\n]{0,8}([\d,]+(?:\.\d+)?)\s*(㎡|m2|m²|平米|平方メートル|坪)")
 # a building on the plot ("住宅地", a residential area, and "別荘を建てたい", to build a holiday home, don't count)
 JP_HOUSE_RX = re.compile(r"建物(?:面積)?\s*[：:]?\s*[\d,.]+\s*(?:㎡|m2|m²|坪)|空き家|空家|古家|古屋|中古住宅|家屋|戸建|平屋|古民家|母屋"
                          r"|住宅付|家付|築\d+年|昭和\d+年築|平成\d+年築|築古|住宅です|和風住宅|建てた(?:家|住宅|和)")
@@ -1794,8 +1822,11 @@ def verify_cheapest(store, a, n=60, rounds=4):
         else:
             html = get(r["url"])
             desc = landwatch_full_description(html) if html else None
-            if desc:
-                rec["description"] = desc
+            if not desc:
+                # removed, blocked or timed out: save nothing. Saving would stamp it verified today, so a dead
+                # listing would never be re-checked and a blocked one wouldn't be retried
+                return
+            rec["description"] = desc
         store.add([rec], seen=False)
 
     def worker(src):
@@ -2009,9 +2040,14 @@ def collapse_similar(recs):
     for i, r in enumerate(recs):
         cc, usd, acres = r.get("country"), round(r.get("price_usd") or 0), r.get("acres")
         a2 = None if acres is None else round(acres, 2)
-        keys = [("t", r.get("source"), title_key(r.get("title")), acres)]
-        if r.get("title_en") or r.get("title"):
-            keys.append(("e", title_key(r.get("title_en") or r.get("title")), a2))
+        # Two 'Terreno en venta' at one price in different towns are different parcels, so the region is part of the
+        # title keys; a title with no letters or digits ('•', '-', '') says nothing about which parcel it is
+        region = title_key(r.get("region"))
+        tk = title_key(r.get("title"))
+        keys = [("t", r.get("source"), region, tk, acres)] if tk else []
+        ek = title_key(r.get("title_en") or r.get("title"))
+        if ek:
+            keys.append(("e", title_key(r.get("region_en") or r.get("region")), ek, a2))
         if r.get("lat") is not None and r.get("source") != "landwatch":  # LandWatch pins sit at the ZIP code's center
             keys.append(("g", round(r["lat"], 3), round(r["lon"], 3), a2))
         desc = re.sub(r"[\W_]", "", (r.get("description") or "").lower())
@@ -2070,7 +2106,8 @@ def build_outputs(store, english=True):
         m = med.get(r.get("country"))
         if m and r["usd_per_acre"] and r["usd_per_acre"] < m / 250 and r.get("source") not in CHEAP_IS_REAL:
             r["flags"] = "; ".join(x for x in (r["flags"], "far below other listings in this country") if x)
-    recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # cheapest total price first
+    recs.sort(key=lambda r: r.get("scraped_at") or "", reverse=True)  # newest first among equal prices, so a
+    recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # repost keeps its live URL; cheapest first
     recs = collapse_similar(recs)
     csv_path = os.path.join(HERE, "results.csv")
     with open(csv_path, "w", newline="") as f:
@@ -2084,7 +2121,9 @@ def build_outputs(store, english=True):
             w.writerow(row)
     slim = [{k: r.get(k) for k in COLS if k not in ("lat", "lon", "scraped_at")} for r in recs]
     tpl = open(os.path.join(HERE, "report_template.html")).read()
-    html = tpl.replace("/*DATA*/[]", json.dumps(slim).replace("</", "<\\/")).replace(
+    # escape <, > and & so a scraped title containing "</script>" can't end the data script and inject HTML
+    data = json.dumps(slim).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    html = tpl.replace("/*DATA*/[]", data).replace(
         "{{GENERATED}}", datetime.now().strftime("%Y-%m-%d %H:%M"))
     open(os.path.join(HERE, "report.html"), "w").write(html)
     build_site(recs, rates)
@@ -2251,6 +2290,7 @@ def build_site(recs, rates):
     cutoff = site_cutoff(recs)
     if not cutoff:
         return
+    newest = datetime.fromisoformat(max(r["scraped_at"] for r in recs if r.get("scraped_at")))  # before the filter: it may keep nothing
     recs = [r for r in recs if (r.get("scraped_at") or "") >= cutoff and r.get("price_usd") is not None]
     rows, countries = [], set()
     for r, place, prov in zip(recs, towns(recs), provinces(recs)):
@@ -2268,7 +2308,6 @@ def build_site(recs, rates):
                      rnd(r.get("price"), 2), (r.get("currency") or "USD").upper(),  # the price in its own currency
                      "".join(TAG_CODES[t] for t in (r.get("tags") or "").split(",") if t), prov,
                      r.get("similar") or 0])  # how many near-identical listings this row stands for (collapse_similar)
-    newest = datetime.fromisoformat(max(r["scraped_at"] for r in recs if r.get("scraped_at")))
     if newest < datetime.now() - timedelta(days=1):
         log("site: WARNING - the newest listing was scraped %s; the site is being rebuilt from old data" % newest.strftime("%Y-%m-%d %H:%M"))
     data = {"generated": newest.astimezone().isoformat(timespec="seconds"),  # shown as "Updated ..." on the site
