@@ -1996,8 +1996,11 @@ def verify_cheapest(store, a, n=60, rounds=4):
         else:
             html = get(r["url"])
             desc = landwatch_full_description(html) if html else None
-            if desc:
-                rec["description"] = desc
+            if not desc:
+                # removed, blocked or timed out: save nothing. Saving would stamp it scraped and verified today,
+                # so a dead listing would never age off the site, and a blocked one wouldn't be retried
+                return
+            rec["description"] = desc
         store.add([rec])
 
     def worker(src):
