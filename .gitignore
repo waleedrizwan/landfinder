@@ -10,3 +10,4 @@ site/
 logs/
 .wrangler/
 data-test/
+.dev.vars

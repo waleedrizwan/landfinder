@@ -150,6 +150,11 @@ original; searching in the original language still works. `--no-translate` skips
 `claude` CLI the original text is kept.
 
 - `./publish.sh` deploys `site/` to Cloudflare Pages with `wrangler`. Run `npx wrangler login` once first.
+- The site asks for a password (`functions/_middleware.js`): every page, `data.json` and the API answer only to a
+  browser that has logged in, and the login sets a cookie that lasts 30 days. The password is the project's
+  `SITE_PASSWORD` secret; set or change it with `npx wrangler pages secret put SITE_PASSWORD --project-name cheapest-land`
+  (changing it logs everyone out). For local testing put `SITE_PASSWORD=...` in `.dev.vars` (not committed) and run
+  `npx wrangler pages dev site`.
 - `./install_daily.sh` schedules `daily.sh` with launchd: a fresh scrape at 6:00 every morning, with
   windows hidden in the Dock, then a deploy. If the Mac is asleep at that time, macOS runs the job when it
   wakes. Logs go to `logs/`. Use `./install_daily.sh 7 30` to change the time, or `./install_daily.sh off`
