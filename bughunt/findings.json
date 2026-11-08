@@ -716,8 +716,10 @@
       "fp": "849a4e8ddf",
       "id": "B040",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "The test runs the real functions/api/visitors.js under node with a fake D1 and a `null` JSON body. It fails with `TypeError: Cannot read properties of null (reading 'first')`, so the uncaught throw means a 500. The bundled page always sends `{first:true}`, so only a direct client request triggers it, and the endpoint is public. The `try/catch` around `request.json()` shows malformed bodies were meant to be tolerated. Note that tests/test_bughunt_b037.py already tests this same defect, so b040 duplicates it.",
+      "test_file": "tests/test_bughunt_b040.py"
     }
   ]
 }

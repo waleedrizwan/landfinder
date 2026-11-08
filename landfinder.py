@@ -256,7 +256,7 @@ TILE_SCALE = 0.5  # tiled windows draw pages at half size
 CLAIM_RX = re.compile(r"\b(access deeds?|membership|timeshare|mining claims?|lode claims?|placer claims?|gold claims?|mineral claims?|mineral rights?|unpatented|lode gold|mining|prospecting)\b", re.I)
 LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\b(?:sub-?)?lease[ds]?\b|\bleasing\b|\bfor rent\b|\brental\b|à louer|\btenants?\b|/\s*month|\bmonthly\b|en alquiler|se alquila|\barriendo\b"
                       r"|dzier[żz]aw|wynaj[eę]|do wynaj|оренд|аренд|\bздам\b|\bздаю\b|\bсдам\b|\bсдаю\b|под наем|[iî]nchiri|arrend|\balug|\bijara|\ben renta\b|\bse renta\b|\bin affitto\b|\baffittasi\b)", re.I)
-PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|hect|ha\b|sotk|square met)"
+PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro\b(?!\s*(?:area|region|city|station|stop|line|bus|rail|access|transit))|sq\.?\s*m\b|vara|acre\b|hect|ha\b|sotk|square met)"
                          r"|(?:(?:\bza|\bза|\bpe|\bper|\bx)\s+|/\s*)(?:1\s*)?(m2\b|m²|mp\b|metr|сот|м2|м²|кв\.?\s*м|ar\b|ara\b)"
                          r"|\b(?:so|su)[‘'ʻ’`]?t(?:ig[‘'ʻ’`]?i|ixi|kasi)\s*\$?\s*\d|сотк[аи]\s*[-–—:]?\s*\$?\s*\d", re.I)  # Uzbek/Russian "its sotka [costs] 500"
 # "1/8 udziału", "udział 1/4 w prawie własności", "1/2 interest": only part of the property is for sale
