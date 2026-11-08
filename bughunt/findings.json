@@ -266,8 +266,10 @@
       "fp": "0ce404cccc",
       "id": "B015",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:25"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:25",
+      "verify_reason": "meli_acres' regex has no word boundary after 'ha', so '3 habitaciones' or '3 hab.' matches as 3 hectares (7.41 acres). parse_meli passes the scraped attributes_list text straight into it, so real house listings hit this. All 3 tests fail on current code: a full parse_meli page returns acres != None, '3 hab. | 2 baños' returns a value, and a real '500 m² totales' after the bedroom count is never reached.",
+      "test_file": "tests/test_bughunt_b015.py"
     },
     {
       "file": "landfinder.py",
