@@ -644,8 +644,10 @@
       "fp": "31757a0f1c",
       "id": "B036",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "build_outputs pastes json.dumps(slim) into report.html without escaping '<'. A listing titled '</script><script>alert(1)</script>' ends the data script block at the first '</script>', and the test fails on the current code because of that. Titles and regions come from scraped third-party ads, so real data can trigger it.",
+      "test_file": "tests/test_bughunt_b036.py"
     },
     {
       "file": "functions/api/visitors.js",
