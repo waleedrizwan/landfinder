@@ -320,8 +320,10 @@
       "fp": "de7cf6bdc1",
       "id": "B018",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:27"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:27",
+      "verify_reason": "The regex in `meli_acres` has no word boundary after `ha`, so `3 habitaciones` is read as 3 ha. `meli_acres('161 m² cubiertos | 3 habitaciones')` returns about 7.41 acres instead of None, and `parse_meli` feeds it real card attribute text. The new test fails on the current code. Tests b014 and b015 already cover the same root cause.",
+      "test_file": "tests/test_bughunt_b018.py"
     },
     {
       "file": "landfinder.py",
