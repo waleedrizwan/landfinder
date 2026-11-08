@@ -572,8 +572,10 @@
       "fp": "596e195867",
       "id": "B032",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T04:00:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T04:00:03",
+      "verify_reason": "The test fails on the current code. The dedupe in build_outputs keeps the stale old-URL record, because it sorts first, and drops the fresh repost. build_site then filters the stale record out by scraped_at (another fresh listing keeps the cutoff at the new run), so the listing is missing from data.json. Store.add stamps scraped_at on every write and Store.all keeps first-seen order, so real scraped data can hit this.",
+      "test_file": "tests/test_bughunt_b032.py"
     },
     {
       "file": "landfinder.py",
