@@ -284,8 +284,10 @@
       "fp": "14675c6d48",
       "id": "B016",
       "chunk": "parsers_a",
-      "status": "found",
-      "found_at": "2026-11-08T03:57:25"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:57:25",
+      "verify_reason": "JP_LAND_RX accepts a bare '面積', so it matches the tail of '建物面積' and '延床面積'. jp_acres('建物面積 80㎡ 土地面積 500㎡') returns 0.0198 acres (80 m²) instead of 500 m², and jp_acres('延床面積 80㎡ 築30年') returns 0.0198 acres instead of None. parse_ieichiba passes real listing descriptions straight into jp_acres, and the code's own JP_HOUSE_RX expects '建物面積 N㎡' in those descriptions, so the trigger is realistic. I did not build a full Ieichiba card to run through parse_ieichiba. The tests call jp_acres directly.",
+      "test_file": "tests/test_bughunt_b016.py"
     },
     {
       "file": "landfinder.py",
