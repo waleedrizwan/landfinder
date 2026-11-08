@@ -47,7 +47,7 @@ export async function onRequestPost({request, env}){
   await setup(db);
   let body = {};
   try { body = await request.json(); } catch (e) {}
-  if (body.first === true && await countable(db, request)) await db.prepare("UPDATE total SET n = n + 1 WHERE id = 1").run();
+  if (body?.first === true && await countable(db, request)) await db.prepare("UPDATE total SET n = n + 1 WHERE id = 1").run();
   const row = await db.prepare("SELECT n FROM total WHERE id = 1").first();
   return Response.json({total: row.n}, {headers: {"cache-control": "no-store"}});
 }
