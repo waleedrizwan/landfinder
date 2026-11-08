@@ -518,8 +518,10 @@
       "fp": "166060b476",
       "id": "B029",
       "chunk": "outputs",
-      "status": "found",
-      "found_at": "2026-11-08T03:59:12"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:59:12",
+      "verify_reason": "build_outputs runs a record titled `</script><img src=x onerror=alert(1)>` through json.dumps and inserts it as-is into `const D=`. The generated report.html has a raw `</script>` inside the data array, so the script block ends at the title and the rest is parsed as HTML. The test fails on the current code. Titles and regions come from scraped listings, so real data can trigger this.",
+      "test_file": "tests/test_bughunt_b029.py"
     },
     {
       "file": "landfinder.py",
