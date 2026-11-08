@@ -446,8 +446,10 @@
       "fp": "dfe8b14da7",
       "id": "B025",
       "chunk": "parsers_b",
-      "status": "found",
-      "found_at": "2026-11-08T03:59:03"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:59:03",
+      "verify_reason": "When the LandWatch ad page returns nothing (removed or blocked), `recheck` still calls `store.add([rec])`. `Store.add` stamps `scraped_at` with now, so the dead listing looks freshly scraped. The test seeds a record dated 2026-10-01 and runs `verify_cheapest` with a browser that returns None. It fails because the latest `scraped_at` is now 2026-11-08T04:07:06, not the old date.",
+      "test_file": "tests/test_bughunt_b025.py"
     },
     {
       "file": "landfinder.py",
