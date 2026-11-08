@@ -32,8 +32,10 @@
       "fp": "71f0419c91",
       "id": "B002",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:15"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:15",
+      "verify_reason": "acres_from_text is called on scraped titles, descriptions and lotAreaString (landfinder.py lines 554, 1389, 1751). On the current code, 'Terre à vendre, 1,000 acres' returns 1.0 and 'Land 2,500 acres near Baton Rouge, LA' returns 2.5, so both parametrized tests fail. The `factor >= 1` check in the decimal-comma rule also matches acres (factor 1.0), not only hectares, and the 'la' in 'LA' sets the Romance flag.",
+      "test_file": "tests/test_bughunt_b002.py"
     },
     {
       "file": "landfinder.py",
