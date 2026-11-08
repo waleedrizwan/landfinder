@@ -227,6 +227,9 @@ LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\b(?:sub-?)?lease[ds]?\
 # Japanese leasehold (借地権付き): the house is sold, the land under it stays rented. Only the title counts: descriptions
 # say "賃貸も可能" (could also be rented out) about land that is for sale.
 JP_LEASEHOLD_RX = re.compile(r"借地")
+# the bare word in a title ("Private Unit - Casa Dojolu — Rent"); descriptions say "rent it out" about land for sale
+RENT_TITLE_RX = re.compile(r"\brent\b|\brenta\b|\balquiler\b|\baluguel\b|\bwynajem\b|\bаренда\b|\bоренда\b", re.I)
+RENT_TITLE_UNDER_USD = 15000
 # REALTOR.ca feeds commercial land for lease into Kijiji's land-for-sale section, priced at the monthly rent, with nothing
 # in the ad saying so ("Great functional open space in an industrial area", CAD 5,000). An agent's industrial or commercial
 # lot in Canada doesn't sell for that; a real sale ad talks of buyers, offers or the seller.
@@ -270,6 +273,12 @@ def burial_plot(title):
 # sites where owners really do sell (or give away) houses and land for next to nothing, so a tiny or round price
 # is the price: Japanese owners of empty houses pay to keep them and will take ¥0 or ¥10,000 to be rid of them
 CHEAP_IS_REAL = ("ieichiba",)
+# Homes listed at a monthly rent: a sale is never under $40 per m2 of floor space (a Bulgarian village house at
+# EUR 3,000 for 80 m2 is $44), while rents run $5-30 per m2 a month; a Manhattan rent is higher per m2, but no home
+# in a rich country sells for under $10,000. Cheap ruins in Portugal, Italy, Spain, France and the Balkans are real,
+# so those countries aren't on the list; Japan's empty houses are handled by CHEAP_IS_REAL.
+HOUSE_MIN_USD_M2, HOUSE_FLOOR_USD = 40, 10000
+PRICEY_COUNTRIES = set("US CA AU NZ GB IE DE NL BE LU AT CH DK SE NO FI IS SG HK AE QA KW IL KR AW KY BM".split())
 
 
 def flag(rec):
@@ -295,8 +304,15 @@ def flag(rec):
             f.append("wrong currency - the title gives a much higher US dollar price")
     if rec.get("source") == "olx" and rec.get("country") == "PL" and ALLOTMENT_RX.search(text):
         f.append("allotment garden plot - usage rights, not land ownership")
-    if rec.get("kind") == "houses" or "homes-for-sale" in (rec.get("url") or ""):
+    house = rec.get("kind") == "houses" or "homes-for-sale" in (rec.get("url") or "")
+    if house:
         f.append("house listing - not vacant land")
+    # a home priced at a few dollars per m2 of floor, or a few thousand dollars where no home sells for that, is a
+    # monthly rent fed to the site as a sale (MLS leases on Properstar, "1020 Vail View Drive" timeshare weeks)
+    if usd and rec.get("living_m2") and usd / rec["living_m2"] < HOUSE_MIN_USD_M2 and not real:
+        f.append("lease/rental - under $%d per m2 of floor space is a monthly rent, not a house price" % HOUSE_MIN_USD_M2)
+    elif house and usd is not None and usd < HOUSE_FLOOR_USD and rec.get("country") in PRICEY_COUNTRIES and not real:
+        f.append("lease/rental - no home in this country sells for under $%s; this is a monthly rent" % format(HOUSE_FLOOR_USD, ","))
     if rec.get("source") == "kijiji" and usd is not None and usd < 3000:
         f.append("price too low for Canada - likely a deposit, lease or placeholder")
     elif (rec.get("source") == "kijiji" and usd is not None and usd < KIJIJI_LEASE_UNDER_USD and REALTOR_RX.search(text)
@@ -304,7 +320,10 @@ def flag(rec):
         f.append("lease/rental - a REALTOR.ca commercial lot at a monthly rent, not a sale price")
     if rec.get("source") == "properstar" and usd is not None and usd < 1500:
         f.append("price may be per m2/acre/hectare (agency listing under $1,500)")
-    if LEASE_RX.search(text) or JP_LEASEHOLD_RX.search(rec.get("title") or ""):
+    titles = " | ".join(str(rec.get(k) or "") for k in ("title", "title_en"))
+    # a bare "rent" in the title counts at a rent-sized price; above that it's "rent it out" about an income property
+    if (LEASE_RX.search(text) or (usd is not None and usd < RENT_TITLE_UNDER_USD and RENT_TITLE_RX.search(titles))
+            or JP_LEASEHOLD_RX.search(rec.get("title") or "")):
         f.append("lease/rental - not a sale price")
     if placeholder_price(rec.get("price")) and not real:
         f.append("placeholder price")
@@ -1159,13 +1178,15 @@ def parse_properstar(html, slug, kind="land"):
             continue
         pv = next((v for v in vals if v.get("type") == "Original"), vals[0])
         area = L.get("area") or {}
-        m2 = None
+        m2 = living = None
         for v in [area] + (area.get("values") or []):
-            land = v.get("land")
             unit = ((v.get("unit") or {}).get("id"))
-            if land and unit in AREA_TO_M2:
-                m2 = land * AREA_TO_M2[unit]
-                break
+            if unit not in AREA_TO_M2:
+                continue
+            if v.get("land") and m2 is None:
+                m2 = v["land"] * AREA_TO_M2[unit]
+            if (v.get("living") or v.get("internal")) and living is None:  # a home's floor space
+                living = (v.get("living") or v.get("internal")) * AREA_TO_M2[unit]
         loc = L.get("location") or {}
         title = L.get("automaticTitle") or ""
         en = [t["text"] for t in (L.get("title") or []) if t.get("language") == "en"]
@@ -1178,6 +1199,7 @@ def parse_properstar(html, slug, kind="land"):
             "price": pv.get("value"),
             "currency": pv.get("currencyId"),
             "acres": (m2 / ACRE_M2) if m2 else None,
+            "living_m2": round(living, 1) if living else None,
             "lat": loc.get("latitude"),
             "lon": loc.get("longitude"),
             "url": "https://www.properstar.com/listing/%s" % L.get("id"),
@@ -1434,6 +1456,7 @@ def parse_olx(data, cc, kind="land"):
         if pr.get("type") not in ("price", "arranged") or not pr.get("value") or not o.get("url"):
             continue  # skips "free", "exchange" and price-on-request ads
         m2 = olx_area_m2(params) if kind == "land" else olx_area_m2(params, OLX_LOT_KEYS)
+        living = None if kind == "land" else num((params.get("m") or {}).get("key"))  # a house ad's "m" is its floor space
         loc = o.get("location") or {}
         geo = o.get("map") or {}
         desc = re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", o.get("description") or ""))).strip()
@@ -1446,6 +1469,7 @@ def parse_olx(data, cc, kind="land"):
             "price": pr["value"],
             "currency": "USD" if pr.get("currency") == "UYE" else pr.get("currency"),  # UYE: Uzbek "conventional units" = US dollars
             "acres": (m2 / ACRE_M2) if m2 else None,
+            "living_m2": living or None,
             "lat": geo.get("lat"), "lon": geo.get("lon"),
             "url": o["url"],
             "kind": kind,
@@ -1491,6 +1515,14 @@ def meli_acres(attrs):
     return None
 
 
+def meli_living_m2(attrs):
+    """'161 m² cubiertos' / '120 m² construidos' -> a home's floor space in m²."""
+    for n, kind in re.findall(r"([\d.,]+)\s*m²\s*(\w*)", attrs):
+        if kind.lower().startswith(("cubiert", "constru", "útil", "util")):
+            return num(n.replace(".", "").replace(",", "."))
+    return None
+
+
 def parse_meli(html, cc, kind="land"):
     """Results embedded in a Mercado Libre search page -> (listings, page count, result count);
     (None, 0, None) if there are none."""
@@ -1520,6 +1552,7 @@ def parse_meli(html, cc, kind="land"):
             "price": price["value"],
             "currency": price.get("currency"),
             "acres": meli_acres(attrs),
+            "living_m2": meli_living_m2(attrs) or None,
             "lat": None, "lon": None,
             "url": (url if url.startswith("http") else "https://" + url).split("#")[0],
             "kind": kind,

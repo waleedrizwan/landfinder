@@ -74,8 +74,11 @@ or `--verify-only` to run it alone. It follows `--sources`, so `--verify-only --
 alone, without opening Chrome.
 
 Rentals are also caught from the words sellers use, in a dozen languages ("for lease", "renta", "wynajem",
-"оренда", 借地...), and on Kijiji by what the ad is: a REALTOR.ca commercial or industrial lot in Canada at a
-few thousand dollars, with no talk of buyers, offers or the seller, is a lease at its monthly rent.
+"оренда", 借地...), and from prices that can't be a sale: a home under $40 per m² of floor space (floor space
+comes with Properstar, OLX and Mercado Libre house listings), or a home under $10,000 in a country where no home
+sells for that (the US, Canada, Australia, the UK, Germany and the like; cheap ruins in Portugal, Italy, France or
+Bulgaria are real and stay). On Kijiji, a REALTOR.ca commercial or industrial lot in Canada at a few thousand
+dollars, with no talk of buyers, offers or the seller, is a lease at its monthly rent.
 
 The same parcel often turns up several times: an agency's listing fed to Properstar twice under different
 titles, a REALTOR.ca lot on two MLS boards, a Kijiji ad reposted under a new id, the same plot on OLX and
