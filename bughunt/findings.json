@@ -50,8 +50,10 @@
       "fp": "db50363936",
       "id": "B003",
       "chunk": "core",
-      "status": "found",
-      "found_at": "2026-11-08T03:56:15"
+      "status": "confirmed",
+      "found_at": "2026-11-08T03:56:15",
+      "verify_reason": "acres_from_text treats a dot-grouped area as a decimal, so 'Terreno 1.500 m2 en venta', '10.000 m2' and '1.250 m²' parse as 1.5, 10 and 1.25 m², which is 1000x too small. All 3 parametrized cases in the test fail on the current code. The titles are free text from OLX and Kijiji (callers at lines 554 and 1389), and nothing normalises the dot-grouped form.",
+      "test_file": "tests/test_bughunt_b003.py"
     },
     {
       "file": "landfinder.py",
