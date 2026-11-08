@@ -266,7 +266,7 @@ LEASE_USE_RX = re.compile(r"\b(industrial|commercial|development land|storage|pa
                            r"|yard space|open space|laydown|outdoor storage)\b", re.I)
 SALE_WORDS_RX = re.compile(r"\b(purchas\w*|buyers?|sellers?|all offers|offers? to purchase|sale|sold|own(?:ership)?|invest\w*|title|deed|taxes)\b", re.I)
 KIJIJI_LEASE_UNDER_USD = 8000  # the leases seen run CAD 5,000-8,500 a month; Prairie-town commercial lots sell from ~CAD 15,000
-PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro|sq\.?\s*m\b|vara|acre\b|ac\b|hect|ha\b|sotk|square met)"
+PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²|mt2|mts2|metro\b(?!\s*(?:area|region|city|station|stop|line|bus|rail|access|transit))|sq\.?\s*m\b|vara|acre\b|ac\b|hect|ha\b|sotk|square met)"
                          r"|(?:(?:\bza|\bза|\bpe|\bper|\bx)\s+|/\s*)(?:1\s*)?(m2\b|m²|mp\b|mkw\b|m\s*kw\b|metr|сот|м2|м²|кв\.?\s*м|ar\b|ara\b"
                          r"|га\b|гектар|hektar|hectar|ha\b|dekar|декар|дка\b)"
                          r"|\bна\s+(?:1\s*)?(?:декар|дка\b|сотк|кв\.?\s*м|м2|м²)"  # Bulgarian "цена на декар"
