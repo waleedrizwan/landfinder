@@ -1,0 +1,300 @@
+{
+ "ErrorCode": {
+  "Id": 200,
+  "Description": "Success - OK"
+ },
+ "Paging": {
+  "RecordsPerPage": 6,
+  "CurrentPage": 1,
+  "TotalRecords": 12828,
+  "MaxRecords": 600,
+  "TotalPages": 50,
+  "RecordsShowing": 6,
+  "Pins": 214
+ },
+ "Results": [
+  {
+   "Id": "29840221",
+   "MlsNumber": "SM261275",
+   "PublicRemarks": "",
+   "Building": {
+    "StoriesTotal": ""
+   },
+   "Property": {
+    "Price": "$1,500",
+    "LeaseRent": "$1,500/Monthly",
+    "Type": "Vacant Land",
+    "Address": {
+     "AddressText": "1154 Great Northern RD|Sault Ste. Marie, Ontario P6B0B6",
+     "Longitude": "-84.3196671",
+     "Latitude": "46.561847",
+     "PermitShowAddress": true
+    },
+    "TypeId": "303",
+    "PriceUnformattedValue": "1500",
+    "LeaseRentUnformattedValue": "1500",
+    "ShortValue": "1.5K",
+    "PriceChangeTimeOnRealtor": "",
+    "PriceChangeTagDateUTC": ""
+   },
+   "Business": {},
+   "Land": {
+    "SizeTotal": "10 - 49.99 acres",
+    "SizeFrontage": "144.6000",
+    "AccessType": "Road access"
+   },
+   "PostalCode": "P6B0B6",
+   "HistoricalDataIsCleared": false,
+   "ProvinceName": "Ontario",
+   "RelativeDetailsURL": "/real-estate/29840221/1154-great-northern-rd-sault-ste-marie",
+   "StatusId": "1",
+   "PhotoChangeDateUTC": "2026-06-02 4:49:29 PM",
+   "Distance": "",
+   "RelativeURLEn": "/real-estate/29840221/1154-great-northern-rd-sault-ste-marie",
+   "RelativeURLFr": "/immobilier/29840221/1154-great-northern-rd-sault-ste-marie",
+   "InsertedDateUTC": "639160157698570000",
+   "TimeOnRealtor": "",
+   "Tags": [],
+   "DataPrepInsertedDateUTC": "639160162232000000"
+  },
+  {
+   "Id": "29070840",
+   "MlsNumber": "26872738",
+   "PublicRemarks": "",
+   "Building": {
+    "StoriesTotal": "",
+    "Type": "Lot"
+   },
+   "Property": {
+    "Price": "$3,000 +  GST +  QST",
+    "Type": "Vacant Land",
+    "Address": {
+     "AddressText": "Ch. Rodgers|Gore, Quebec J0V1K0",
+     "Longitude": "-74.20996427",
+     "Latitude": "45.75017206",
+     "PermitShowAddress": true
+    },
+    "TypeId": "303",
+    "ZoningType": "Other",
+    "PriceUnformattedValue": "3000",
+    "ShortValue": "3K",
+    "PriceChangeTimeOnRealtor": "Price Change on 11/01/2026",
+    "PriceChangeTagDateUTC": "2026-11-01 4:19:59 AM"
+   },
+   "Business": {},
+   "Land": {
+    "SizeTotal": "56101298 sqft|Unknown"
+   },
+   "AlternateURL": {
+    "DetailsLink": "https://passerelle.centris.ca/redirect.aspx?NoMLS=26872738&Lang=E",
+    "VideoLink": "https://youtu.be/m1kY-wVLpSU"
+   },
+   "PostalCode": "J0V1K0",
+   "HistoricalDataIsCleared": false,
+   "ProvinceName": "Quebec",
+   "RelativeDetailsURL": "/real-estate/29070840/ch-rodgers-gore",
+   "StatusId": "1",
+   "PhotoChangeDateUTC": "2026-04-15 1:44:29 PM",
+   "Distance": "",
+   "RelativeURLEn": "/real-estate/29070840/ch-rodgers-gore",
+   "RelativeURLFr": "/immobilier/29070840/ch-rodgers-gore",
+   "InsertedDateUTC": "638979639579000000",
+   "TimeOnRealtor": "",
+   "Tags": [
+    {
+     "Label": "Price Change on 11/01/2026",
+     "HTMLColorCode": "#23A1C0",
+     "ListingTagTypeID": "6"
+    }
+   ],
+   "DataPrepInsertedDateUTC": "638979645391400000"
+  },
+  {
+   "Id": "30069675",
+   "MlsNumber": "X13596990",
+   "PublicRemarks": "",
+   "Building": {
+    "BathroomTotal": "0",
+    "StoriesTotal": "",
+    "FloorAreaMeasurements": []
+   },
+   "Property": {
+    "Price": "$5,000",
+    "Type": "Vacant Land",
+    "Address": {
+     "AddressText": "16 SANDPIPER AVENUE|Manitouwadge, Ontario P0T2C0",
+     "Longitude": "-85.8362088",
+     "Latitude": "49.1309099",
+     "PermitShowAddress": true
+    },
+    "TypeId": "303",
+    "PriceUnformattedValue": "5000",
+    "ShortValue": "5K",
+    "PriceChangeTimeOnRealtor": "",
+    "PriceChangeTagDateUTC": ""
+   },
+   "Business": {},
+   "Land": {
+    "SizeTotal": "60 x 100 FT|under 1/2 acre",
+    "SizeFrontage": "60 ft",
+    "AccessType": "Year-round access"
+   },
+   "PostalCode": "P0T2C0",
+   "HistoricalDataIsCleared": false,
+   "ProvinceName": "Ontario",
+   "RelativeDetailsURL": "/real-estate/30069675/16-sandpiper-avenue-manitouwadge",
+   "StatusId": "1",
+   "PhotoChangeDateUTC": "2026-10-16 6:09:07 PM",
+   "Distance": "",
+   "RelativeURLEn": "/real-estate/30069675/16-sandpiper-avenue-manitouwadge",
+   "RelativeURLFr": "/immobilier/30069675/16-sandpiper-avenue-manitouwadge",
+   "InsertedDateUTC": "639204133030030000",
+   "TimeOnRealtor": "",
+   "Tags": [],
+   "DataPrepInsertedDateUTC": "639204135219770000"
+  },
+  {
+   "Id": "30359607",
+   "MlsNumber": "15313837",
+   "PublicRemarks": "",
+   "Building": {
+    "StoriesTotal": "",
+    "Type": "Lot"
+   },
+   "Property": {
+    "Price": "$5,000",
+    "Type": "Vacant Land",
+    "Address": {
+     "AddressText": "Ch. du Lac-Blondin|Prévost, Quebec J0R1T0",
+     "Longitude": "-74.08643883",
+     "Latitude": "45.8593381",
+     "PermitShowAddress": true
+    },
+    "TypeId": "303",
+    "ZoningType": "Residential",
+    "AmmenitiesNearBy": "Highway, CEGEP, Daycare centre, Golf Nearby, Hospital, Park, Bicycle path, Schools, Ski area, Cross-country skiing, Snowmobile trail, ATV trail",
+    "PriceUnformattedValue": "5000",
+    "ShortValue": "5K",
+    "PriceChangeTimeOnRealtor": "",
+    "PriceChangeTagDateUTC": "2026-10-08 9:29:59 PM"
+   },
+   "Business": {},
+   "Land": {
+    "SizeTotal": "970.6 m2",
+    "SizeFrontage": "85.73 m",
+    "LandscapeFeatures": "Level"
+   },
+   "AlternateURL": {
+    "DetailsLink": "https://passerelle.centris.ca/redirect.aspx?NoMLS=15313837&Lang=E"
+   },
+   "PostalCode": "J0R1T0",
+   "HistoricalDataIsCleared": false,
+   "ProvinceName": "Quebec",
+   "RelativeDetailsURL": "/real-estate/30359607/ch-du-lac-blondin-prevost",
+   "StatusId": "1",
+   "PriceChangeDateUTC": "2026-10-08 9:29:59 PM",
+   "PhotoChangeDateUTC": "2026-10-02 10:29:29 PM",
+   "Distance": "",
+   "RelativeURLEn": "/real-estate/30359607/ch-du-lac-blondin-prevost",
+   "RelativeURLFr": "/immobilier/30359607/ch-du-lac-blondin-prevost",
+   "InsertedDateUTC": "639265769690130000",
+   "TimeOnRealtor": "",
+   "Tags": [],
+   "DataPrepInsertedDateUTC": "639265771681300000"
+  },
+  {
+   "Id": "29124792",
+   "MlsNumber": "21203034",
+   "PublicRemarks": "",
+   "Building": {
+    "StoriesTotal": ""
+   },
+   "Property": {
+    "Price": "$7,500",
+    "Type": "Vacant Land",
+    "Address": {
+     "AddressText": "Route Harwood|Saint-Lazare, Quebec J7T2H7",
+     "Longitude": "-74.1746528",
+     "Latitude": "45.44854425",
+     "PermitShowAddress": true
+    },
+    "TypeId": "303",
+    "FarmType": "Other",
+    "ZoningType": "Residential",
+    "PriceUnformattedValue": "7500",
+    "ShortValue": "7.5K",
+    "PriceChangeTimeOnRealtor": "",
+    "PriceChangeTagDateUTC": "2026-09-09 2:41:27 PM"
+   },
+   "Business": {},
+   "Land": {
+    "SizeTotal": "2231.3 sqft",
+    "SizeFrontage": "27 ft ,3 in"
+   },
+   "AlternateURL": {
+    "DetailsLink": "https://passerelle.centris.ca/redirect.aspx?CodeDest=MARKETINGWEBSITES&NoMLS=21203034&Lang=E"
+   },
+   "PostalCode": "J7T2H7",
+   "HistoricalDataIsCleared": false,
+   "ProvinceName": "Quebec",
+   "RelativeDetailsURL": "/real-estate/29124792/route-harwood-saint-lazare-green-maple-hill",
+   "StatusId": "1",
+   "PriceChangeDateUTC": "2026-09-09 2:41:27 PM",
+   "PhotoChangeDateUTC": "2026-04-16 5:55:13 PM",
+   "Distance": "",
+   "RelativeURLEn": "/real-estate/29124792/route-harwood-saint-lazare-green-maple-hill",
+   "RelativeURLFr": "/immobilier/29124792/route-harwood-saint-lazare-green-maple-hill",
+   "InsertedDateUTC": "638992876207470000",
+   "TimeOnRealtor": "",
+   "Tags": [],
+   "DataPrepInsertedDateUTC": "638992881363500000"
+  },
+  {
+   "Id": "29260245",
+   "MlsNumber": "18613212",
+   "PublicRemarks": "",
+   "Building": {
+    "StoriesTotal": "",
+    "Type": "Lot"
+   },
+   "Property": {
+    "Price": "$7,500",
+    "Type": "Vacant Land",
+    "Address": {
+     "AddressText": "65 Rue Campeau|Gatineau (Gatineau), Quebec J8P2K6",
+     "Longitude": "-75.60935358",
+     "Latitude": "45.47686447",
+     "PermitShowAddress": true
+    },
+    "TypeId": "303",
+    "ZoningType": "Residential",
+    "AmmenitiesNearBy": "Highway, CEGEP, Daycare centre, Golf Nearby, Hospital, Park, Bicycle path, Schools, Ski area, Cross-country skiing, Public Transit, University",
+    "PriceUnformattedValue": "7500",
+    "ShortValue": "7.5K",
+    "PriceChangeTimeOnRealtor": "",
+    "PriceChangeTagDateUTC": ""
+   },
+   "Business": {},
+   "Land": {
+    "SizeTotal": "218.2 m2|Unknown"
+   },
+   "AlternateURL": {
+    "DetailsLink": "https://passerelle.centris.ca/redirect.aspx?NoMLS=18613212&Lang=E"
+   },
+   "PostalCode": "J8P2K6",
+   "HistoricalDataIsCleared": false,
+   "ProvinceName": "Quebec",
+   "RelativeDetailsURL": "/real-estate/29260245/65-rue-campeau-gatineau-gatineau-notre-dame-cote-ville",
+   "StatusId": "1",
+   "PhotoChangeDateUTC": "2026-04-07 4:09:10 PM",
+   "Distance": "",
+   "RelativeURLEn": "/real-estate/29260245/65-rue-campeau-gatineau-gatineau-notre-dame-cote-ville",
+   "RelativeURLFr": "/immobilier/29260245/65-rue-campeau-gatineau-gatineau-notre-dame-cote-ville",
+   "InsertedDateUTC": "639041882181600000",
+   "TimeOnRealtor": "",
+   "Tags": [],
+   "DataPrepInsertedDateUTC": "639041886275670000"
+  }
+ ],
+ "Pins": []
+}

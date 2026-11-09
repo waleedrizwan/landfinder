@@ -211,7 +211,7 @@ footer p{margin:4px 0}
     <label class="chk"><input id="farea" type="checkbox"> Area listed only</label>
 
     <h2>Listings</h2>
-    <label class="field">Source<select id="fsrc"><option value="">All sources</option><option value="properstar">Properstar</option><option value="landwatch">LandWatch</option><option value="kijiji">Kijiji</option><option value="olx">OLX</option><option value="mercadolibre">Mercado Libre</option><option value="ieichiba">Ieichiba</option><option value="homes">HOME'S Akiya Bank</option><option value="zillow">Zillow</option><option value="immobiliare">Immobiliare.it</option><option value="encuentra24">Encuentra24</option></select></label>
+    <label class="field">Source<select id="fsrc"><option value="">All sources</option><option value="properstar">Properstar</option><option value="landwatch">LandWatch</option><option value="kijiji">Kijiji</option><option value="realtor">REALTOR.ca</option><option value="olx">OLX</option><option value="mercadolibre">Mercado Libre</option><option value="ieichiba">Ieichiba</option><option value="homes">HOME'S Akiya Bank</option><option value="zillow">Zillow</option><option value="immobiliare">Immobiliare.it</option><option value="encuentra24">Encuentra24</option></select></label>
     <label class="chk"><input id="fflag" type="checkbox"> Include flagged listings</label>
     <button class="linkbtn" id="reset" type="button" style="margin-top:14px">Clear all filters</button>
     <button class="done" id="done" type="button">Show listings</button>
@@ -242,7 +242,7 @@ footer p{margin:4px 0}
 
     <footer>
       <p><span id="updated"></span></p>
-      <p>Prices are converted at the exchange rates of the last update. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Zillow, Kijiji, OLX, Mercado Libre, Ieichiba, HOME'S Akiya Bank, Immobiliare.it, Encuentra24. A free (¥0) Japanese house still costs transfer fees, registration and yearly property tax.</p>
+      <p>Prices are converted at the exchange rates of the last update. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Zillow, Kijiji, REALTOR.ca, OLX, Mercado Libre, Ieichiba, HOME'S Akiya Bank, Immobiliare.it, Encuentra24. A free (¥0) Japanese house still costs transfer fees, registration and yearly property tax.</p>
     </footer>
   </main>
 </div>
@@ -269,7 +269,7 @@ const money = v => v == null ? "—" : v === 0 ? "Free" : withCur(digits(v));
 // a listing's price in the picked currency: its own price when it's listed in that currency, else converted from dollars
 const price = r => r[15] === CUR ? r[14] : r[1] * RATE;
 const acres = v => v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString("en-US");
-const srcName = s => ({properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji", olx:"OLX", mercadolibre:"Mercado Libre", ieichiba:"Ieichiba", homes:"HOME'S Akiya Bank", castles:"Properstar", zillow:"Zillow", immobiliare:"Immobiliare.it", encuentra24:"Encuentra24"})[s] || s;
+const srcName = s => ({properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji", realtor:"REALTOR.ca", olx:"OLX", mercadolibre:"Mercado Libre", ieichiba:"Ieichiba", homes:"HOME'S Akiya Bank", castles:"Properstar", zillow:"Zillow", immobiliare:"Immobiliare.it", encuentra24:"Encuentra24"})[s] || s;
 const PAGE = 60;
 const FLAGS = {L:"Price looks too low: may be a monthly payment, a per-m² price or in the wrong currency",
   S:"Only a share, usage rights or a burial plot, not land you'd own outright",

@@ -7,6 +7,7 @@ Sources
   properstar    worldwide portal (~100+ countries), land plots sorted cheapest first
   landwatch     all 50 US states, sorted cheapest first
   kijiji        every Canadian province, land-for-sale sorted cheapest first
+  realtor       REALTOR.ca, Canada's MLS: vacant land and houses per province, cheapest first
   olx           classifieds in Poland, Ukraine, Romania, Portugal, Bulgaria, Kazakhstan, Uzbekistan
   mercadolibre  classifieds in Argentina and Mexico
   ieichiba      Japanese owners selling empty houses (akiya) and land themselves
@@ -30,7 +31,7 @@ Output (in this folder)
   data/         raw scraped records + progress, so a stopped run resumes where it left off
 """
 import argparse, csv, gzip, json, math, os, queue, random, re, shutil, signal, subprocess, sys, threading, time, unicodedata, warnings
-from collections import Counter
+from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -76,6 +77,25 @@ KIJIJI_PROVINCES = {
     "newfoundland": "l9008", "nova-scotia": "l9002", "ontario": "l9004", "prince-edward-island": "l9011",
     "quebec": "l9001", "saskatchewan": "l9009", "territories": "l9010",
 }
+
+# REALTOR.ca (Canada's MLS): the map page's listing API takes a lat/lon box, so each province is searched by a box
+# around it and kept to the listings the API says are in that province (the boxes overlap at the borders).
+# slug -> (lat min, lat max, lon min, lon max, province codes)
+REALTOR_BOXES = {
+    "alberta": (48.9, 60.1, -120.1, -109.9, ("AB",)), "british-columbia": (48.2, 60.1, -139.2, -114.0, ("BC",)),
+    "manitoba": (48.9, 60.1, -102.2, -88.9, ("MB",)), "new-brunswick": (44.5, 48.2, -69.2, -63.6, ("NB",)),
+    "newfoundland": (46.4, 60.6, -68.0, -52.4, ("NL",)), "nova-scotia": (43.2, 47.2, -66.6, -59.5, ("NS",)),
+    "ontario": (41.5, 57.0, -95.3, -74.2, ("ON",)), "prince-edward-island": (45.8, 47.2, -64.6, -61.8, ("PE",)),
+    "quebec": (44.8, 62.8, -79.9, -56.9, ("QC",)), "saskatchewan": (48.9, 60.1, -110.2, -101.2, ("SK",)),
+    "territories": (59.9, 83.3, -141.2, -60.9, ("YT", "NT", "NU")),
+}
+CA_PROVINCE_CODES = {
+    "alberta": "AB", "british columbia": "BC", "manitoba": "MB", "new brunswick": "NB", "newfoundland & labrador": "NL",
+    "newfoundland and labrador": "NL", "nova scotia": "NS", "ontario": "ON", "prince edward island": "PE", "quebec": "QC",
+    "québec": "QC", "saskatchewan": "SK", "yukon": "YT", "northwest territories": "NT", "nunavut": "NU",
+}
+REALTOR_PER_PAGE = 50  # the API's page size; it stops at 600 records per query, so a province gives up to 12 pages
+REALTOR_MIN_CAD = 1000  # $1 and $100 placeholders sit below this
 
 # OLX: country -> (site, land-for-sale category id, ISO country, currency of the site's price filter, USD floor).
 # Below the floor nearly every "price" is per m², per sotka (100 m²) or a placeholder. It's lower where real
@@ -126,7 +146,7 @@ chugoku/tokushima chugoku/kagawa chugoku/ehime chugoku/kochi kyushu/fukuoka kyus
 kyushu/kumamoto kyushu/oita kyushu/miyazaki kyushu/kagoshima kyushu/okinawa""".split()
 HOMES_CATEGORIES = {"land": "102", "houses": "101"}  # for sale only; the 30x categories are rentals
 
-ALL_SOURCES = "properstar,castles,landwatch,kijiji,olx,mercadolibre,ieichiba,homes,zillow,immobiliare,encuentra24"
+ALL_SOURCES = "properstar,castles,landwatch,kijiji,realtor,olx,mercadolibre,ieichiba,homes,zillow,immobiliare,encuentra24"
 
 AREA_TO_M2 = {"SquareMeter": 1.0, "SquareFoot": 0.09290304, "Hectare": 10000.0,
               "Acre": ACRE_M2, "SquareKilometer": 1e6, "SquareYard": 0.83612736}
@@ -139,8 +159,10 @@ _LOG_LOCK = threading.Lock()
 def log(msg):
     name = threading.current_thread().name
     tag = "" if name == "MainThread" else "%s " % name
+    line = "[%s] %s%s" % (datetime.now().strftime("%H:%M:%S"), tag, msg)
     with _LOG_LOCK:
-        print("[%s] %s%s" % (datetime.now().strftime("%H:%M:%S"), tag, msg), flush=True)
+        print(line, flush=True)
+    LIVE.lines.append(line)
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -291,6 +313,7 @@ RENT_TITLE_UNDER_USD = 15000
 # in the ad saying so ("Great functional open space in an industrial area", CAD 5,000). An agent's industrial or commercial
 # lot in Canada doesn't sell for that; a real sale ad talks of buyers, offers or the seller.
 REALTOR_RX = re.compile(r"\(id:\d+\)|MLS®|\bMLS\b")
+MLS_NUMBER_RX = re.compile(r"\bMLS\W{0,4}([A-Z]{0,2}\d{6,10})\b", re.I)  # "MLS® 202627276", "MLS# A1299992", "MLS #10392452"
 LEASE_USE_RX = re.compile(r"\b(industrial|commercial|development land|storage|parking|warehouse|retail|offices?|business|employment"
                            r"|yard space|open space|laydown|outdoor storage)\b", re.I)
 SALE_WORDS_RX = re.compile(r"\b(purchas\w*|buyers?|sellers?|all offers|offers? to purchase|sale|sold|own(?:ership)?|invest\w*|title|deed|taxes)\b", re.I)
@@ -803,7 +826,8 @@ BROWSER_USE_HOUR, PROXY_GB, DIRECT_GB = 0.02, 5.0, 0.20  # Browser Use cloud pri
 
 
 def source_of(url):
-    return next((s for s in ("properstar", "landwatch", "kijiji", "olx", "mercadolibre", "ieichiba") if s in url), "other")
+    return next((s for s in ("properstar", "landwatch", "kijiji", "realtor", "olx", "mercadolibre", "ieichiba", "zillow",
+                             "immobiliare", "encuentra24", "homes") if s in url), "other")
 
 
 def mins(secs):
@@ -830,11 +854,16 @@ class Metrics:
 
     @contextmanager
     def phase(self, name):
-        t = time.time()
+        t, main = time.time(), threading.current_thread().name == "MainThread"
+        LIVE.phases[name] = t
+        if main:  # the HTTP sites' phases run in their own threads alongside; the dashboard shows those per thread
+            LIVE.phase = name
         try:
             yield
         finally:
             self.add("phase", name=name, secs=round(time.time() - t, 2))
+            if main:
+                LIVE.phase = None
 
     def summary(self):
         """What the run spent its time and bandwidth on, as lines of text."""
@@ -918,6 +947,104 @@ class Metrics:
 
 
 METRICS = Metrics()
+
+
+class Live:
+    """What the run is doing right now, for the dashboard: dashboard.html, served at http://localhost:8765 while a
+    run goes (--dashboard). The numbers come from METRICS' events; this only tracks each thread's current page."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.lines = deque(maxlen=80)  # the latest log lines
+        self.workers = {}  # thread name -> what it's fetching now
+        self.phases = {}  # phase name -> when it started
+        self.phase, self.jobs_total, self.args, self.store, self.t0 = None, 0, "", None, time.time()
+
+    def now(self, url, label="", what="search"):
+        with self.lock:
+            self.workers[threading.current_thread().name] = dict(label=label or url, url=url, what=what, since=time.time(), busy=True)
+
+    def idle(self, note="finished"):
+        with self.lock:
+            self.workers[threading.current_thread().name] = dict(label=note, url="", what="", since=time.time(), busy=False)
+
+    def snapshot(self):
+        now = time.time()
+        with METRICS.lock:
+            ev = list(METRICS.events)
+        sites, per_worker = {}, Counter()
+        for e in ev:
+            if e["kind"] == "fetch":
+                s = sites.setdefault(e["source"], dict(pages=0, failed=0, blocked=0, verify=0, recent=0, new=0, secs=0.0, via=e["via"]))
+                s["pages"] += 1
+                s["failed"] += not e["ok"]
+                s["blocked"] += len(e.get("blocked") or [])
+                s["verify"] += e["what"] == "verify"
+                s["secs"] += e["secs"]
+                s["recent"] += METRICS.t0 + e["t"] > now - 60
+                per_worker[e["worker"]] += 1
+            elif e["kind"] == "parsed":
+                sites.setdefault(e["source"], dict(pages=0, failed=0, blocked=0, verify=0, recent=0, new=0, secs=0.0, via=""))["new"] += e["new"]
+        done = sum(e["kind"] == "job" for e in ev)
+        eta = None
+        if self.phase == "chrome pool" and done >= 3 and self.jobs_total > done:
+            eta = (now - self.phases["chrome pool"]) / done * (self.jobs_total - done)
+        with self.lock:
+            workers = [dict(name=n, pages=per_worker[n], since_s=round(now - w["since"]), **w) for n, w in self.workers.items()]
+        workers.sort(key=lambda w: (w["name"][0] != "W", len(w["name"]), w["name"]))
+        return dict(started=datetime.fromtimestamp(self.t0).strftime("%H:%M:%S"), elapsed_s=round(now - self.t0),
+                    phase=self.phase, stopping=STOP.is_set(), args=self.args, jobs=dict(total=self.jobs_total, done=done),
+                    eta_s=round(eta) if eta else None, listings_new=sum(s["new"] for s in sites.values()),
+                    on_disk=len(self.store.urls) if self.store else None, workers=workers,
+                    sites=[dict(source=k, **v) for k, v in sorted(sites.items())], log=list(self.lines))
+
+
+LIVE = Live()
+
+
+def serve_dashboard(port):
+    """Serve dashboard.html and the run's progress on localhost, in a background thread. The page's Stop button
+    stops the run the way Ctrl-C does: the pages in progress finish, then the outputs are built from what's saved."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            if self.path.split("?")[0] == "/progress.json":
+                body, ctype = json.dumps(LIVE.snapshot()).encode(), "application/json"
+            elif self.path.split("?")[0] == "/":
+                with open(os.path.join(HERE, "dashboard.html"), "rb") as f:
+                    body, ctype = f.read(), "text/html; charset=utf-8"
+            else:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            if self.path == "/stop":
+                STOP.set()
+                log("stop requested from the dashboard - finishing the pages in progress, then saving")
+                self.send_response(204)
+                self.end_headers()
+            else:
+                self.send_error(404)
+
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    except OSError as e:
+        log("dashboard not started: can't listen on port %d (%s)" % (port, e))
+        return None
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, name="dashboard", daemon=True).start()
+    log("dashboard: http://localhost:%d" % port)
+    return srv
 
 
 # ----------------------------------------------------------------------------- fetchers
@@ -1055,6 +1182,7 @@ class Browser:
         is then read right away (or after 20 s), instead of after a fixed wait and the whole page loading.
         Records how long each stage took and what it downloaded (what = "search" or "verify")."""
         t0 = t = time.time()
+        LIVE.now(url, self.label, what)
         b0, r0, types0 = self.net["bytes"], self.net["requests"], Counter(self.net["types"])
         secs = dict.fromkeys(("nav", "ready", "read", "delay", "wait"), 0.0)
         html, blocked, errors, ready_hit, stage = None, [], 0, None, "nav"
@@ -1157,28 +1285,30 @@ class Browser:
 
     def close(self):
         """Close Chrome. With several windows open, Playwright sometimes hangs for minutes after Chrome has already
-        quit, and ignores a polite stop, so if closing takes over 15 s its driver process is killed and the run goes on."""
+        quit, and ignores a polite stop, so Chrome gets 15 s to close and then its driver 2 s to stop (Chrome is
+        usually gone by then, and only the driver hangs); past that the driver process is killed and the run goes on."""
         driver = self.driver
-
-        def stop_driver():
-            kill_tree(driver)
-            log("  Chrome didn't close within 15s; stopped it and its Playwright driver")
-
         METRICS.add("window", launch_s=round(self.launch_s, 2), open_s=round(time.time() - self.opened, 2),
                     busy_s=round(self.busy, 2), pages=self.pages, bytes=self.net["bytes"],
                     requests=self.net["requests"], types=dict(self.net["types"]), hosts=dict(self.net["hosts"]))
-        timer = threading.Timer(15, stop_driver)
-        timer.daemon, timer.name = True, threading.current_thread().name  # logs under the window's own name
-        if driver:
-            timer.start()
         try:
-            for step in (self.browser.close, self.pw.stop):
+            for step, limit, what in ((self.browser.close, 15, "Chrome didn't close"),
+                                      (self.pw.stop, 2, "the Playwright driver didn't stop")):
+                def stop_driver(what=what, limit=limit):
+                    kill_tree(driver)
+                    log("  %s within %ds; stopped it and its Playwright driver" % (what, limit))
+
+                timer = threading.Timer(limit, stop_driver)
+                timer.daemon, timer.name = True, threading.current_thread().name  # logs under the window's own name
+                if driver:
+                    timer.start()
                 try:
                     step()
                 except Exception:
                     pass
+                finally:
+                    timer.cancel()
         finally:
-            timer.cancel()
             DRIVERS.discard(driver)
 
 
@@ -1190,6 +1320,7 @@ class Plain:
 
     def get(self, url, what="search"):
         t0, html, statuses, nbytes = time.time(), None, [], 0
+        LIVE.now(url, "", what)
         secs = dict.fromkeys(("nav", "delay", "wait"), 0.0)
         for attempt in range(3):
             t = time.time()
@@ -1427,7 +1558,7 @@ def run_pool(jobs, store, a):
         q.put(j)
     n = max(1, min(a.workers, len(jobs)))
     slots = [None] * n if a.hidden else tile_slots(n, a.tile)
-    total = len(jobs)
+    total = LIVE.jobs_total = len(jobs)
     done = [0]
 
     def worker(i):
@@ -1450,6 +1581,7 @@ def run_pool(jobs, store, a):
                 METRICS.add("job", source=src, key=key, section=kind, secs=round(time.time() - t, 2), pages=br.pages - pages, new=new)
                 log("%-10s [%d/%d] %-28s +%d listings" % (src, done[0], total, key if kind == "land" else key + " " + kind, new))
         finally:
+            LIVE.idle("finished" if not STOP.is_set() else "stopped")
             if br:
                 br.close()
 
@@ -1466,6 +1598,7 @@ BROWSER_CRAWLERS = {  # sources that need a real Chrome window: fn(browser, stor
     "properstar": crawl_properstar_one,
     "castles": lambda br, store, key, a, kind: crawl_properstar_one(br, store, key, a, "castles"),
     "landwatch": crawl_landwatch_one,
+    "realtor": lambda br, store, key, a, kind: crawl_realtor(br, store, key, a, kind),  # defined below
     "immobiliare": lambda br, store, key, a, kind: crawl_search(br, store, "immobiliare", key, a, immobiliare_url,
                                                                 parse_immobiliare),
     "encuentra24": lambda br, store, key, a, kind: crawl_search(br, store, "encuentra24", key, a, encuentra24_url,
@@ -1553,6 +1686,148 @@ def crawl_kijiji(fetch, store, provinces, a, kinds=("land",)):
         if STOP.is_set():
             return
         log("kijiji     [%d/%d] %-28s +%d listings" % (pi, len(jobs), sid.split(" ", 1)[1], total_new))
+
+
+# ---- REALTOR.ca: Canada's MLS (real Chrome; the map page's own listing API, called from inside the page, which
+# carries the site's cookies. Plain requests to the API get a bot wall.)
+
+REALTOR_HOME = "https://www.realtor.ca/map#view=list"
+REALTOR_API = "https://api2.realtor.ca/Listing.svc/PropertySearch_Post"
+
+
+def realtor_url(prov, p, kind="land"):
+    """Not a page anyone can open: the key the store remembers a fetched API page by."""
+    return "%s?province=%s&kind=%s&page=%d" % (REALTOR_API, prov, kind, p)
+
+
+def realtor_params(prov, p, kind="land"):
+    lat0, lat1, lon0, lon1, _ = REALTOR_BOXES[prov]
+    q = {"LatitudeMin": lat0, "LatitudeMax": lat1, "LongitudeMin": lon0, "LongitudeMax": lon1, "ZoomLevel": 5,
+         "TransactionTypeId": 2, "Sort": "1-A", "PriceMin": REALTOR_MIN_CAD, "Currency": "CAD",  # for sale, price low to high
+         "RecordsPerPage": REALTOR_PER_PAGE, "CurrentPage": p, "ApplicationId": 1, "CultureId": 1, "Version": "7.0"}
+    if kind == "land":
+        q["PropertySearchTypeId"] = 6  # vacant land
+    else:
+        q["PropertySearchTypeId"] = 1  # residential
+        q["BuildingTypeId"] = 1  # houses (not condos, mobile homes or lots)
+    return {k: str(v) for k, v in q.items()}
+
+
+def realtor_post(br, prov, p, kind="land"):
+    """One page of results from the API, as the parsed JSON, or None when the call failed or came back as a wall."""
+    t = time.time()
+    if "realtor.ca" not in (br.page.url or ""):  # the API answers the site's own pages, with their cookies
+        if not br.get(REALTOR_HOME, settle_ms=6000):
+            return None
+    br.label = "%s %s  page %d  (realtor)" % (prov, kind, p)
+    status, text = None, ""
+    try:
+        status, text = br.page.evaluate("""async ([url, params]) => {
+            const r = await fetch(url, {method: 'POST', body: new URLSearchParams(params), credentials: 'include'});
+            return [r.status, await r.text()]; }""", [REALTOR_API, realtor_params(prov, p, kind)])
+    except Exception as e:
+        log("  realtor %s page %d: %s" % (prov, p, str(e)[:100]))
+    data = None
+    if status == 200 and text.startswith("{"):
+        try:
+            data = json.loads(text)
+        except ValueError:
+            data = None
+    METRICS.add("fetch", via="chrome", source="realtor", what="search", url=realtor_url(prov, p, kind), ok=data is not None,
+                attempts=1, blocked=[], errors=int(data is None), status=status, ready_hit=None, secs=round(time.time() - t, 2),
+                html_kb=len(text) // 1024, bytes=len(text), requests=1, types={}, nav_s=0, ready_s=0,
+                read_s=round(time.time() - t, 2), delay_s=0, wait_s=0)
+    if data is None:
+        log("  realtor %s page %d: no listing data (HTTP %s, %s)" % (prov, p, status, text[:60].replace("\n", " ")))
+        return None
+    time.sleep(br.delay + random.random() * br.delay)
+    return data
+
+
+def realtor_acres(land):
+    """Land.SizeTotal: '60 x 100 FT|under 1/2 acre' (the lot's dimensions), '10 - 49.99 acres' (the lower bound),
+    '56101298 sqft|Unknown', '970.6 m2'. None when the listing gives no size."""
+    for seg in [x.strip() for x in ((land or {}).get("SizeTotal") or "").split("|")]:
+        m = re.match(r"([\d.,]+)\s*x\s*([\d.,]+)\s*(ft|feet|m)\b", seg, re.I)
+        if m:
+            w, l = num(m.group(1)), num(m.group(2))
+            if w and l:
+                return w * l / (43560.0 if m.group(3).lower().startswith("f") else ACRE_M2)
+        m = re.match(r"([\d.,]+)\s*-\s*[\d.,]+\s*(.*)", seg)
+        if m:
+            seg = m.group(1) + " " + m.group(2)
+        v = acres_from_text(re.sub(r"^(?:under|over|about)\s+", "", seg, flags=re.I))  # "under 1/2 acre" is the site's own size band
+        if v:
+            return v
+    return None
+
+
+def parse_realtor(data, prov, kind="land"):
+    """Listings in one API page, and how many the API says the province box has."""
+    if not isinstance(data, dict) or "Results" not in data:
+        return None, None
+    total = (data.get("Paging") or {}).get("TotalRecords")
+    codes = REALTOR_BOXES[prov][4]
+    out = []
+    for r in data.get("Results") or []:
+        prop = r.get("Property") or {}
+        price = num(str(prop.get("PriceUnformattedValue") or ""))
+        if not price or not r.get("RelativeDetailsURL"):  # the search asks for sales only; a lease shows no sale price
+            continue
+        code = CA_PROVINCE_CODES.get((r.get("ProvinceName") or "").strip().lower())
+        if code not in codes:  # the box reaches into a neighbouring province
+            continue
+        addr = prop.get("Address") or {}
+        parts = [x.strip() for x in (addr.get("AddressText") or "").split("|")]
+        street, place = (parts[0], parts[-1]) if len(parts) > 1 else ("", parts[0])
+        # "Sault Ste. Marie, Ontario P6B0B6" -> "Sault Ste. Marie, ON, P6B0B6", the shape Kijiji's REALTOR.ca ads have
+        m = re.match(r"(.*?),\s*([A-Za-z &.]+?)\s*([A-Z]\d[A-Z] ?\d[A-Z]\d)?$", place)
+        town_name = m.group(1).strip() if m else place
+        region = ", ".join(x for x in (town_name, code, (m.group(3) or "").replace(" ", "") if m else "") if x)
+        land = r.get("Land") or {}
+        desc = " | ".join(x for x in (r.get("PublicRemarks"), prop.get("Type"), land.get("SizeTotal"), land.get("AccessType"),
+                                      (r.get("Building") or {}).get("Type"), "MLS® %s" % r["MlsNumber"] if r.get("MlsNumber") else "") if x)
+        out.append({
+            "source": "realtor",
+            "country": "CA",
+            "region": region,
+            "title": street or "%s, %s" % (prop.get("Type") or "Property", town_name),
+            "description": desc,
+            "price": price,
+            "currency": "CAD",
+            "acres": realtor_acres(land),
+            "lat": num(str(addr.get("Latitude") or "")), "lon": num(str(addr.get("Longitude") or "")),
+            "url": "https://www.realtor.ca" + r["RelativeDetailsURL"],
+            "kind": kind,
+        })
+    return out, total
+
+
+def crawl_realtor(br, store, prov, a, kind="land"):
+    sid, total_new, seen = search_id("realtor", prov, kind), 0, set()
+    for p in search_pages(store, sid, a, kind=kind):
+        url = realtor_url(prov, p, kind)
+        if url in store.done:
+            continue
+        data = realtor_post(br, prov, p, kind)
+        if data is None:
+            store.stop(sid, "fetch failed")
+            break
+        recs, total = parse_realtor(data, prov, kind)
+        if recs is None:
+            store.stop(sid, "fetch failed")
+            break
+        urls = {r["url"] for r in recs}
+        if not (data.get("Results") or []) or (recs and urls <= seen):  # past the end (an empty page, or the last one again)
+            store.mark(url)
+            store.stop(sid, "end of results")
+            break
+        seen |= urls
+        total_new += store.page(sid, url, recs, total)  # recs may be empty: a page of listings all over the border
+        if p >= ((data.get("Paging") or {}).get("TotalPages") or 0):  # the API caps a query at 600 records
+            store.stop(sid, "end of results")
+            break
+    return total_new
 
 
 def olx_area_m2(params, keys=("m", "area_de_terreno_m2", "space", "land_area")):
@@ -2233,9 +2508,11 @@ def translate(texts):
             return
         out, err = None, ""
         try:
-            p = subprocess.run([claude, "-p", "--model", "haiku", "--tools", "", "--strict-mcp-config",
+            # no extended thinking: titles don't need it, and with it a batch takes ~40 s and 5x the tokens
+            p = subprocess.run([claude, "-p", "--model", "haiku", "--effort", "low", "--tools", "", "--strict-mcp-config",
                                 "--no-session-persistence", "--setting-sources", "", "--system-prompt", TRANSLATE_PROMPT],
-                               input=json.dumps(batch, ensure_ascii=False), capture_output=True, text=True, timeout=300)
+                               input=json.dumps(batch, ensure_ascii=False), capture_output=True, text=True, timeout=300,
+                               env=dict(os.environ, MAX_THINKING_TOKENS="0"))
             err = (p.stderr or p.stdout).strip()
             m = re.search(r"\[.*\]", p.stdout, re.S)
             out = json.loads(m.group(0)) if m else None
@@ -2325,7 +2602,7 @@ def collapse_similar(recs):
     different titles, a REALTOR.ca lot on two MLS boards ("(TB-73)"), a Kijiji ad reposted under a new id, the same
     plot on OLX and Properstar, or a seller's row of identical lots posted one ad each. Listings in the same country
     at the same US dollar price are one parcel when they share a title (per site, or in English across sites), a
-    location and size, or the same opening description text and size. The fullest listing of each group stays, with
+    location and size, the same opening description text and size, or the same MLS number. The fullest listing of each group stays, with
     similar = how many others it stands for. recs come cheapest first."""
     parent = list(range(len(recs)))
 
@@ -2352,6 +2629,9 @@ def collapse_similar(recs):
         desc = re.sub(r"[\W_]", "", (r.get("description") or "").lower())
         if len(desc) >= 60:
             keys.append(("d", r.get("source"), desc[:120], acres))
+        m = MLS_NUMBER_RX.search((r.get("title") or "") + " " + (r.get("description") or ""))
+        if m:  # the same MLS listing on REALTOR.ca and in Kijiji's REALTOR.ca feed
+            keys.append(("m", m.group(1).upper()))
         for k in keys:
             k = (cc, usd) + k
             if k in first:
@@ -2479,7 +2759,7 @@ def town(rec):
         parts = ((rec.get("title") or "") + " | " + (rec.get("description") or "")).split(" | ")
         m = next((m for m in (US_ADDRESS_RX.match(p.strip()) for p in parts) if m), None)
         name, state = m.groups() if m else ("", None)
-    elif src == "kijiji":
+    elif src in ("kijiji", "realtor"):
         m = CA_TOWN_RX.search(place)
         name, state = m.groups() if m else ("", None)
     elif src == "olx":
@@ -2644,7 +2924,7 @@ def build_site(recs, rates):
 
 
 COVERAGE_COLS = ["source", "search", "site_total", "fetched", "fetched_pct", "on_site", "pages", "reached_usd", "stopped"]
-SOURCE_ORDER = ["properstar", "castles", "landwatch", "zillow", "kijiji", "olx", "mercadolibre", "ieichiba", "homes",
+SOURCE_ORDER = ["properstar", "castles", "landwatch", "zillow", "kijiji", "realtor", "olx", "mercadolibre", "ieichiba", "homes",
                 "immobiliare", "encuentra24"]
 
 
@@ -2721,13 +3001,15 @@ def main():
     ap.add_argument("--states", help="US state slugs for LandWatch and Zillow, e.g. new-mexico,arizona (default: all)")
     ap.add_argument("--central-america", help="Encuentra24 countries, e.g. CR,PA (default: %s)" % ",".join(ENCUENTRA24_COUNTRIES))
     ap.add_argument("--prefectures", help="Japanese prefectures for HOME'S akiya bank, e.g. nagano,shimane (default: all)")
-    ap.add_argument("--provinces", help="Kijiji provinces, e.g. nova-scotia,saskatchewan (default: all)")
-    ap.add_argument("--workers", type=int, default=4, help="Chrome windows scraping in parallel")
+    ap.add_argument("--provinces", help="provinces for Kijiji and REALTOR.ca, e.g. nova-scotia,saskatchewan (default: all)")
+    ap.add_argument("--workers", type=int, default=8, help="Chrome windows scraping in parallel (about 1.1 GB of memory each)")
     ap.add_argument("--tile", choices=["right", "full"], default="right",
                     help="tile the windows over the right half (default) or the whole screen")
     ap.add_argument("--hidden", action="store_true", help="no visible windows: one per worker, minimized to the Dock")
     ap.add_argument("--headless", action="store_true", help="fully headless Chrome (more likely to get blocked)")
     ap.add_argument("--delay", type=float, default=2.5, help="base seconds between page loads")
+    ap.add_argument("--dashboard", type=int, default=8765, metavar="PORT",
+                    help="serve a live progress page at http://localhost:PORT while the run goes (0 = off)")
     ap.add_argument("--fresh", action="store_true", help="re-scrape pages already done")
     ap.add_argument("--load-all", action="store_true",
                     help="let Chrome download ads, analytics, maps and fonts too (they're blocked by default)")
@@ -2754,6 +3036,9 @@ def main():
             a.sources, a.pages, a.verify, a.workers))
 
     store = Store()
+    if a.dashboard and not a.report_only:
+        LIVE.store, LIVE.args = store, " ".join(sys.argv[1:]) or "(defaults)"
+        serve_dashboard(a.dashboard)
     if a.fresh:
         store.reset()
     if a.verify_only:
@@ -2791,6 +3076,7 @@ def main():
                 def run(*args):
                     with METRICS.phase(fn.__name__.replace("crawl_", "http ")):
                         fn(*args)
+                    LIVE.idle()
                 return run
 
             threads = [threading.Thread(target=timed(fn), args=(Plain(delay=max(1.0, a.delay / 2)), store) + args,
@@ -2801,6 +3087,7 @@ def main():
             japan = not a.countries or "japan" in countries
             per_source = {
                 "landwatch": [(st, k) for k in kinds for st in states],
+                "realtor": [(pv, k) for k in kinds for pv in provs],
                 "properstar": [(c, k) for k in kinds for c in countries],
                 "castles": [(c, "houses") for c in countries],
                 "immobiliare": [("italia", "land")] if not a.countries or "italy" in countries else [],

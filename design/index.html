@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cheapest Land redesign</title>
+<style>
+:root{--bg:#fff;--ink:#1c1f24;--soft:#5f6670;--rule:#e3e5e9;--link:#2346b5}
+@media (prefers-color-scheme:dark){:root{--bg:#17191d;--ink:#e7e9ec;--soft:#9aa1ab;--rule:#2c3036;--link:#8ea8ff}}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,sans-serif}
+main{max-width:720px;margin:0 auto;padding:40px 16px 64px}
+h1{font-size:28px;margin:0 0 8px}
+h2{font-size:20px;margin:0 0 6px}
+h2 a{color:var(--link)}
+p{margin:0 0 10px}
+.soft{color:var(--soft)}
+section{border-top:1px solid var(--rule);padding:24px 0}
+ul{margin:6px 0 0;padding-left:20px}
+li{margin:4px 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>Three directions for Cheapest Land</h1>
+  <p class="soft">Each one uses 42 real listings from today’s data. Filters work on that sample; links go to the real listings.</p>
+
+  <section>
+    <h2><a href="a-price-list.html">A. Price list</a></h2>
+    <p>A ranked table instead of a grid of cards. You compare prices by reading down one column, and the filters sit in a sidebar with how many listings each choice has.</p>
+    <ul>
+      <li>Best for scanning: more listings fit on screen than with cards.</li>
+      <li>Counts beside each country and type show where the cheap land is before you click.</li>
+      <li>On a phone the rows fold into price on the left, details below.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><a href="b-to-scale.html">B. Drawn to scale</a></h2>
+    <p>Every listing shows its land as a square, drawn to the same scale as a football pitch. “0.17 acres” means little to most people; a patch a tenth the size of a pitch does.</p>
+    <ul>
+      <li>The one memorable thing: you see straight away that $582 buys more land than $552.</li>
+      <li>Listings sit in a grid of parcels split by survey lines, coloured by type of land.</li>
+      <li>Type of property becomes one row of buttons instead of a dropdown.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><a href="c-atlas.html">C. Atlas</a></h2>
+    <p>The list and the map on one screen, and the filters read as a sentence: “Any land under $2,000 in Europe”. Hover a row and its price lights up on the map.</p>
+    <ul>
+      <li>No switching tabs to see where a listing is.</li>
+      <li>The three filters people use most are always in view; the rest go under More filters.</li>
+      <li>On a phone the map sits above the list.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>In all three</h2>
+    <ul>
+      <li>Titles written in capitals are shown in sentence case.</li>
+      <li>The price in the listing’s own currency sits under the converted one, in place of “Converted from…”.</li>
+      <li>A real typeface and tabular figures, so prices line up.</li>
+      <li>Light and dark themes, and a layout that works on a phone.</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

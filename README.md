@@ -15,21 +15,36 @@ The results are published daily at **https://cheapest-land.pages.dev**.
 
 | Source | Coverage | How it's fetched |
 |---|---|---|
-| [Properstar](https://www.properstar.com) | ~150 countries, land plots and houses | real Chrome via Playwright (site has a bot check) |
+| [Properstar](https://www.properstar.com) | ~150 countries, land plots and houses, plus a castles search in each country | real Chrome via Playwright (site has a bot check) |
 | [LandWatch](https://www.landwatch.com) | all 50 US states | real Chrome via Playwright |
+| [Zillow](https://www.zillow.com) | lots and land in all 50 US states | plain HTTP requests |
 | [Kijiji](https://www.kijiji.ca) | every Canadian province/territory | plain HTTP requests |
+| [REALTOR.ca](https://www.realtor.ca) | Canada's MLS: vacant land and houses, every province/territory | real Chrome via Playwright: the map page's own listing API, called from inside the page |
 | [OLX](https://www.olx.pl) | Poland, Ukraine, Romania, Portugal, Bulgaria, Kazakhstan, Uzbekistan | OLX's JSON search API |
 | [Mercado Libre](https://inmuebles.mercadolibre.com.ar) | Argentina, Mexico | plain HTTP requests |
+| [Encuentra24](https://www.encuentra24.com) | Costa Rica, Panama, Nicaragua, Honduras, Guatemala, El Salvador | real Chrome via Playwright (Cloudflare blocks plain requests) |
+| [Immobiliare.it](https://www.immobiliare.it) | all of Italy | real Chrome via Playwright |
 | [Ieichiba](https://www.ieichiba.com) (家いちば) | Japan: empty houses (akiya) and land sold by their owners | plain HTTP requests |
+| [HOME'S akiya bank](https://www.homes.co.jp/akiyabank/) | Japan: municipal empty-house banks, all 47 prefectures | real Chrome via Playwright |
+
+The source names for `--sources` are `properstar`, `castles`, `landwatch`, `zillow`, `kijiji`, `realtor`, `olx`, `mercadolibre`,
+`encuentra24`, `immobiliare`, `ieichiba` and `homes` (`ALL_SOURCES` in `landfinder.py`).
 
 Each search is sorted cheapest first. Properstar and Mercado Libre results start at $1,500, because cheaper
-"prices" there are almost always per-m² figures or placeholders. OLX searches start at $500 to $1,500 depending
+"prices" there are almost always per-m² figures or placeholders; Zillow and Immobiliare.it start at $1,000 (and €1,000)
+and REALTOR.ca at CAD 1,000 for the same reason. OLX searches start at $500 to $1,500 depending
 on the country (`OLX_SITES` in `landfinder.py`): real village plots in Bulgaria, Portugal and Kazakhstan sell for
 a few hundred dollars, while in Ukraine, Uzbekistan and Poland a price that low is nearly always per m² or per
 sotka (100 m²). Mercado Libre's other countries ask visitors to sign in, so they aren't included.
 
-The sites that answer plain HTTP requests (Kijiji, OLX, Mercado Libre) each run in their own thread alongside the
-Chrome windows, so adding one barely changes how long a run takes.
+The sites that answer plain HTTP requests (Kijiji, OLX, Mercado Libre, Zillow, Ieichiba) each run in their own
+thread alongside the Chrome windows, so adding one barely changes how long a run takes.
+
+REALTOR.ca's listing API takes a map box, so each province is searched by a box around it, kept to the listings the
+API places in that province, and answers at most 600 listings per search (12 pages of 50). Its search results carry no
+description, so the lease and payment-plan text checks don't apply to it; the search itself asks for sales only. Many
+REALTOR.ca listings also reach Kijiji through its REALTOR.ca feed, under a seller-written title, so the same lot can
+show from both sources. REALTOR.ca's terms of use don't allow automated access; see the notes at the end.
 
 ## Quick start (macOS)
 
@@ -41,10 +56,20 @@ cd landfinder
 ./run.sh            # first run creates .venv and installs dependencies
 ```
 
-By default, 4 small Chrome windows open tiled on the right half of your screen. Each one scrapes a
+By default, 8 small Chrome windows open tiled on the right half of your screen. Each one scrapes a
 different country or state at the same time, and a banner at the top shows what it's working on. Pages
 are drawn at half size, so sites still serve their desktop layout. If a window gets closed, the script
-reopens it. A full run takes about an hour with 4 windows.
+reopens it. A full run takes about 20-40 minutes with 8 windows (each uses about 1.1 GB of memory).
+
+While a run goes, **http://localhost:8765** shows a live dashboard (`dashboard.html`): the phase it's in, searches
+done and a rough time left, every window's and thread's current page, pages per minute, new listings, and per site
+the pages fetched, failures, blocks and seconds per page, with the log underneath. Its Stop button ends the run
+the way Ctrl-C does: the pages in progress finish, everything collected is saved, and the site is built from it.
+
+**One-click run:** `scrape.command` does what the daily job does with a window to watch: double-click it in Finder
+(or a copy of it on the Desktop) and a Terminal window opens, runs a full fresh scrape with the Chrome windows
+hidden, opens the dashboard in your browser, keeps the Mac awake, then rebuilds and publishes the site. Any option
+can be added when it's run from a shell: `./scrape.command --workers 4`.
 
 ## Usage
 
@@ -53,14 +78,17 @@ reopens it. A full run takes about an hour with 4 windows.
 ./run.sh --sources properstar --listings 500     # go deeper on one source
 ./run.sh --countries paraguay,bolivia,argentina  # only these countries (Properstar, OLX, Mercado Libre)
 ./run.sh --sources olx,mercadolibre              # only some sources
-./run.sh --states new-mexico,arizona,nevada      # only these US states (LandWatch)
-./run.sh --provinces nova-scotia,saskatchewan    # only these provinces (Kijiji)
+./run.sh --states new-mexico,arizona,nevada      # only these US states (LandWatch, Zillow)
+./run.sh --provinces nova-scotia,saskatchewan    # only these provinces (Kijiji, REALTOR.ca)
+./run.sh --central-america CR,PA                 # only these countries (Encuentra24)
+./run.sh --sources homes --prefectures nagano    # one Japanese prefecture (HOME'S akiya bank)
 ./run.sh --report-only                           # rebuild outputs from saved data
 ./run.sh --report-only --no-translate            # ...without translating new titles (no claude CLI calls)
 ./run.sh --fresh                                 # re-scrape pages already done
-./run.sh --workers 6                             # more windows in parallel (default 4)
+./run.sh --workers 4                             # fewer windows in parallel (default 8)
 ./run.sh --tile full                             # tile windows over the whole screen
 ./run.sh --hidden                                # no visible windows: minimized to the Dock
+./run.sh --dashboard 0                           # no live dashboard (default port 8765)
 ./run.sh --pages 50                              # allow more pages per search (default 30)
 ```
 
@@ -161,8 +189,8 @@ placeholder checks, and a ¥0 listing shows as Free. Land area comes from the de
 searches go up from the cheapest listing, so a $400,000 château only turns up in a country with few houses for sale.
 
 LandWatch listings come without coordinates, so they're pinned at their ZIP code's center, from the US Census
-ZIP code file in `geo/us_zip_centroids.csv.gz` (2024 ZCTA Gazetteer). Mercado Libre listings have no location
-and only appear in the list.
+ZIP code file in `geo/us_zip_centroids.csv.gz` (2024 ZCTA Gazetteer). Mercado Libre, Ieichiba, HOME'S and Encuentra24
+listings have no location and only appear in the list.
 
 Everything on the site is in English. Titles that aren't (OLX, Mercado Libre, French Kijiji ads, the odd German
 or Spanish Properstar title) and place names in Cyrillic are translated with Claude when the site is built: the
@@ -179,6 +207,7 @@ original; searching in the original language still works. `--no-translate` skips
   `SITE_PASSWORD` secret; set or change it with `npx wrangler pages secret put SITE_PASSWORD --project-name cheapest-land`
   (changing it logs everyone out). For local testing put `SITE_PASSWORD=...` in `.dev.vars` (not committed) and run
   `npx wrangler pages dev site`.
+- `./scrape.command` is the same job started by hand, with a Terminal window and the live dashboard (see Quick start).
 - `./install_daily.sh` schedules `daily.sh` with launchd: a fresh scrape at 6:00 every morning, with
   windows hidden in the Dock, then a deploy. If the Mac is asleep at that time, macOS runs the job when it
   wakes. Logs go to `logs/`. Use `./install_daily.sh 7 30` to change the time, or `./install_daily.sh off`
@@ -251,7 +280,8 @@ Everything is in `landfinder.py`:
    listings.
 2. **Store.** `Store` appends every record to `data/listings.jsonl` and every finished page URL to
    `data/pages_done.txt`. The newest line per listing URL wins, so prices stay current and a stopped run resumes.
-3. **Verify.** `verify_cheapest` opens the cheapest believable LandWatch listings and re-reads their full description.
+3. **Verify.** `verify_cheapest` opens the cheapest believable LandWatch, Kijiji and Properstar listings and re-reads
+   their full description (see above).
 4. **Score.** `finalize` converts prices to USD (`load_fx`, `to_usd`), swaps down payments for the real cash price
    (`fix_down_payment`), works out USD per acre and adds warning flags (`flag`). `build_outputs` then adds the checks
    that need the whole dataset: one price repeated on many plot sizes, a "total" that would only buy ~20 m² at
@@ -281,7 +311,9 @@ Empty houses on the Japanese akiya sites (Ieichiba, HOME'S) rank with the land: 
 ## Notes
 
 - Listing data belongs to the sites it comes from. Use this for personal research, keep the default
-  delays between page loads, and check each site's terms.
+  delays between page loads, and check each site's terms. REALTOR.ca's terms of use forbid automated access
+  outright; it is included because it is the only full picture of land for sale in Canada, and `--sources` can
+  leave it out.
 - Cheap per-acre land is often remote, landlocked or unbuildable, and many countries restrict
   foreign ownership. Verify access, zoning, title and ownership rules before buying anything.
 - `tools/` has small probe scripts used to work out Properstar's URL parameters and LandWatch's page structure,

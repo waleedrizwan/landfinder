@@ -162,3 +162,19 @@ def test_castles_are_tagged_and_dont_skew_the_land_checks(workdir):
     assert [r[PRICE] for r in castles] == [105000, 150000]
     assert all(r[TAGS] == "K" and r[TYPE] == "H" and r[FLAGS] == "H" for r in castles)  # shown under Castles / House
     assert all(r[FLAGS] == "" for r in rows if "castle" not in r[URL])  # a building's price/m2 doesn't flag the plots
+
+
+def test_collapse_folds_realtor_and_kijiji_by_mls_number():
+    # Kijiji's REALTOR.ca feed writes the lot under the seller's title; REALTOR.ca gives its address. Same MLS number: one parcel.
+    kijiji = {"source": "kijiji", "country": "CA", "price_usd": 2143.0, "title": "Affordable building lot in Sydney Mines!",
+              "region": "Sydney Mines, NS, B1V3C8", "description": "Great lot, close to amenities. (id:24493) MLS# 202627276",
+              "acres": None, "lat": None, "lon": None, "flags": []}
+    realtor = {"source": "realtor", "country": "CA", "price_usd": 2143.0, "title": "Lot 276 Yorke Street",
+               "region": "Sydney Mines, NS, B1V3C8", "description": "Vacant Land | 0.0534 ac|under 1/2 acre | MLS® 202627276",
+               "acres": 0.0534, "lat": 46.23, "lon": -60.21, "flags": []}
+    other = {"source": "realtor", "country": "CA", "price_usd": 2143.0, "title": "Lot 277 Yorke Street",
+             "region": "Sydney Mines, NS, B1V3C8", "description": "Vacant Land | 0.0534 ac | MLS® 202627277",
+             "acres": 0.0534, "lat": 46.24, "lon": -60.22, "flags": []}
+    out = lf.collapse_similar([kijiji, realtor, other])
+    assert [r["title"] for r in out] == ["Lot 276 Yorke Street", "Lot 277 Yorke Street"]  # the fuller REALTOR.ca record stands for both
+    assert out[0]["similar"] == 1 and out[1]["similar"] == 0

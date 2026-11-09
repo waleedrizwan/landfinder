@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cheapest Land — B: Drawn to scale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap">
+<style>
+/* Direction B: every listing shows its plot drawn to scale next to a football pitch.
+   "0.17 acres" means nothing to most people; a square smaller than a pitch does.
+   The results sit in a grid of parcels split by survey lines rather than floating cards. */
+:root{
+  --ground:#eef2ea; --plot:#fbfcf9; --ink:#1d281f; --soft:#5d6b60; --line:#c9d3c4; --link:#285c39;
+  --pitch:#8fa08f; --warn:#9a4a12;
+  --V:#b3c69a; --L:#aab4bd; --F:#dcc275; --T:#7ea676; --R:#98c2b2; --W:#86b7d4; --C:#b9aecb; --G:#c5d38b; --B:#cfa98b; --H:#cfa98b;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ground:#141a15; --plot:#1b221c; --ink:#e3eadf; --soft:#93a294; --line:#2f3a30; --link:#9fd3ad; --pitch:#5f705f; --warn:#e8a06a;
+  --V:#5d7449; --L:#59636c; --F:#8a7535; --T:#3f6a3a; --R:#48766a; --W:#3d6b86; --C:#6a5f80; --G:#6b7a3a; --B:#7d5b42; --H:#7d5b42;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.5 "Archivo",system-ui,sans-serif;font-variation-settings:"wdth" 100}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+
+.wrap{max-width:1280px;margin:0 auto;padding:0 24px}
+header{padding:28px 0 20px}
+.row{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.brand{font-size:22px;font-weight:800;font-stretch:125%;letter-spacing:-.01em}
+nav{display:flex;gap:4px;margin-left:auto;background:var(--plot);border:1px solid var(--line);border-radius:6px;padding:3px}
+nav a{padding:5px 14px;border-radius:4px;font-weight:600;color:var(--soft)}
+nav a[aria-current]{background:var(--ink);color:var(--ground)}
+.lede{font-size:clamp(26px,3.6vw,40px);line-height:1.12;font-weight:700;font-stretch:112%;letter-spacing:-.02em;margin:26px 0 0;max-width:22ch}
+.key{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:16px;color:var(--soft);font-size:14px}
+.key svg{vertical-align:middle;margin-right:6px}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;padding:14px 0;position:sticky;top:0;background:var(--ground);z-index:5;border-bottom:1px solid var(--line)}
+.filters input,.filters select{font:inherit;color:var(--ink);background:var(--plot);border:1px solid var(--line);border-radius:6px;padding:9px 12px;min-width:0}
+.filters input{flex:1 1 260px}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--plot)}
+.seg button{font:inherit;font-size:14px;color:var(--soft);background:none;border:0;border-right:1px solid var(--line);padding:8px 12px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--ground)}
+.count{color:var(--soft);font-size:14px;margin:16px 0 10px}
+
+/* the parcel grid: 1px gaps over the line colour draw the survey lines */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+.lot{background:var(--plot);padding:16px 16px 18px;display:flex;flex-direction:column}
+.lot:hover{background:color-mix(in srgb,var(--plot) 85%,var(--V))}
+.scale{height:112px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:14px}
+.scale svg{display:block;overflow:visible}
+.scale .lbl{font-size:12px;color:var(--soft);text-align:right;line-height:1.3}
+.price{font-size:26px;font-weight:800;font-stretch:118%;letter-spacing:-.02em;line-height:1}
+.own{font-size:13px;color:var(--soft);margin-top:4px}
+.t{font-weight:500;margin-top:10px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lot:hover .t{color:var(--link);text-decoration:underline}
+.where{color:var(--soft);font-size:14px;margin-top:auto;padding-top:8px}
+.type{font-size:13px;font-weight:600}
+.type i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:0}
+.tag{color:var(--warn);font-weight:700;font-size:13px;margin-left:8px}
+footer{color:var(--soft);font-size:13px;padding:28px 0 48px;max-width:72ch}
+
+@media (max-width:600px){
+  .wrap{padding:0 16px}
+  .filters{position:static}
+  .grid{grid-template-columns:1fr 1fr}
+  .lot{padding:12px}
+  .scale{height:90px}
+  .price{font-size:21px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="row">
+    <div class="brand">Cheapest Land</div>
+    <nav><a href="#" aria-current="page">Listings</a><a href="#">Map</a></nav>
+  </div>
+  <p class="lede" id="lede"></p>
+  <div class="key">
+    <span><svg width="22" height="15"><rect x=".5" y=".5" width="21" height="14" fill="none" stroke="var(--pitch)" stroke-dasharray="3 2"/></svg>a football pitch, 1.8 acres</span>
+    <span><svg width="14" height="14"><rect width="14" height="14" fill="var(--V)"/></svg>the land you get, to the same scale</span>
+  </div>
+</header>
+
+<div class="filters">
+  <input id="q" type="search" placeholder="Search a town, region or country" aria-label="Search">
+  <div class="seg" role="group" aria-label="Type of property" id="seg">
+    <button aria-pressed="true" data-t="">All</button><button aria-pressed="false" data-t="VR">Land</button><button aria-pressed="false" data-t="F">Farms</button><button aria-pressed="false" data-t="L">Lots</button><button aria-pressed="false" data-t="BGH">With a house</button>
+  </div>
+  <select aria-label="Country"><option>All countries</option></select>
+  <select aria-label="Currency"><option>USD</option><option>EUR</option></select>
+  <select aria-label="More filters"><option>More filters</option></select>
+</div>
+
+<div class="count" id="count"></div>
+<div class="grid" id="grid"></div>
+
+<footer>Plots are drawn from the area in the listing, as a square; the real shape will differ. Prices are converted at today’s exchange rates.
+  Check access, zoning, title and foreign-ownership rules before buying.</footer>
+</div>
+
+<script src="sample.js"></script>
+<script src="common.js"></script>
+<script>
+// one scale for every card: a 1-acre square is 40px wide (a football pitch is then about 66 x 43)
+const PX = 40, BOX = 112;
+const PW = 105 / 63.6 * PX, PH = 68 / 63.6 * PX;  // a pitch in px; 63.6 m is the side of a 1-acre square
+
+function plot(r, box){
+  const k = box / BOX, side = Math.sqrt(r.acres) * PX * k, sq = Math.min(side, box), pw = PW * k, ph = PH * k;
+  // a plot too big for the box is cut off at its edge, with a torn side to show it goes on
+  return `<svg width="${Math.max(sq, pw) + 2}" height="${box}" aria-hidden="true">
+    <rect x="1" y="${box - sq}" width="${sq}" height="${sq}" fill="var(--${r.type})"/>
+    ${side > box ? `<path d="M${sq + 1} ${box - sq} l-5 ${sq / 8} l5 ${sq / 8} l-5 ${sq / 8} l5 ${sq / 8} l-5 ${sq / 8} l5 ${sq / 8} l-5 ${sq / 8} l5 ${sq / 8} z" fill="var(--plot)"/>` : ""}
+    <rect x="1.5" y="${box - ph - .5}" width="${pw}" height="${ph}" fill="none" stroke="var(--pitch)" stroke-dasharray="3 2"/>
+  </svg>`;
+}
+
+let types = "";
+function render(){
+  const q = $("q").value.trim().toLowerCase();
+  const rows = ROWS.filter(r => (!types || types.includes(r.type)) && (!q || (r.title + " " + place(r)).toLowerCase().includes(q)));
+  const box = matchMedia("(max-width:600px)").matches ? 90 : 112;
+  $("count").textContent = `Showing ${rows.length} of ${D.clean.toLocaleString("en-US")}, cheapest first`;
+  $("grid").innerHTML = rows.map(r => `<a class="lot" href="${esc(r.url)}" target="_blank" rel="noopener">
+    <div class="scale">${plot(r, box)}<div class="lbl">${acres(r.acres)} acres<br>${m2(r.acres)} m²</div></div>
+    <div class="price">${usd(r.usd)}</div>
+    ${ownPrice(r) ? `<div class="own">Listed at ${ownPrice(r)}</div>` : `<div class="own">${usd(r.ppa)} an acre</div>`}
+    <div class="t">${esc(r.title)}</div>
+    <div class="where"><div>${esc(place(r))}</div><span class="type"><i style="background:var(--${r.type})"></i>${TYPES[r.type]}</span>${r.tags.includes("R") ? `<span class="tag">Ruin</span>` : ""}</div>
+  </a>`).join("");
+}
+const cheapest = ROWS[0];
+$("lede").textContent = `${D.clean.toLocaleString("en-US")} plots of land for sale. The cheapest is ${usd(cheapest.usd)}, in ${country(cheapest.cc)}.`;
+$("q").addEventListener("input", render);
+$("seg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  for (const x of $("seg").children) x.setAttribute("aria-pressed", x === b);
+  types = b.dataset.t; render();
+});
+addEventListener("resize", render);
+render();
+</script>
+</body>
+</html>

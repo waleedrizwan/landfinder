@@ -155,3 +155,46 @@ def test_homes_url():
         "https://www.homes.co.jp/akiyabank/hokuriku/nagano/?sort=price_asc&categories%5B%5D=102"
     assert lf.homes_url("kyushu/oita", 3, "houses").endswith("/kyushu/oita/?sort=price_asc&categories%5B%5D=101&page=3")
     assert len(lf.HOMES_PREFECTURES) == 47
+
+
+def realtor_fixture():
+    return json.loads(fixture_html("realtor_search.json"))
+
+
+def test_realtor():
+    recs, total = lf.parse_realtor(realtor_fixture(), "quebec")
+    assert total == 12828  # how many vacant-land listings the API counts in the Ontario+Quebec box
+    assert len(recs) == 4  # the two Ontario lots are outside Quebec, even though the box reaches them
+    r = recs[0]
+    assert r["source"] == "realtor"
+    assert r["country"] == "CA"
+    assert (r["price"], r["currency"]) == (3000.0, "CAD")
+    assert r["title"] == "Ch. Rodgers"
+    assert r["region"] == "Gore, QC, J0V1K0"  # town, province code, postal code: the shape Kijiji's REALTOR.ca ads have
+    assert lf.town(r) == ("Gore", "QC")
+    assert r["lat"] == pytest.approx(45.75017206)
+    assert r["url"] == "https://www.realtor.ca/real-estate/29070840/ch-rodgers-gore-lac-mackay-sector"[:len(r["url"])]
+    assert r["url"].startswith("https://www.realtor.ca/real-estate/29070840/")
+    assert "MLS® 26872738" in r["description"]
+    assert r["acres"] == pytest.approx(56101298 / 43560.0)  # "56101298 sqft|Unknown"
+    assert recs[1]["acres"] == pytest.approx(970.6 / lf.ACRE_M2)  # "970.6 m2"
+
+
+def test_realtor_ontario_side_of_the_box():
+    recs, _ = lf.parse_realtor(realtor_fixture(), "ontario")
+    assert [r["price"] for r in recs] == [1500.0, 5000.0]
+    assert recs[0]["acres"] == 10.0  # "10 - 49.99 acres": the lower bound
+    assert recs[1]["acres"] == pytest.approx(60 * 100 / 43560.0)  # "60 x 100 FT|under 1/2 acre": the lot's dimensions
+    assert recs[1]["region"] == "Manitouwadge, ON, P0T2C0"
+
+
+def test_realtor_not_a_results_page():
+    assert lf.parse_realtor({"ErrorCode": {"Id": 500}}, "ontario") == (None, None)
+    assert lf.parse_realtor(None, "ontario") == (None, None)
+
+
+def test_realtor_acres():
+    assert lf.realtor_acres({"SizeTotal": "30 x 40 M"}) == pytest.approx(1200 / lf.ACRE_M2)
+    assert lf.realtor_acres({"SizeTotal": "under 1/2 acre"}) == 0.5
+    assert lf.realtor_acres({"SizeTotal": "Unknown"}) is None
+    assert lf.realtor_acres({}) is None
