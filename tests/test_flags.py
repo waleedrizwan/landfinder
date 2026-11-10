@@ -149,3 +149,58 @@ def test_every_flag_text_has_a_site_code(rates):
         texts += [t for t in flags_for(rates, **kw).split("; ") if t]
     for t in texts:
         assert lf.site_codes(t), "no site code for flag %r" % t
+
+
+# ---- found by auditing the listings the site showed on 2026-11-10
+
+@pytest.mark.parametrize("kw, expected", [
+    ({"title": "будинок в Гостомелі", "description": "Здається будинок дуплекс"}, "lease/rental"),
+    ({"description": "За Нова година се отдава къща за гости"}, "lease/rental"),
+    ({"title": "HOUSE IN ANTICRETICO AREA 3 STEPS IN FRONT"}, "lease/rental"),
+    ({"description": "Perfect for office users. $17.50/sf/yr, NNN"}, "lease/rental"),
+    ({"description": "1975 mini home. Lot rent $148.86."}, "lease/rental"),
+    ({"description": "Chalet rustique situé sur un terrain loué au bord du lac"}, "lease/rental"),
+    ({"description": "1/4 share of a deluxe ground floor suite at the resort"}, "share of a property"),
+    ({"description": "Fractional Ownership cottage on Shadow Lake"}, "share of a property"),
+    ({"description": "This is a one week time share, week 50 each year"}, "share of a property"),
+    ({"title": "Investment Opportunity – 50% Undivided Ownership in Land Plot"}, "share of a property"),
+    ({"title": "2 bedroom house with a life annuity"}, "life annuity"),
+    ({"description": "14 x 54 mini home to be moved"}, "building only"),
+    ({"title": "Domek holenderski 8 × 3 m"}, "building only"),
+    ({"title": "Lote en Camposanto La Piedad", "acres": 0.001, "price": 4800}, "burial plot"),
+    ({"title": "Terreno", "description": "Espacio para 3 tumbas en Jardines del Recuerdo", "acres": None, "price": 2600}, "burial plot"),
+    ({"description": "750 mz aptas para ganado, precio por manzana $3000"}, "per m2/acre/hectare"),
+    ({"source": "encuentra24", "price": 1000}, "agency listing under $1,500"),
+    ({"source": "olx", "kind": "houses", "price": 1300, "currency": "EUR", "title": "Moradia T3 com jardim e garagem"}, "price too low for a house"),
+])
+def test_audit_catches(rates, kw, expected):
+    assert expected in flags_for(rates, **kw)
+
+
+@pytest.mark.parametrize("kw", [
+    {"title": "Terreno agricolo, Camposanto", "price": 150000, "currency": "EUR"},  # a town near Modena
+    {"title": "Nnn Compromise Gulch, Neihart, MT 59465"},  # a street-number placeholder, not a triple-net lease
+    {"description": "You own your land — no pad or lot rent. Prepare to be moved by the views."},
+    {"description": "Cena obejmuje działkę i domek holenderski z trzema sypialniami"},  # a plot sold with a caravan on it
+    {"description": "Готова за бизнес с нощувки; може да се отдава на туристи"},  # could be let: still a sale
+    {"description": "Just under 1/2 acre, 1/4 mile from the lake"},
+])
+def test_audit_rules_leave_sales_alone(rates, kw):
+    assert flags_for(rates, **kw) == ""
+
+
+def test_cheap_ruin_is_still_a_house_price(rates):
+    f = flags_for(rates, source="olx", kind="houses", price=1500, currency="EUR", title="Casa em ruínas para recuperar")
+    assert "price too low for a house" not in f
+
+
+def test_landwatch_home_card_title_and_floor_area(rates):
+    card = " | 3 beds | • | 2 baths | • | 3,217 sqft | 191 Dapplegray, Bell Canyon, CA, 91307, Ventura County | Agent"
+    assert lf.landwatch_card(card) == ("191 Dapplegray, Bell Canyon, CA, 91307, Ventura County", pytest.approx(298.9, abs=0.1))
+    assert lf.landwatch_card(" | 414,255 sqft | 9.51 Ac, Beryl, UT, 84714, Iron County") == ("9.51 Ac, Beryl, UT, 84714, Iron County", None)
+    # a home card saved with the old "•" title is repaired, and a rent listed as a sale price is caught by its floor area
+    r = lf.finalize({"source": "landwatch", "country": "US", "title": "•", "kind": "houses", "price": 10750, "currency": "USD",
+                     "acres": 1.0, "url": "https://www.landwatch.com/ventura-county-california-homes-for-sale/pid/1",
+                     "description": "Resort-style estate | $10,750 | • | 1 acres" + card}, rates)
+    assert r["title"].startswith("191 Dapplegray")
+    assert "under $40 per m2" in r["flags"]

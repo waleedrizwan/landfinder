@@ -272,7 +272,7 @@ const acres = v => v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v)
 const srcName = s => ({properstar:"Properstar", landwatch:"LandWatch", kijiji:"Kijiji", realtor:"REALTOR.ca", olx:"OLX", mercadolibre:"Mercado Libre", ieichiba:"Ieichiba", homes:"HOME'S Akiya Bank", castles:"Properstar", zillow:"Zillow", immobiliare:"Immobiliare.it", encuentra24:"Encuentra24"})[s] || s;
 const PAGE = 60;
 const FLAGS = {L:"Price looks too low: may be a monthly payment, a per-m² price or in the wrong currency",
-  S:"Only a share, usage rights or a burial plot, not land you'd own outright",
+  S:"Only a share, usage rights, a burial plot or a building without its land, not land you'd own outright",
   P:"May be a payment-plan price", A:"Auction or tender: price may be a minimum bid",
   C:"Under $10 an acre: double-check the listing", R:"Lease or rental, not a sale price",
   X:"Looks like a placeholder price", U:"Price may be per m², acre or hectare",

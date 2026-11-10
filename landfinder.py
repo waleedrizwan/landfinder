@@ -305,7 +305,14 @@ LEASE_RX = re.compile(r"(rent[- ]to[- ]own|\bfor lease\b|\bto let\b|\bp/m\b|\bpc
                       # Mexican agencies write "renta" for rent ("Terreno en venta o renta"); Properstar translates it as "sale and rent"
                       r"|\ben renta\b|\bse renta\b|\brentar\b|\brenta\b|\bse rentan\b"
                       # Turkish, Italian, German, Dutch, Czech and Croatian rentals
-                      r"|kiral[ıi]k|\baffitt|\bmiete\b|vermiet|\bte huur\b|pron[aá]jem|\bnajam\b|iznajm)", re.I)
+                      r"|kiral[ıi]k|\baffitt|\bmiete\b|vermiet|\bte huur\b|pron[aá]jem|\bnajam\b|iznajm"
+                      # Ukrainian/Russian "is being let" ("Здається будинок"), Bulgarian "отдава се" and holiday lets by the
+                      # night, Bolivian anticrético (a deposit for the use of a house, handed back at the end)
+                      r"|\bзда[єе]ться|\bсда[её]тся|(?<!да )\bсе отдава\b|\bотдавам\b|anticr[eé]tic"
+                      # commercial space quoted the way leases are: "$17.50/sf/yr", "NNN"
+                      r"|/\s*(?:sf|sq\.?\s?ft\.?)\s*/\s*(?:yr|year|mo|month)\b|\bper (?:sq\.?\s?ft\.?|square foot) per (?:year|month)\b|(?-i:\bNNN\b)|\btriple net\b"
+                      # a home whose land is rented: mobile homes on a park pad, cottages on leased lots
+                      r"|(?<!no )(?<!no pad or )(?<!no lot or )\b(?:pad|lot|site) (?:rent|fees?)\b|\bterrain lou[ée])", re.I)
 # Japanese leasehold (借地権付き): the house is sold, the land under it stays rented. Only the title counts: descriptions
 # say "賃貸も可能" (could also be rented out) about land that is for sale.
 JP_LEASEHOLD_RX = re.compile(r"借地")
@@ -325,6 +332,7 @@ PER_UNIT_RX = re.compile(r"(\bx|\bper|\bpor|/|\bel|\ble|\bpar|\bthe)\s*(m2\b|m²
                          r"|(?:(?:\bza|\bза|\bpe|\bper|\bx)\s+|/\s*)(?:1\s*)?(m2\b|m²|mp\b|mkw\b|m\s*kw\b|metr|сот|м2|м²|кв\.?\s*м|ar\b|ara\b"
                          r"|га\b|гектар|hektar|hectar|ha\b|dekar|декар|дка\b)"
                          r"|\bна\s+(?:1\s*)?(?:декар|дка\b|сотк|кв\.?\s*м|м2|м²)"  # Bulgarian "цена на декар"
+                         r"|\b(?:por|x|c/)\s*(?:manzana|mz)\b"  # Central American "precio por manzana" (0.7 ha)
                          r"|\$\s?\d[\d.,]*\s*k?\s*(?:an|a|per|/)\s*(?:acre\b|ac\b|hectare|ha\b|m2\b|m²)"  # "$1,500 an acre", "$1,500/ac"
                          r"|\b(?:so|su)[‘'ʻ’`]?t(?:ig[‘'ʻ’`]?i|ixi|kasi)\s*\$?\s*\d|сотк[аи]\s*[-–—:]?\s*\$?\s*\d", re.I)  # Uzbek/Russian "its sotka [costs] 500"
 # "1/8 udziału", "udział 1/4 w prawie własności", "1/2 interest": only part of the property is for sale
@@ -332,9 +340,25 @@ SHARE_RX = re.compile(r"(\b\d+\s*/\s*\d+\s*(?:udzia|cz[eę][sś]ci|w drodze|w pr
                       r"|^\s*udzia[łl]|sprzeda\w*\s+udzia[łl]|udzia[łl]\w*\s+w\s+(?:działk|nieruchom|grunc|prawie)"
                       # "1/3 Ruína em ...", "Cota de 5/16 din casa", "1/2 идеална част от къща"
                       r"|^\s*[1-9]\s*/\s*(?:[2-9]|[1-9]\d)\s(?!\s*-?\s*(?:acres?|ac\b|ha\b|hect|miles?|mi\b|sq|m2|m²|lots?|sections?|of an? acre))|\bcota(?:\s*-?\s*parte|\s+de\s+\d)|\bquota[- ]parte|идеалн\w*\s+част)", re.I)  # not "+ udział w drodze"
+# timeshare weeks and resort fractions ("1/4 share ownership suite", "Fractional Ownership cottage", "50% Undivided
+# Ownership"): anywhere in the text, since the title is usually just the address
+FRACTION_RX = re.compile(r"\btime[- ]?shar\w+|\bfractional (?:ownership|interest|share|land share)|\b(?:quarter|half|full)[- ]share\b"
+                         r"|\b1/\d+\s*(?:th\s+)?(?:share|ownership|fractional|undivided|interest)\b|\bshare ownership\b"
+                         r"|\d+\s?%\s+undivided|\bundivided\s+(?:\d+\s*/\s*\d+\s+|\d+\s?%\s+|one[- ]\w+\s+)?(?:interest|ownership|share)\b", re.I)
+# French/Belgian viager, Italian nuda proprietà: the price is a down payment ("bouquet") or excludes the right to live there
+ANNUITY_RX = re.compile(r"\bviager|\blife annuity|\brente viag[eè]re|\bnue[- ]propri[ée]t[ée]|\bnuda propriet[aà]|\bbare ownership\b|\blijfrente", re.I)
+# a cabin, kiosk or trailer sold on its own, for the buyer to haul away
+MOVE_RX = re.compile(r"(?<!prepare )\b(?:to|must) be (?:moved|relocated)\b|\b(?:buyer|purchaser) (?:to|must|will) (?:move|relocate)\b"
+                     r"|\bà déménager\b", re.I)
+# Polish static caravans ("domek holenderski na kołach"): in the title only, since plots are sold with one standing on them
+MOVE_TITLE_RX = re.compile(r"holendersk|\bna kołach\b|\bprzyczep\w* kemping|\bdom(?:ek|ki) mobiln", re.I)
 ALLOTMENT_RX = re.compile(r"\brod\b|ogr[oó]d\w*\s+działkow|działkow\w*\s+ogr[oó]d", re.I)  # Polish allotment gardens (ROD)
 CEMETERY_RX = re.compile(r"cemit[eé]rio|sepultur|jazigo|cementerio|cmentarz|cimitir|кладбищ|цвинтар|гробищ|\bnicho\b|b[oó]veda"
                          r"|cemetery\s+(?:plots?|lots?|spaces?|sites?)|private cemetery|burial|\bgrave\b|columbari", re.I)
+# Central American memorial parks ("Lote en Camposanto La Piedad", "Jardines del Recuerdo", "espacio para 3 tumbas"),
+# read in the title and description of a grave-sized or cheap plot only: Camposanto is also a town near Modena
+MEMORIAL_RX = re.compile(r"campo\s*santo|\btumbas?\b|\btombs?\b|\bnichos?\b|jard[ií]n\w* del recuerdo|jard[ií]n de paz"
+                         r"|gard\w+ of (?:the )?remembrance|burial (?:niche|plot|space)", re.I)
 NEAR_RX = re.compile(r"\b(near|next to|close to|junto|perto|cerca|frente|al lado|l[aâ]ng[aă]|около|біля|возле|koło|obok|przy|rua|calle|strada|ulica|ul\.|вул|ул\.)", re.I)
 USD_IN_TEXT_RX = re.compile(r"(?:usd|u\$s|us\$|u\$d|d[oó]lares)\s*([\d.,]{3,})", re.I)  # "Lote ... Usd 880.000" priced in pesos
 
@@ -365,6 +389,9 @@ AKIYA = ("ieichiba", "homes")  # empty houses rank with the land: on these sites
 # in a rich country sells for under $10,000. Cheap ruins in Portugal, Italy, Spain, France and the Balkans are real,
 # so those countries aren't on the list; Japan's empty houses are handled by CHEAP_IS_REAL.
 HOUSE_MIN_USD_M2, HOUSE_FLOOR_USD = 40, 10000
+# Under this, the house listings seen were holiday lets, monthly rents, placeholders ("T3 house, garden, garage" at
+# EUR 1,300) and cabins sold without land; a ruin sold as a ruin can really cost this little, so those stay.
+HOUSE_ANYWHERE_USD = 3000
 PRICEY_COUNTRIES = set("US CA AU NZ GB IE DE NL BE LU AT CH DK SE NO FI IS SG HK AE QA KW IL KR AW KY BM".split())
 
 
@@ -382,9 +409,14 @@ def flag(rec):
         f.append("may be payment plan price")
     if CLAIM_RX.search(text):
         f.append("mining claim/mineral rights/access deed - not land ownership")
-    if SHARE_RX.search(rec.get("title") or "") or SHARE_RX.search(rec.get("title_en") or ""):
+    if SHARE_RX.search(rec.get("title") or "") or SHARE_RX.search(rec.get("title_en") or "") or FRACTION_RX.search(text):
         f.append("share of a property - not the whole plot")
-    if burial_plot(rec.get("title")) or burial_plot(rec.get("title_en")):
+    if ANNUITY_RX.search(text):
+        f.append("share of a property - life annuity or bare ownership, not the full price")
+    if MOVE_RX.search(text) or MOVE_TITLE_RX.search(rec.get("title") or ""):
+        f.append("building only - to be moved, no land")
+    if (burial_plot(rec.get("title")) or burial_plot(rec.get("title_en"))
+            or (((acres or 0) < 0.01 or (usd or 0) < 10000) and MEMORIAL_RX.search(text))):
         f.append("burial plot - not land you can use")
     if usd and (rec.get("currency") or "USD") != "USD":
         if any((num(n.replace(".", "")) or 0) > usd * 3 for n in USD_IN_TEXT_RX.findall(rec.get("title") or "")):
@@ -400,12 +432,15 @@ def flag(rec):
         f.append("lease/rental - under $%d per m2 of floor space is a monthly rent, not a house price" % HOUSE_MIN_USD_M2)
     elif house and usd is not None and usd < HOUSE_FLOOR_USD and rec.get("country") in PRICEY_COUNTRIES and not real:
         f.append("lease/rental - no home in this country sells for under $%s; this is a monthly rent" % format(HOUSE_FLOOR_USD, ","))
+    if (house and usd is not None and usd < HOUSE_ANYWHERE_USD and not real and "lease/rental" not in "; ".join(f)
+            and "ruin" not in special_tags(rec)):
+        f.append("price too low for a house - likely a rent, a deposit or a placeholder")
     if rec.get("source") == "kijiji" and usd is not None and usd < 3000:
         f.append("price too low for Canada - likely a deposit, lease or placeholder")
     elif (rec.get("source") == "kijiji" and usd is not None and usd < KIJIJI_LEASE_UNDER_USD and REALTOR_RX.search(text)
           and LEASE_USE_RX.search(text) and not SALE_WORDS_RX.search(text)):
         f.append("lease/rental - a REALTOR.ca commercial lot at a monthly rent, not a sale price")
-    if rec.get("source") == "properstar" and usd is not None and usd < 1500:
+    if rec.get("source") in ("properstar", "encuentra24") and usd is not None and usd < 1500:
         f.append("price may be per m2/acre/hectare (agency listing under $1,500)")
     titles = " | ".join(str(rec.get(k) or "") for k in ("title", "title_en"))
     # a bare "rent" in the title counts at a rent-sized price; above that it's "rent it out" about an income property
@@ -662,6 +697,14 @@ def finalize(rec, rates):
     if rec.get("source") == "kijiji" and not rec.get("acres"):  # no "Size (acres)" field: what the text says
         # (only then: the text also mentions nearby parks and farms, "minutes from the 300 acre park")
         rec["acres"] = acres_from_text(rec.get("title")) or acres_from_text(rec.get("description"))
+    if rec.get("source") == "landwatch" and ((rec.get("title") or "").strip() in ("", "•") or "living_m2" not in rec):
+        # home cards saved before landwatch_card(): the title was the "•" between beds and baths, and no floor area
+        m = re.search(r"\|\s*[\d.,]+\s*acres?\s*\|(.*)", rec.get("description") or "", re.S)
+        addr, living = landwatch_card(m.group(1)) if m else ("", None)
+        if (rec.get("title") or "").strip() in ("", "•") and addr:
+            rec["title"] = addr
+        if living and not rec.get("living_m2"):
+            rec["living_m2"] = living
     if rec.get("source") == "landwatch" and rec.get("lat") is None:  # place it at its ZIP code's center
         ll = zip_location(rec.get("title")) or zip_location(rec.get("description"))
         if ll:
@@ -1630,6 +1673,18 @@ def crawl_properstar_one(br, store, slug, a, kind="land"):
     return total_new
 
 
+def landwatch_card(rest):
+    """(address, floor area in m2) from a LandWatch card's text after its acreage: land cards go straight to the
+    address, home cards put "3 beds | • | 2 baths | • | 1,650 sqft" first."""
+    parts = [x.strip() for x in rest.split(" | ")]
+    spec = re.compile(r"^(?:[\d.,]+\s*(?:beds?|baths?|sq\.? ?ft|sqft)\b|[•·|]*$)", re.I)
+    addr = next((x for x in parts if not spec.match(x)), "")
+    sqft = next((num(m.group(1)) for m in (re.match(r"^([\d,]+)\s*(?:sq\.? ?ft|sqft)\b", x, re.I) for x in parts[:8]) if m), None)
+    if not any(re.match(r"^[\d.,]+\s*(?:beds?|baths?)\b", x, re.I) for x in parts[:8]):
+        sqft = None  # a land card: the figure is the lot again ("9.51 acres | 414,255 sqft")
+    return addr, (round(sqft * 0.092903, 1) if sqft and sqft <= 20000 else None)  # bigger: the lot or the whole building
+
+
 def parse_landwatch(html, state, kind="land"):
     """Listings on a LandWatch search page, and the state's listing count ("79,070 Listings")."""
     soup = BeautifulSoup(html, "lxml")
@@ -1648,10 +1703,7 @@ def parse_landwatch(html, state, kind="land"):
                 desc = json.loads(desc_el.string or "").get("description", "")
             except Exception:
                 pass
-        addr = ""
-        if am:
-            rest = text[am.end():].split(" | ")
-            addr = next((x for x in rest if x.strip() and not re.match(r"^[\d.,]+\s*(beds?|baths?|sq\.? ?ft|sqft)\b", x.strip(), re.I)), "")
+        addr, living = landwatch_card(text[am.end():]) if am else ("", None)
         if len(text) > len(desc):
             desc = (desc + " | " + text) if desc else text
         out.append({
@@ -1666,6 +1718,7 @@ def parse_landwatch(html, state, kind="land"):
             "lat": None, "lon": None,
             "url": "https://www.landwatch.com" + a["href"].split("#")[0],
             "kind": kind,
+            "living_m2": living,
         })
     m = re.search(r">\s*([\d,]+)\s+Listings?\s*<", html)
     if not out and not m:
@@ -3075,7 +3128,8 @@ FLAG_CODES = [("price too low", "L"), ("payment plan", "P"), ("auction", "A"), (
               ("no land area", "N"), ("under $10/acre", "C"), ("lease/rental", "R"), ("placeholder", "X"),
               ("per m2/acre", "U"), ("price may be per m2", "U"), ("far below other", "O"),
               ("mining claim", "M"), ("house listing", "H"), ("too low for Canada", "L"),
-              ("share of a property", "S"), ("allotment garden", "S"), ("burial plot", "S"), ("wrong currency", "L")]
+              ("share of a property", "S"), ("allotment garden", "S"), ("burial plot", "S"), ("wrong currency", "L"),
+              ("building only", "S")]
 
 
 def site_codes(flags):
