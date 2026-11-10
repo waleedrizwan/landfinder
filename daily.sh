@@ -9,6 +9,6 @@ if pgrep -f "landfinder.py" >/dev/null; then
 fi
 {
   echo "== start $(date)"
-  ./run.sh --fresh --hidden && ./publish.sh
+  ./run.sh --fresh --hidden --no-dashboard && ./publish.sh
   echo "== end $(date) (exit $?)"
 } >> "$LOG" 2>&1

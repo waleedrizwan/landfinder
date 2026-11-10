@@ -310,7 +310,12 @@ const houseOnly = r => !r[7].replace(/[HN]/g, "");
 // MAPVIEW: what the map shows, every filter but AREA, so panning brings more pins into view
 let AREA = null, MAPVIEW = [], placeKey = "", ALL = [], VIEW = [], TOWNS = {}, PROVS = {}, POP = {}, PLACE = "prov", shown = PAGE, map, pins, mapAt = null, mapTimer;
 
-fetch("data.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
+// the listings come in data.json and, when there are too many for one file, in the files it lists under "more"
+const getJSON = u => fetch(u).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+getJSON("data.json").then(d => Promise.all((d.more || []).map(getJSON)).then(parts => {
+  for (const p of parts) d.rows = d.rows.concat(p.rows);
+  return d;
+})).then(d => {
   ALL = d.rows.filter(r => r[1] != null).sort((a, b) => a[1] - b[1]);
   for (const r of ALL) r.text = (r[5] + " " + (r[11] || "") + " " + r[4] + " " + cname(r[3])).toLowerCase();
   $("updated").textContent = `Updated ${new Date(d.generated).toLocaleString("en-US", {dateStyle:"medium", timeStyle:"short"})}.`;

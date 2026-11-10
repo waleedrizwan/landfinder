@@ -18,7 +18,7 @@ Sources
   encuentra24   lots and land in Costa Rica, Panama, Nicaragua, Honduras, Guatemala and El Salvador
 
 Usage
-  ./run.sh                                       # everything: 250 believable listings per country/state/province
+  ./run.sh                                       # everything: 250 listings per country/state/province, up to $200,000
   ./run.sh --sources properstar --listings 500   # go deeper on one source
   ./run.sh --countries paraguay,bolivia          # only these countries (Properstar, OLX, Mercado Libre)
   ./run.sh --sources homes --prefectures nagano  # one Japanese prefecture on HOME'S akiya bank
@@ -30,7 +30,7 @@ Output (in this folder)
   coverage.csv  per country/state/province on each site: results the site reports, what we fetched, why we stopped
   data/         raw scraped records + progress, so a stopped run resumes where it left off
 """
-import argparse, csv, gzip, json, math, os, queue, random, re, shutil, signal, subprocess, sys, threading, time, unicodedata, warnings
+import argparse, csv, glob, gzip, json, math, os, queue, random, re, shutil, signal, subprocess, sys, threading, time, unicodedata, warnings
 from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -123,8 +123,8 @@ MELI_HOUSE_URLS = {"argentina": "https://inmuebles.mercadolibre.com.ar/casas/ven
 KINDS = ("land", "houses")
 
 # Ieichiba (家いちば): Japanese owners selling empty houses (akiya) and land themselves, often for under ¥1M. Its
-# listings are grouped in price bands, newest first; we take every live listing up to ¥10M (about $65k).
-IEICHIBA_BANDS = ("0-100manyen", "100-200manyen", "200-1000manyen")
+# listings are grouped in price bands, newest first; we take every live listing up to ¥100M (about $630k).
+IEICHIBA_BANDS = ("0-100manyen", "100-200manyen", "200-1000manyen", "1000-10000manyen")
 
 # Zillow's search URLs use the state's postal code
 US_STATE_ABBR = dict(zip(US_STATES, """
@@ -145,6 +145,9 @@ kinki/wakayama chugoku/tottori chugoku/shimane chugoku/okayama chugoku/hiroshima
 chugoku/tokushima chugoku/kagawa chugoku/ehime chugoku/kochi kyushu/fukuoka kyushu/saga kyushu/nagasaki
 kyushu/kumamoto kyushu/oita kyushu/miyazaki kyushu/kagoshima kyushu/okinawa""".split()
 HOMES_CATEGORIES = {"land": "102", "houses": "101"}  # for sale only; the 30x categories are rentals
+
+# Places searched deeper than the rest by default (--more): California has ~23,500 lots on LandWatch alone.
+MORE_DEFAULT = "california=2000"
 
 ALL_SOURCES = "properstar,castles,landwatch,kijiji,realtor,olx,mercadolibre,ieichiba,homes,zillow,immobiliare,encuentra24"
 
@@ -720,7 +723,12 @@ class Store:
     def _tally(self, e):
         """Apply one searches.jsonl entry (a page's counts, or why the search stopped) to its search's tally."""
         s = self.searches.setdefault(e["search"], {"pages": 0, "listings": 0, "big": 0, "cheap": {},
-                                                   "total": None, "reached": None, "stop": None})
+                                                   "total": None, "reached": None, "stop": None, "cursor": None})
+        if "cursor" in e:  # where a price-band search (LandWatch, Zillow) is, so a stopped run resumes there
+            s["cursor"] = e["cursor"]
+            if e.get("total") is not None:
+                s["total"] = e["total"]
+            return
         if "stop" in e:
             s["stop"] = e["stop"]
             return
@@ -752,6 +760,7 @@ class Store:
             r["search"] = sid
         new = self.add(recs)
         METRICS.add("parsed", source=sid.split()[0], search=sid, n=len(recs), new=new)
+        page_ok(source_of(url))
         big, cheap, usd = 0, [], []
         for r in recs:
             f = finalize(dict(r), self.rates)
@@ -773,8 +782,18 @@ class Store:
         return new
 
     def stop(self, sid, why):
-        """Record why a search stopped: enough listings, end of results, page cap or fetch failed."""
+        """Record why a search stopped: enough listings, end of results, price reached, page cap or fetch failed."""
         e = {"search": sid, "stop": why}
+        with self.lock:
+            self._tally(e)
+            with open(self.search_path, "a") as f:
+                f.write(json.dumps(e) + "\n")
+
+    def note(self, sid, cursor, total=None):
+        """Record where a price-band search is (and the site's result count for the whole search, once known)."""
+        e = {"search": sid, "cursor": cursor}
+        if total is not None:
+            e["total"] = total
         with self.lock:
             self._tally(e)
             with open(self.search_path, "a") as f:
@@ -840,7 +859,8 @@ class Metrics:
 
     def __init__(self):
         self.events, self.lock, self.t0, self.file = [], threading.Lock(), time.time(), None
-        self.path = os.path.join(HERE, "logs", "metrics-%s.jsonl" % datetime.now().strftime("%Y-%m-%d-%H%M%S"))
+        self.run = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        self.path = os.path.join(HERE, "logs", "metrics-%s.jsonl" % self.run)
 
     def add(self, kind, **e):
         e = dict(kind=kind, t=round(time.time() - self.t0, 2), worker=threading.current_thread().name, **e)
@@ -937,32 +957,61 @@ class Metrics:
         out.append("plain HTTP: %.1f MB" % (http / 1e6))
         return out
 
-    def report(self):
+    def run_summary(self, args=""):
+        """This run in one line for data/runs.jsonl: pages, failures and blocks per site, for the dashboard's history."""
+        with self.lock:
+            ev = list(self.events)
+        pages, failed, blocks = Counter(), Counter(), Counter()
+        for e in ev:
+            if e["kind"] == "fetch":
+                pages[e["source"]] += 1
+                failed[e["source"]] += not e["ok"]
+            elif e["kind"] == "block":
+                blocks[e["source"]] += 1
+        return dict(run=self.run, start=datetime.fromtimestamp(self.t0).isoformat(timespec="seconds"),
+                    secs=round(time.time() - self.t0), args=args, pages=dict(pages), failed=dict(failed), blocks=dict(blocks),
+                    gave_up=[e["source"] for e in ev if e["kind"] == "gave_up"])
+
+    def report(self, args=""):
         lines = self.summary()
         with open(self.path.replace(".jsonl", "-summary.txt"), "w") as f:
             f.write("\n".join(lines) + "\n")
         for line in lines:
             log(line)
         log("metrics: %s (+ -summary.txt)" % os.path.relpath(self.path, HERE))
+        os.makedirs(DATA, exist_ok=True)
+        with open(os.path.join(DATA, "runs.jsonl"), "a") as f:
+            f.write(json.dumps(self.run_summary(args)) + "\n")
 
 
 METRICS = Metrics()
 
 
 class Live:
-    """What the run is doing right now, for the dashboard: dashboard.html, served at http://localhost:8765 while a
-    run goes (--dashboard). The numbers come from METRICS' events; this only tracks each thread's current page."""
+    """What the run is doing right now, for the dashboard window (dashboard.py, fed through data/progress.json).
+    The numbers come from METRICS' events; this only tracks each thread's current page."""
 
     def __init__(self):
         self.lock = threading.Lock()
         self.lines = deque(maxlen=80)  # the latest log lines
         self.workers = {}  # thread name -> what it's fetching now
         self.phases = {}  # phase name -> when it started
-        self.phase, self.jobs_total, self.args, self.store, self.t0 = None, 0, "", None, time.time()
+        self.phase, self.jobs_total, self.args, self.store, self.t0, self.ended = None, 0, "", None, time.time(), False
+        self.step = None  # the step of the current phase, once the searches are done: dict(text, done, total, since)
 
     def now(self, url, label="", what="search"):
         with self.lock:
             self.workers[threading.current_thread().name] = dict(label=label or url, url=url, what=what, since=time.time(), busy=True)
+
+    def set_step(self, text=None, done=None, total=None):
+        """What the run is doing after the searches (verifying, translating, writing the outputs), with how far it has
+        got when it can count: shown in place of the search progress, so the window doesn't look finished or stuck."""
+        with self.lock:
+            if text is None:
+                self.step = None
+            else:
+                since = self.step["since"] if self.step and self.step["text"] == text else time.time()
+                self.step = dict(text=text, done=done, total=total, since=since)
 
     def idle(self, note="finished"):
         with self.lock:
@@ -975,76 +1024,153 @@ class Live:
         sites, per_worker = {}, Counter()
         for e in ev:
             if e["kind"] == "fetch":
-                s = sites.setdefault(e["source"], dict(pages=0, failed=0, blocked=0, verify=0, recent=0, new=0, secs=0.0, via=e["via"]))
+                s = sites.setdefault(e["source"], dict(pages=0, failed=0, blocked=0, passed=0, verify=0, recent=0, new=0, secs=0.0, via=e["via"]))
                 s["pages"] += 1
                 s["failed"] += not e["ok"]
-                s["blocked"] += len(e.get("blocked") or [])
+                s["passed"] += bool(e.get("blocked")) and e["ok"]
                 s["verify"] += e["what"] == "verify"
                 s["secs"] += e["secs"]
                 s["recent"] += METRICS.t0 + e["t"] > now - 60
                 per_worker[e["worker"]] += 1
             elif e["kind"] == "parsed":
-                sites.setdefault(e["source"], dict(pages=0, failed=0, blocked=0, verify=0, recent=0, new=0, secs=0.0, via=""))["new"] += e["new"]
+                sites.setdefault(e["source"], dict(pages=0, failed=0, blocked=0, passed=0, verify=0, recent=0, new=0, secs=0.0, via=""))["new"] += e["new"]
+            elif e["kind"] == "block":
+                sites.setdefault(e["source"], dict(pages=0, failed=0, blocked=0, passed=0, verify=0, recent=0, new=0, secs=0.0, via=e["via"]))["blocked"] += 1
+        blocks = [dict(time=datetime.fromtimestamp(METRICS.t0 + e["t"]).strftime("%H:%M:%S"), source=e["source"], via=e["via"],
+                       how=e["how"], detail=e["detail"], url=e["url"], worker=e["worker"])
+                  for e in ev if e["kind"] == "block"][::-1][:60]
+        history = []
+        try:
+            with open(os.path.join(DATA, "runs.jsonl")) as f:
+                history = [json.loads(line) for line in f if line.strip()][-30:]
+        except (OSError, ValueError):
+            pass
+        history.append(dict(METRICS.run_summary(self.args), live=True))
         done = sum(e["kind"] == "job" for e in ev)
         eta = None
         if self.phase == "chrome pool" and done >= 3 and self.jobs_total > done:
             eta = (now - self.phases["chrome pool"]) / done * (self.jobs_total - done)
         with self.lock:
             workers = [dict(name=n, pages=per_worker[n], since_s=round(now - w["since"]), **w) for n, w in self.workers.items()]
+            step = dict(self.step, since_s=round(now - self.step["since"])) if self.step else None
+            step and step.pop("since")
         workers.sort(key=lambda w: (w["name"][0] != "W", len(w["name"]), w["name"]))
         return dict(started=datetime.fromtimestamp(self.t0).strftime("%H:%M:%S"), elapsed_s=round(now - self.t0),
-                    phase=self.phase, stopping=STOP.is_set(), args=self.args, jobs=dict(total=self.jobs_total, done=done),
+                    phase=self.phase, step=step, stopping=STOP.is_set(), args=self.args, jobs=dict(total=self.jobs_total, done=done),
                     eta_s=round(eta) if eta else None, listings_new=sum(s["new"] for s in sites.values()),
                     on_disk=len(self.store.urls) if self.store else None, workers=workers,
-                    sites=[dict(source=k, **v) for k, v in sorted(sites.items())], log=list(self.lines))
+                    sites=[dict(source=k, **v) for k, v in sorted(sites.items())], blocks=blocks, history=history,
+                    given_up=sorted(GIVEN_UP), give_up_after=GIVE_UP_AFTER, ended=self.ended, log=list(self.lines))
 
 
 LIVE = Live()
+_BLOCK_LOCK = threading.Lock()
+WALLS = Counter()  # site -> blocked pages in a row (a page that parsed resets it)
+GIVEN_UP = set()  # sites skipped for the rest of the run: they blocked GIVE_UP_AFTER pages in a row
+GIVE_UP_AFTER = 3  # --give-up; 0 = keep trying every page
 
 
-def serve_dashboard(port):
-    """Serve dashboard.html and the run's progress on localhost, in a background thread. The page's Stop button
-    stops the run the way Ctrl-C does: the pages in progress finish, then the outputs are built from what's saved."""
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+def page_title(html):
+    m = re.search(r"<title[^>]*>(.*?)</title>", html or "", re.S | re.I)
+    return re.sub(r"\s+", " ", unescape(m.group(1))).strip() if m else ""
 
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *args):
+
+def via_of(fetch):
+    return "chrome" if isinstance(fetch, Browser) else "http"
+
+
+def note_block(source, kind, url, detail="", via="chrome"):
+    """Record that a site refused or challenged us, i.e. took us for a bot: a bot-check page in Chrome (kind "wall":
+    Properstar's Azure WAF, Cloudflare's "Just a moment", "Access Denied"), an HTTP 401/403/429/503 ("http 403"), a
+    results page with no listing data on it ("no data": a captcha or sign-in page, or a new layout), or an API that
+    answered with a wall instead of JSON. The event goes to the run's metrics and to data/blocks.jsonl, which the
+    dashboard reads to show when, where and how often each site has blocked us, this run and across runs."""
+    e = dict(time=datetime.now().isoformat(timespec="seconds"), run=METRICS.run, source=source, via=via, how=kind,
+             detail=re.sub(r"\s+", " ", detail or "").strip()[:80], url=url)
+    METRICS.add("block", **{k: v for k, v in e.items() if k not in ("time", "run")})
+    gave_up = False
+    with _BLOCK_LOCK:
+        os.makedirs(DATA, exist_ok=True)
+        with open(os.path.join(DATA, "blocks.jsonl"), "a") as f:
+            f.write(json.dumps(e) + "\n")
+        WALLS[source] += 1
+        if GIVE_UP_AFTER and WALLS[source] >= GIVE_UP_AFTER and source not in GIVEN_UP:
+            GIVEN_UP.add(source)
+            gave_up = True
+    if gave_up:  # retrying every remaining page would cost ~3 min each and only send the site more refused requests
+        METRICS.add("gave_up", source=source, after=WALLS[source])
+        log("%s has blocked %d pages in a row: skipping the rest of its pages this run (its listings on disk stay on "
+            "the site; the next run tries again; --give-up 0 keeps trying)" % (source, WALLS[source]))
+
+
+def page_ok(source):
+    """A page from this site parsed (or a verify page loaded): its run of blocks is over."""
+    with _BLOCK_LOCK:
+        WALLS[source] = 0
+
+
+def given_up(url_or_source):
+    return (source_of(url_or_source) if "/" in url_or_source else url_or_source) in GIVEN_UP
+
+
+def save_progress():
+    """Write what the run is doing now to data/progress.json, atomically, for the dashboard window (dashboard.py)."""
+    tmp = os.path.join(DATA, "progress.json.tmp")
+    os.makedirs(DATA, exist_ok=True)
+    with open(tmp, "w") as f:
+        json.dump(LIVE.snapshot(), f)
+    os.replace(tmp, os.path.join(DATA, "progress.json"))
+
+
+def write_progress(every=2.0):
+    """Keep data/progress.json current in a background thread, and honour the window's Stop button: a file called
+    data/stop ends the run the way Ctrl-C does (the pages in progress finish, then the outputs are built)."""
+    stop_file = os.path.join(DATA, "stop")
+    if os.path.exists(stop_file):  # left over from an earlier run
+        os.remove(stop_file)
+
+    def run():
+        while True:
+            try:
+                if os.path.exists(stop_file):
+                    os.remove(stop_file)
+                    if not STOP.is_set():
+                        STOP.set()
+                        log("stop requested from the dashboard - finishing the pages in progress, then saving")
+                save_progress()
+            except Exception as e:
+                log("progress file: %s" % str(e)[:100])
+            time.sleep(every)
+
+    threading.Thread(target=run, name="progress", daemon=True).start()
+
+
+def dashboard_python():
+    """A Python with a usable Tk (8.6+) for the window: this one, else a Homebrew one. macOS's own Python ships Tk 8.5,
+    which hangs on recent macOS; dashboard.py needs only the standard library, so any Python with Tk will do."""
+    candidates = [sys.executable] + sorted(glob.glob("/opt/homebrew/bin/python3.1[0-9]"), reverse=True) + ["/usr/local/bin/python3"]
+    for py in candidates:
+        if not os.path.exists(py):
+            continue
+        try:
+            p = subprocess.run([py, "-c", "import tkinter; print(tkinter.TkVersion)"], capture_output=True, text=True, timeout=20)
+            if p.returncode == 0 and float(p.stdout.strip() or 0) >= 8.6:
+                return py
+        except Exception:
             pass
+    return None
 
-        def do_GET(self):
-            if self.path.split("?")[0] == "/progress.json":
-                body, ctype = json.dumps(LIVE.snapshot()).encode(), "application/json"
-            elif self.path.split("?")[0] == "/":
-                with open(os.path.join(HERE, "dashboard.html"), "rb") as f:
-                    body, ctype = f.read(), "text/html; charset=utf-8"
-            else:
-                self.send_error(404)
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
 
-        def do_POST(self):
-            if self.path == "/stop":
-                STOP.set()
-                log("stop requested from the dashboard - finishing the pages in progress, then saving")
-                self.send_response(204)
-                self.end_headers()
-            else:
-                self.send_error(404)
-
+def open_dashboard():
+    """Open the dashboard window (dashboard.py, a Tk app) as its own process; it reads data/progress.json."""
+    py = dashboard_python()
+    if not py:
+        log("no dashboard window: no Python with Tk 8.6+ found (brew install python-tk@3.12); the run goes on without it")
+        return
     try:
-        srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    except OSError as e:
-        log("dashboard not started: can't listen on port %d (%s)" % (port, e))
-        return None
-    srv.daemon_threads = True
-    threading.Thread(target=srv.serve_forever, name="dashboard", daemon=True).start()
-    log("dashboard: http://localhost:%d" % port)
-    return srv
+        subprocess.Popen([py, os.path.join(HERE, "dashboard.py"), DATA], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        log("couldn't open the dashboard window: %s" % str(e)[:100])
 
 
 # ----------------------------------------------------------------------------- fetchers
@@ -1181,6 +1307,8 @@ class Browser:
         """The page's HTML. ready = a JS function that's true once the page holds what its parser reads: the page
         is then read right away (or after 20 s), instead of after a fixed wait and the whole page loading.
         Records how long each stage took and what it downloaded (what = "search" or "verify")."""
+        if given_up(url):
+            return None
         t0 = t = time.time()
         LIVE.now(url, self.label, what)
         b0, r0, types0 = self.net["bytes"], self.net["requests"], Counter(self.net["types"])
@@ -1221,12 +1349,17 @@ class Browser:
                     wait = 20 * (attempt + 1)
                     log("  blocked (%r), waiting %ds then retrying" % (title[:40], wait))
                     blocked.append(title[:40])
+                    note_block(source_of(url), "wall", url, title, "chrome")
+                    if given_up(url):  # that was the site's last chance this run: don't wait for a retry
+                        break
                     time.sleep(wait)
                     lap("wait")
                     continue
                 html = self.page.content()
                 self._show_label()
                 lap("read")
+                if what == "verify":
+                    page_ok(source_of(url))
                 time.sleep(self.delay + random.random() * self.delay)
                 lap("delay")
                 break
@@ -1319,6 +1452,8 @@ class Plain:
         self.s.headers.update({"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
 
     def get(self, url, what="search"):
+        if given_up(url):
+            return None
         t0, html, statuses, nbytes = time.time(), None, [], 0
         LIVE.now(url, "", what)
         secs = dict.fromkeys(("nav", "delay", "wait"), 0.0)
@@ -1334,9 +1469,13 @@ class Plain:
                     time.sleep(self.delay + random.random() * self.delay)
                     secs["delay"] += time.time() - t
                     html = r.text
+                    if what == "verify":
+                        page_ok(source_of(url))
                     break
                 log("  HTTP %d (attempt %d)" % (r.status_code, attempt + 1))
-                if r.status_code == 404:
+                if r.status_code in (401, 403, 429, 503):  # refused, rate-limited or a bot wall
+                    note_block(source_of(url), "http %d" % r.status_code, url, page_title(r.text), "http")
+                if r.status_code == 404 or given_up(url):
                     break
             except Exception as e:
                 secs["nav"] += time.time() - t
@@ -1357,14 +1496,36 @@ def search_id(source, key, kind):
     return "%s %s%s" % (source, key, "" if kind == "land" else " " + kind)
 
 
+def parse_more(spec):
+    """'california=2000,texas=1000' -> {"california": 2000, "texas": 1000}: searches to take further than --listings."""
+    out = {}
+    for part in csv_list(spec, []):
+        key, _, n = part.partition("=")
+        if not n.strip().isdigit() or not key.strip():
+            raise ValueError("--more takes place=listings pairs like california=2000, not %r" % part)
+        out[key.strip().lower()] = int(n)
+    return out
+
+
+def search_limits(sid, a, kind="land"):
+    """(believable listings wanted, most pages) for one search. A place named in --more gets its own listing count,
+    and its house search and page cap grow by the same ratio, on every site that searches that place."""
+    want, pages = (a.listings if kind == "land" else a.house_listings), a.pages
+    more = (getattr(a, "more", None) or {}).get(sid.split()[1] if " " in sid else "")
+    if more and more > a.listings:
+        ratio = more / a.listings
+        want, pages = math.ceil(want * ratio), math.ceil(pages * ratio)
+    return want, pages
+
+
 def search_pages(store, sid, a, cap=None, kind="land"):
     """Page numbers to fetch for one search, cheapest first, until it has a.listings believable listings
-    (a.house_listings for houses) or reaches the page cap. The caller stops sooner at the end of the results or
-    a failed fetch, and records why."""
-    want = a.listings if kind == "land" else a.house_listings
+    (a.house_listings for houses; more for a place in --more) or reaches the page cap. The caller stops sooner at
+    the end of the results or a failed fetch, and records why."""
+    want, pages = search_limits(sid, a, kind)
     if (store.searches.get(sid) or {}).get("stop") == "end of results":
         return  # finished on an earlier run that this one resumes
-    for p in range(1, min(a.pages, cap or a.pages) + 1):
+    for p in range(1, min(pages, cap or pages) + 1):
         if STOP.is_set():
             return
         if store.believable(sid) >= want:
@@ -1426,21 +1587,28 @@ def parse_properstar(html, slug, kind="land"):
     return out, int(res.get("total") or 0)
 
 
-def properstar_url(slug, p, kind="land"):
+def properstar_url(slug, p, kind="land", band=None):
+    """band = (lowest, highest) price; Properstar's price filter is in USD whatever currency a listing is in."""
     if kind == "castles":  # Properstar's castle subtype: /buy/castle on its own isn't a real search and lists everything
         url = "https://www.properstar.com/%s/buy/house/castle/price-low-to-high" % slug
         return url + ("?p=%d" % p if p > 1 else "")
     # price.min skips the "EUR 5" listings that are really per-m2 prices or placeholders
     url = "https://www.properstar.com/%s/buy/%s/price-low-to-high?price.min=%d" % (
-        slug, "land-plot" if kind == "land" else "house", MIN_PRICE)
+        slug, "land-plot" if kind == "land" else "house", band[0] if band else MIN_PRICE)
+    if band:
+        url += "&price.max=%d" % band[1]
     return url + ("&p=%d" % p if p > 1 else "")
 
 
 def crawl_properstar_one(br, store, slug, a, kind="land"):
-    """kind: land, houses, or castles (the castle subtype of houses, so castles beyond the cheapest houses show up)."""
-    src = "castles" if kind == "castles" else "properstar"
-    sid, total_new = search_id(src, slug, "land" if kind == "castles" else kind), 0
-    for p in search_pages(store, sid, a, kind="land" if kind == "land" else "houses"):
+    """kind: land, houses, or castles (the castle subtype of houses, so castles beyond the cheapest houses show up).
+    Castles are few and dear, so they're read cheapest first as they come; land and houses go by price slice."""
+    if kind != "castles":
+        return crawl_sliced(store, search_id("properstar", slug, kind), a, kind,
+                            lambda band, p: properstar_url(slug, p, kind, band),
+                            html_loader(br, "properstar", slug, kind, parse_properstar, PROPERSTAR_READY), 20, floor=MIN_PRICE)
+    sid, total_new = search_id("castles", slug, "land"), 0
+    for p in search_pages(store, sid, a, kind="houses"):
         url = properstar_url(slug, p, kind)
         if url in store.done:
             continue
@@ -1449,8 +1617,10 @@ def crawl_properstar_one(br, store, slug, a, kind="land"):
         if not html:
             store.stop(sid, "fetch failed")
             break
-        recs, total = parse_properstar(html, slug, "houses" if kind == "castles" else kind)
+        recs, total = parse_properstar(html, slug, "houses")
         if recs is None:  # a bot check or a new page layout, not the end of the results
+            log("properstar %s page %d: no listing data on the page (blocked?), skipping the rest" % (slug, p))
+            note_block("properstar", "no data", url, page_title(html))
             store.stop(sid, "fetch failed")
             break
         total_new += store.page(sid, url, recs, total)
@@ -1503,29 +1673,161 @@ def parse_landwatch(html, state, kind="land"):
     return out, (int(num(m.group(1))) if m else None)
 
 
-def crawl_landwatch_one(br, store, st, a, kind="land"):
-    sid, total_new = search_id("landwatch", st, kind), 0
-    for p in search_pages(store, sid, a, kind=kind):
-        url = "https://www.landwatch.com/%s-land-for-sale/%ssort-price-low-high" % (st, "" if kind == "land" else "homes/")
-        if p > 1:
-            url += "/page-%d" % p
-        if url in store.done:
-            continue
-        br.label = "%s %s  page %d  (landwatch)" % (st, kind, p)
-        html = br.get(url, ready=LANDWATCH_READY)
-        if not html:
+# Every search is spread over the prices up to --reach instead of taking only the cheapest listings: a market's
+# cheapest 250 lots are all desert parcels or village plots at a few thousand dollars, and land at $100,000-$200,000
+# is still cheap. The range is cut into equal price slices and each slice gives an equal share of the listings
+# wanted, cheapest first within the slice; what a thin slice can't give, the next ones make up. A market with no
+# more listings under --reach than the search wants is read straight through instead.
+REACH_DEFAULT = 200_000
+SLICES_MOST, SLICE_SHARE = 20, 12  # at most 20 slices, and few enough that each one's share is 12 listings or more
+
+
+def slice_count(want):
+    return max(1, min(SLICES_MOST, want // SLICE_SHARE))
+
+
+def price_slices(n, reach):
+    """[(lowest, highest price in USD), ...]: n equal slices covering 0..reach."""
+    return [(reach * i // n, reach * (i + 1) // n - 1) for i in range(n)]
+
+
+def slice_target(store, sid, want, i, n):
+    """Believable listings the search should have once slice i of n is done: the slice's own share on top of what
+    the search has (a page holds more than a share, and that surplus mustn't let the next slices be skipped), or
+    more when earlier slices fell short."""
+    return max(store.believable(sid) + math.ceil(want / n), math.ceil(want * (i + 1) / n))
+
+
+def crawl_sliced(store, sid, a, kind, url_for, load, per_page, max_pages=20, currency="USD", floor=0,
+                 most_slices=SLICES_MOST):
+    """One search, spread over the price slices up to --reach.
+    url_for(band, p) = the URL of page p of the listings priced within band = (lowest, highest), in the site's
+    currency, cheapest first. load(url, band, p) fetches and parses it: (listings, the site's result count for the
+    band or None, how many results the page held before any were filtered out), or None when the fetch failed or the
+    page wasn't a results page (load reports that itself). floor = the site's lowest price worth searching, in its
+    currency; most_slices = fewer, wider slices for a site that allows few requests. A stopped run resumes at the
+    slice it was on."""
+    want, cap = search_limits(sid, a, kind)
+    reach = getattr(a, "reach", REACH_DEFAULT)
+    rate = 1 if currency == "USD" else ((getattr(store, "rates", None) or {}).get(currency) or 1)
+    tally = store.searches.get(sid) or {}
+    if tally.get("stop") == "end of results":
+        return 0  # finished on an earlier run that this one resumes
+    total_new, fetched, cur = 0, 0, tally.get("cursor")
+    if cur and cur[0] >= cur[1]:
+        return 0  # every slice was done on an earlier run
+    if not cur:  # first, the whole range: how many listings it holds decides between slices and reading it through
+        whole = (floor, max(floor, int(reach * rate) - 1))
+        url = url_for(whole, 1)
+        res = load(url, whole, 1)
+        fetched += 1
+        if res is None:
             store.stop(sid, "fetch failed")
-            break
-        recs, total = parse_landwatch(html, st, kind)
-        if recs is None:
-            log("landwatch %s page %d: no listings on the page (blocked, or they never appeared), skipping the rest" % (st, p))
-            store.stop(sid, "fetch failed")
-            break
-        total_new += store.page(sid, url, recs, total)
-        if not recs:
-            store.stop(sid, "end of results")
-            break
+            return 0
+        recs, total, raw = res
+        cur = [0, 1 if total is not None and total <= want else min(most_slices, slice_count(want))]
+        if cur[1] == 1 and url not in store.done:
+            if recs:
+                total_new += store.page(sid, url, recs)
+            if total <= per_page or not raw:  # and that one page was all of it
+                cur[0] = 1
+        store.note(sid, cur, total)
+    start, n = cur
+    slices = price_slices(n, reach)
+    # the page cap is shared out between the slices (two pages each at least), so a site where few listings on a
+    # page are believable can't spend it all on the cheap slices and never reach the dear ones. A cap too small to
+    # share (--test's two pages) is simply the most pages the search fetches
+    quick = cap < n
+    allowance = max(2, cap // n)
+    capped = False
+    for i in range(start, n):
+        band = (max(int(slices[i][0] * rate), floor), int((slices[i][1] + 1) * rate) - 1)
+        target, seen = (want if n == 1 else slice_target(store, sid, want, i, n)), set()
+        for p in range(1, max_pages + 1) if band[1] >= band[0] else ():
+            if STOP.is_set():
+                return total_new
+            if store.believable(sid) >= target:
+                break
+            if n == 1 or quick:
+                if fetched >= cap:
+                    store.stop(sid, "page cap")
+                    return total_new
+            elif p > allowance:
+                capped = True  # this slice has had its pages: on to the next
+                break
+            url = url_for(band, p)
+            if url in store.done:
+                continue
+            res = load(url, band, p)
+            fetched += 1
+            if res is None:
+                store.stop(sid, "fetch failed")
+                return total_new
+            recs, total, raw = res
+            urls = {r["url"] for r in recs}
+            if not raw or (recs and urls <= seen):  # empty, or the site repeats its last page past the end
+                store.mark(url)
+                break
+            seen |= urls
+            total_new += store.page(sid, url, recs)  # recs may be empty: a page of results that were all filtered out
+            if total is not None and p * per_page >= total:
+                break
+        store.note(sid, [i + 1, n])
+    store.stop(sid, "enough listings" if store.believable(sid) >= want else "page cap" if capped else "price reached")
     return total_new
+
+
+def band_label(band):
+    return "%s-%s" % (format(band[0], ","), format(band[1] + 1, ","))
+
+
+def html_loader(fetch, src, key, kind, parse, ready=None):
+    """load() for crawl_sliced on a site whose results are parsed from the page's HTML: parse(html, key, kind) gives
+    the listings, or (listings, result count); None instead of the listings = not a results page."""
+    def load(url, band, p):
+        fetch.label = "%s %s  %s page %d  (%s)" % (key, kind, band_label(band), p, src)
+        html = fetch.get(url, ready=ready) if ready else fetch.get(url)
+        if not html:
+            return None
+        got = parse(html, key, kind)
+        recs, total = got if isinstance(got, tuple) else (got, None)
+        if recs is None:
+            log("%s %s %s page %d: no listing data on the page (blocked?), skipping the rest" % (src, key, band_label(band), p))
+            note_block(src, "no data", url, page_title(html), via_of(fetch))
+            return None
+        return recs, total, len(recs)
+    return load
+
+
+# LandWatch pages through at most 500 results of any search (20 pages of 25); a search with more answers with a
+# sample thinned across its whole price range (which suits a slice: its share is spread over the slice), and pages
+# past the 20th repeat. Past a search's last result the page is padded with "similar" listings from outside it.
+LANDWATCH_MAX, LANDWATCH_PER_PAGE = 500, 25
+
+
+def landwatch_url(st, kind="land", band=None, p=1):
+    """A state's search page, cheapest first. band = (lowest, highest) price in USD."""
+    url = "https://www.landwatch.com/%s-land-for-sale/%s" % (st, "" if kind == "land" else "homes/")
+    if band:
+        url += "price-%d-%d/" % band
+    url += "sort-price-low-high"
+    return url + ("/page-%d" % p if p > 1 else "")
+
+
+def crawl_landwatch_one(br, store, st, a, kind="land"):
+    parse = html_loader(br, "landwatch", st, kind, parse_landwatch, LANDWATCH_READY)
+
+    def load(url, band, p):
+        res = parse(url, band, p)
+        if res is None:
+            return None
+        recs, total, _ = res
+        if total is None:  # no result count on the page: go by whether it's full
+            total = LANDWATCH_MAX if len(recs) >= LANDWATCH_PER_PAGE else (p - 1) * LANDWATCH_PER_PAGE + len(recs)
+        recs = recs[:max(0, min(total, LANDWATCH_MAX) - (p - 1) * LANDWATCH_PER_PAGE)]  # without the padding
+        return recs, total, len(recs)
+    return crawl_sliced(store, search_id("landwatch", st, kind), a, kind, lambda band, p: landwatch_url(st, kind, band, p),
+                        load, LANDWATCH_PER_PAGE)
 
 
 def screen_area():
@@ -1571,6 +1873,11 @@ def run_pool(jobs, store, a):
                 except queue.Empty:
                     break
                 fn = BROWSER_CRAWLERS[src]
+                if given_up("properstar" if src == "castles" else src):
+                    done[0] += 1
+                    METRICS.add("job", source=src, key=key, section=kind, secs=0, pages=0, new=0, skipped=True)
+                    log("%-10s [%d/%d] %-28s skipped: the site is blocking us" % (src, done[0], total, key if kind == "land" else key + " " + kind))
+                    continue
                 t, pages = time.time(), br.pages
                 try:
                     new = fn(br, store, key, a, kind)
@@ -1599,10 +1906,12 @@ BROWSER_CRAWLERS = {  # sources that need a real Chrome window: fn(browser, stor
     "castles": lambda br, store, key, a, kind: crawl_properstar_one(br, store, key, a, "castles"),
     "landwatch": crawl_landwatch_one,
     "realtor": lambda br, store, key, a, kind: crawl_realtor(br, store, key, a, kind),  # defined below
-    "immobiliare": lambda br, store, key, a, kind: crawl_search(br, store, "immobiliare", key, a, immobiliare_url,
-                                                                parse_immobiliare),
-    "encuentra24": lambda br, store, key, a, kind: crawl_search(br, store, "encuentra24", key, a, encuentra24_url,
-                                                                parse_encuentra24),
+    "immobiliare": lambda br, store, key, a, kind: crawl_sliced(
+        store, search_id("immobiliare", key, kind), a, kind, lambda band, p: immobiliare_url(key, p, kind, band),
+        html_loader(br, "immobiliare", key, kind, parse_immobiliare), 25, currency="EUR", floor=1000),
+    "encuentra24": lambda br, store, key, a, kind: crawl_sliced(
+        store, search_id("encuentra24", key, kind), a, kind, lambda band, p: encuentra24_url(key, p, kind, band),
+        html_loader(br, "encuentra24", key, kind, parse_encuentra24), 30),
     "homes": lambda br, store, key, a, kind: crawl_search(br, store, "homes", key, a, homes_url, parse_homes, kind),
 }
 
@@ -1657,32 +1966,18 @@ def parse_kijiji(html, prov, kind="land"):
     return out, total
 
 
+def kijiji_url(prov, loc, p, kind="land", band=None):
+    cat = "b-land-for-sale/%s/%sc641" if kind == "land" else "b-house-for-sale/%s/%sc35"
+    url = "https://www.kijiji.ca/" + cat % (prov, "" if p == 1 else "page-%d/" % p) + "%s?sort=priceAsc" % loc
+    return url + ("&price=%d__%d" % band if band else "")
+
+
 def crawl_kijiji(fetch, store, provinces, a, kinds=("land",)):
     jobs = [(k, prov, loc) for k in kinds for prov, loc in provinces.items()]
     for pi, (kind, prov, loc) in enumerate(jobs, 1):
-        sid, total_new, prev = search_id("kijiji", prov, kind), 0, set()
-        cat = "b-land-for-sale/%s/%sc641" if kind == "land" else "b-house-for-sale/%s/%sc35"
-        for p in search_pages(store, sid, a, kind=kind):
-            seg = "" if p == 1 else "page-%d/" % p
-            url = "https://www.kijiji.ca/" + cat % (prov, seg) + "%s?sort=priceAsc" % loc
-            if url in store.done:
-                continue
-            html = fetch.get(url)
-            if not html:
-                store.stop(sid, "fetch failed")
-                break
-            recs, total = parse_kijiji(html, prov, kind)
-            if recs is None:
-                log("kijiji %s page %d: no listing data on the page (blocked?), skipping the rest" % (prov, p))
-                store.stop(sid, "fetch failed")
-                break
-            urls = {r["url"] for r in recs}
-            if not recs or urls <= prev:  # Kijiji repeats the last page past the end
-                store.page(sid, url, [], total)
-                store.stop(sid, "end of results")
-                break
-            prev = urls
-            total_new += store.page(sid, url, recs, total)
+        sid = search_id("kijiji", prov, kind)
+        total_new = crawl_sliced(store, sid, a, kind, lambda band, p: kijiji_url(prov, loc, p, kind, band),
+                                 html_loader(fetch, "kijiji", prov, kind, parse_kijiji), 40, currency="CAD")
         if STOP.is_set():
             return
         log("kijiji     [%d/%d] %-28s +%d listings" % (pi, len(jobs), sid.split(" ", 1)[1], total_new))
@@ -1695,16 +1990,19 @@ REALTOR_HOME = "https://www.realtor.ca/map#view=list"
 REALTOR_API = "https://api2.realtor.ca/Listing.svc/PropertySearch_Post"
 
 
-def realtor_url(prov, p, kind="land"):
-    """Not a page anyone can open: the key the store remembers a fetched API page by."""
-    return "%s?province=%s&kind=%s&page=%d" % (REALTOR_API, prov, kind, p)
+def realtor_url(prov, p, kind="land", band=None):
+    """Not a page anyone can open: the key the store remembers a fetched API page by. band = (lowest, highest) CAD."""
+    return "%s?province=%s&kind=%s%s&page=%d" % (REALTOR_API, prov, kind, "&price=%d-%d" % band if band else "", p)
 
 
-def realtor_params(prov, p, kind="land"):
+def realtor_params(prov, p, kind="land", band=None):
     lat0, lat1, lon0, lon1, _ = REALTOR_BOXES[prov]
     q = {"LatitudeMin": lat0, "LatitudeMax": lat1, "LongitudeMin": lon0, "LongitudeMax": lon1, "ZoomLevel": 5,
-         "TransactionTypeId": 2, "Sort": "1-A", "PriceMin": REALTOR_MIN_CAD, "Currency": "CAD",  # for sale, price low to high
+         "TransactionTypeId": 2, "Sort": "1-A", "PriceMin": band[0] if band else REALTOR_MIN_CAD,  # for sale, price low to high
+         "Currency": "CAD",
          "RecordsPerPage": REALTOR_PER_PAGE, "CurrentPage": p, "ApplicationId": 1, "CultureId": 1, "Version": "7.0"}
+    if band:
+        q["PriceMax"] = band[1]
     if kind == "land":
         q["PropertySearchTypeId"] = 6  # vacant land
     else:
@@ -1713,18 +2011,18 @@ def realtor_params(prov, p, kind="land"):
     return {k: str(v) for k, v in q.items()}
 
 
-def realtor_post(br, prov, p, kind="land"):
+def realtor_post(br, prov, p, kind="land", band=None):
     """One page of results from the API, as the parsed JSON, or None when the call failed or came back as a wall."""
     t = time.time()
     if "realtor.ca" not in (br.page.url or ""):  # the API answers the site's own pages, with their cookies
         if not br.get(REALTOR_HOME, settle_ms=6000):
             return None
-    br.label = "%s %s  page %d  (realtor)" % (prov, kind, p)
+    br.label = "%s %s  %spage %d  (realtor)" % (prov, kind, band_label(band) + " " if band else "", p)
     status, text = None, ""
     try:
         status, text = br.page.evaluate("""async ([url, params]) => {
             const r = await fetch(url, {method: 'POST', body: new URLSearchParams(params), credentials: 'include'});
-            return [r.status, await r.text()]; }""", [REALTOR_API, realtor_params(prov, p, kind)])
+            return [r.status, await r.text()]; }""", [REALTOR_API, realtor_params(prov, p, kind, band)])
     except Exception as e:
         log("  realtor %s page %d: %s" % (prov, p, str(e)[:100]))
     data = None
@@ -1733,12 +2031,15 @@ def realtor_post(br, prov, p, kind="land"):
             data = json.loads(text)
         except ValueError:
             data = None
-    METRICS.add("fetch", via="chrome", source="realtor", what="search", url=realtor_url(prov, p, kind), ok=data is not None,
+    METRICS.add("fetch", via="chrome", source="realtor", what="search", url=realtor_url(prov, p, kind, band), ok=data is not None,
                 attempts=1, blocked=[], errors=int(data is None), status=status, ready_hit=None, secs=round(time.time() - t, 2),
                 html_kb=len(text) // 1024, bytes=len(text), requests=1, types={}, nav_s=0, ready_s=0,
                 read_s=round(time.time() - t, 2), delay_s=0, wait_s=0)
     if data is None:
         log("  realtor %s page %d: no listing data (HTTP %s, %s)" % (prov, p, status, text[:60].replace("\n", " ")))
+        if status:  # the API answered, but not with listings: a wall page or a refusal (None = the call itself failed)
+            note_block("realtor", "no data" if status == 200 else "http %d" % status, realtor_url(prov, p, kind, band),
+                       page_title(text) or text[:60], "chrome")
         return None
     time.sleep(br.delay + random.random() * br.delay)
     return data
@@ -1804,30 +2105,19 @@ def parse_realtor(data, prov, kind="land"):
 
 
 def crawl_realtor(br, store, prov, a, kind="land"):
-    sid, total_new, seen = search_id("realtor", prov, kind), 0, set()
-    for p in search_pages(store, sid, a, kind=kind):
-        url = realtor_url(prov, p, kind)
-        if url in store.done:
-            continue
-        data = realtor_post(br, prov, p, kind)
+    def load(url, band, p):
+        data = realtor_post(br, prov, p, kind, band)
         if data is None:
-            store.stop(sid, "fetch failed")
-            break
+            return None
         recs, total = parse_realtor(data, prov, kind)
         if recs is None:
-            store.stop(sid, "fetch failed")
-            break
-        urls = {r["url"] for r in recs}
-        if not (data.get("Results") or []) or (recs and urls <= seen):  # past the end (an empty page, or the last one again)
-            store.mark(url)
-            store.stop(sid, "end of results")
-            break
-        seen |= urls
-        total_new += store.page(sid, url, recs, total)  # recs may be empty: a page of listings all over the border
-        if p >= ((data.get("Paging") or {}).get("TotalPages") or 0):  # the API caps a query at 600 records
-            store.stop(sid, "end of results")
-            break
-    return total_new
+            return None
+        # recs may be empty with results on the page: a page of listings all over the province's border
+        return recs, total, len(data.get("Results") or [])
+    # the API caps a query at 600 records (12 pages of 50), and on 2026-11-09 it refused a browser's calls after about
+    # six of them, so a province gets 4 wide slices instead of 20: 5 calls with the first look at the whole range
+    return crawl_sliced(store, search_id("realtor", prov, kind), a, kind, lambda band, p: realtor_url(prov, p, kind, band),
+                        load, REALTOR_PER_PAGE, max_pages=12, currency="CAD", floor=REALTOR_MIN_CAD, most_slices=4)
 
 
 def olx_area_m2(params, keys=("m", "area_de_terreno_m2", "space", "land_area")):
@@ -1869,28 +2159,34 @@ def parse_olx(data, cc, kind="land"):
     return out
 
 
+def olx_url(site, cat, p, band):
+    """band = (lowest, highest) price in the currency of the site's price filter."""
+    return ("https://%s/api/v1/offers/?offset=%d&limit=40&category_id=%d&sort_by=filter_float_price:asc"
+            "&filter_float_price:from=%d&filter_float_price:to=%d" % (site, (p - 1) * 40, cat, band[0], band[1]))
+
+
 def crawl_olx(fetch, store, countries, a, rates, kinds=("land",)):
     jobs = [(k, c) for k in kinds for c in countries]
     for i, (kind, c) in enumerate(jobs, 1):
         site, cat, cc, cur, usd_floor = OLX_SITES[c]
         if kind != "land":  # under $1,000 a "house" is nearly always a rental, a share or a garden shed
             cat, usd_floor = OLX_HOUSE_CATS[c], max(usd_floor, 1000)
-        sid, floor, total_new = search_id("olx", c, kind), int(usd_floor * rates.get(cur, 1)), 0
-        for p in search_pages(store, sid, a, cap=25, kind=kind):  # the API stops at 1,000 results
-            url = ("https://%s/api/v1/offers/?offset=%d&limit=40&category_id=%d"
-                   "&sort_by=filter_float_price:asc&filter_float_price:from=%d" % (site, (p - 1) * 40, cat, floor))
-            if url in store.done:
-                continue
+        sid = search_id("olx", c, kind)
+
+        def load(url, band, p):
+            fetch.label = "%s %s  %s page %d  (olx)" % (c, kind, band_label(band), p)
             try:
                 data = json.loads(fetch.get(url) or "")
             except ValueError:
-                store.stop(sid, "fetch failed")
-                break
+                return None
             recs = parse_olx(data, cc, kind)
-            total_new += store.page(sid, url, recs, (data.get("metadata") or {}).get("visible_total_count"))
-            if not recs or not (data.get("links") or {}).get("next"):
-                store.stop(sid, "end of results")
-                break
+            total = (data.get("metadata") or {}).get("visible_total_count")
+            if not (data.get("links") or {}).get("next"):
+                total = (p - 1) * 40 + len(recs)  # the last page
+            return recs, total, len(recs)
+        # the API stops at 1,000 results: 25 pages of 40
+        total_new = crawl_sliced(store, sid, a, kind, lambda band, p: olx_url(site, cat, p, band), load, 40,
+                                 max_pages=25, currency=cur, floor=int(usd_floor * rates.get(cur, 1)))
         if STOP.is_set():
             return
         log("olx        [%d/%d] %-28s +%d listings" % (i, len(jobs), sid.split(" ", 1)[1], total_new))
@@ -1966,27 +2262,38 @@ def parse_meli(html, cc, kind="land"):
     return out, int((st.get("pagination") or {}).get("page_count") or 0), total
 
 
+def meli_url(base, p, band):
+    """Cheapest first within band = (lowest, highest) price in local currency; page n starts at result 48*(n-1)+1."""
+    return "%s%s_OrderId_PRICE_PriceRange_%d-%d_NoIndex_True" % (base, "_Desde_%d" % ((p - 1) * 48 + 1) if p > 1 else "",
+                                                                band[0], band[1])
+
+
 def crawl_meli(fetch, store, countries, a, rates, kinds=("land",)):
     jobs = [(k, c) for k in kinds for c in countries]
     for i, (kind, c) in enumerate(jobs, 1):
         base, cc, cur = MELI_SITES[c]
         if kind != "land":
             base = MELI_HOUSE_URLS[c]
-        sid, floor, total_new = search_id("mercadolibre", c, kind), int(MIN_PRICE * rates.get(cur, 1)), 0
-        for p in search_pages(store, sid, a, kind=kind):
-            # cheapest first, above the floor (in local currency); page n starts at result 48*(n-1)+1
-            url = "%s%s_OrderId_PRICE_PriceRange_%d-0_NoIndex_True" % (base, "_Desde_%d" % ((p - 1) * 48 + 1) if p > 1 else "", floor)
-            if url in store.done:
-                continue
-            recs, page_count, total = parse_meli(fetch.get(url) or "", cc, kind)
+        sid = search_id("mercadolibre", c, kind)
+
+        def load(url, band, p):
+            fetch.label = "%s %s  %s page %d  (mercadolibre)" % (c, kind, band_label(band), p)
+            html = fetch.get(url)
+            recs, page_count, total = parse_meli(html or "", cc, kind)
+            if recs is None and not STOP.is_set():  # now and then one page comes back as its sign-in page
+                time.sleep(15)
+                html = fetch.get(url)
+                recs, page_count, total = parse_meli(html or "", cc, kind)
             if recs is None:
                 log("  mercadolibre %s: no results on the page (blocked, sign-in page or new layout)" % c)
-                store.stop(sid, "fetch failed")
-                break
-            total_new += store.page(sid, url, recs, total)
-            if not recs or p >= page_count:
-                store.stop(sid, "end of results")
-                break
+                if html:
+                    note_block("mercadolibre", "no data", url, page_title(html), "http")
+                return None
+            if p >= page_count:
+                total = (p - 1) * 48 + len(recs)  # the last page
+            return recs, total, len(recs)
+        total_new = crawl_sliced(store, sid, a, kind, lambda band, p: meli_url(base, p, band), load, 48,
+                                 currency=cur, floor=int(MIN_PRICE * rates.get(cur, 1)))
         if STOP.is_set():
             return
         log("mercadolibre [%d/%d] %-26s +%d listings" % (i, len(jobs), sid.split(" ", 1)[1], total_new))
@@ -2066,6 +2373,7 @@ def crawl_ieichiba(fetch, store, a):
             recs, n = parse_ieichiba(html)
             if not n and p == 1:  # the first page of a band always has cards: this is a block or error page
                 log("ieichiba %s: no listings on the first page (blocked?), skipping the band" % band)
+                note_block("ieichiba", "no data", url, page_title(html), "http")
                 store.stop(sid, "fetch failed")
                 break
             total_new += store.page(sid, url, recs)
@@ -2092,6 +2400,7 @@ def crawl_search(fetch, store, src, key, a, url_for, parse, kind="land"):
         recs = parse(html, key, kind)
         if recs is None:
             log("%s %s page %d: no results data on the page (blocked?), skipping the rest" % (src, key, p))
+            note_block(src, "no data", url, page_title(html), via_of(fetch))
             store.stop(sid, "fetch failed")
             break
         urls = {r["url"] for r in recs if r.get("url")}
@@ -2118,9 +2427,13 @@ def eu_number(s):
 
 # ---- Zillow: lots and land in every US state (plain HTTP; results are JSON in __NEXT_DATA__)
 
-def zillow_url(state, p, kind="land"):
+ZILLOW_MIN_USD = 1000  # $1 and $100 placeholders sit below this
+ZILLOW_PER_PAGE, ZILLOW_PAGES = 41, 20  # Zillow answers HTTP 400 past page 24 of a search (about 1,000 results)
+
+
+def zillow_url(state, p, kind="land", floor=ZILLOW_MIN_USD, ceil=None):
     fs = {k: {"value": False} for k in ("sf", "tow", "mf", "con", "apa", "manu", "apco")}  # land only
-    fs.update({"sort": {"value": "pricea"}, "price": {"min": 1000}})
+    fs.update({"sort": {"value": "pricea"}, "price": dict({"min": floor}, **({"max": ceil} if ceil else {}))})
     sq = {"pagination": {"currentPage": p} if p > 1 else {}, "isMapVisible": False, "isListVisible": True,
           "filterState": fs}
     return "https://www.zillow.com/%s/land/%s?searchQueryState=%s" % (
@@ -2158,20 +2471,33 @@ def parse_zillow(html, state, kind="land"):
     return out
 
 
+def zillow_page(html, state, kind="land"):
+    """(listings, how many results Zillow says the search has)."""
+    m = re.search(r'"totalResultCount":(\d+)', html)
+    return parse_zillow(html, state, kind), (int(m.group(1)) if m else None)
+
+
+def crawl_zillow_one(fetch, store, st, a):
+    return crawl_sliced(store, search_id("zillow", st, "land"), a, "land",
+                        lambda band, p: zillow_url(st, p, floor=band[0], ceil=band[1]),
+                        html_loader(fetch, "zillow", st, "land", zillow_page), ZILLOW_PER_PAGE,
+                        max_pages=ZILLOW_PAGES, floor=ZILLOW_MIN_USD)
+
+
 def crawl_zillow(fetch, store, states, a):
     for i, st in enumerate(states, 1):
         if STOP.is_set():
             break
-        n = crawl_search(fetch, store, "zillow", st, a, zillow_url, parse_zillow)
+        n = crawl_zillow_one(fetch, store, st, a)
         log("zillow     [%d/%d] %-28s +%d listings" % (i, len(states), st, n))
 
 
 # ---- Immobiliare.it: all of Italy (real Chrome; results are JSON in __NEXT_DATA__)
 
-def immobiliare_url(key, p, kind="land"):
+def immobiliare_url(key, p, kind="land", band=None):
     # under €1,000 is almost all "price on request" placeholders and €1 auction lots
-    return "https://www.immobiliare.it/vendita-terreni/%s/?criterio=prezzo&ordine=asc&prezzoMinimo=1000%s" % (
-        key, "&pag=%d" % p if p > 1 else "")
+    return "https://www.immobiliare.it/vendita-terreni/%s/?criterio=prezzo&ordine=asc&prezzoMinimo=%d%s%s" % (
+        key, band[0] if band else 1000, "&prezzoMassimo=%d" % band[1] if band else "", "&pag=%d" % p if p > 1 else "")
 
 
 def parse_immobiliare(html, key, kind="land"):
@@ -2272,9 +2598,10 @@ def parse_homes(html, pref, kind="land"):
 E24_CURRENCY = [("C$", "NIO"), ("₡", "CRC"), ("US$", "USD"), ("$", "USD"), ("Q", "GTQ"), ("L", "HNL")]
 
 
-def encuentra24_url(cc, p, kind="land"):
-    return "https://www.encuentra24.com/%s/real-estate-for-sale-lots-land%s?sort=f_price&dir=asc" % (
-        ENCUENTRA24_COUNTRIES[cc], ".%d" % p if p > 1 else "")
+def encuentra24_url(cc, p, kind="land", band=None):
+    """band = (lowest, highest) price in USD."""
+    return "https://www.encuentra24.com/%s/real-estate-for-sale-lots-land%s?%ssort=f_price&dir=asc" % (
+        ENCUENTRA24_COUNTRIES[cc], ".%d" % p if p > 1 else "", "q=f_price.%d-%d%%7Cf_currency.USD&" % band if band else "")
 
 
 def parse_encuentra24(html, cc, kind="land"):
@@ -2411,7 +2738,7 @@ def verify_cheapest(store, a, n=60, rounds=4):
                 if job is None:
                     return
                 try:
-                    if STOP.is_set():
+                    if STOP.is_set() or given_up(src):
                         continue
                     if src == "kijiji":  # these answer plain HTTP requests
                         recheck(job[0], job[1], lambda u: plain.get(u, what="verify"))
@@ -2455,8 +2782,14 @@ def verify_cheapest(store, a, n=60, rounds=4):
                 len(todo), n, ", ".join(sorted({r["source"] for r in todo})), rnd + 1))
             for r in todo:
                 queues[r["source"]].put((r, raw))
+            step = "re-checking the prices of the cheapest listings (round %d of up to %d)" % (rnd + 1, rounds)
+            while any(q.unfinished_tasks for q in queues.values()) and not STOP.is_set():
+                left = sum(q.unfinished_tasks for q in queues.values())
+                LIVE.set_step(step, len(todo) - left, len(todo))
+                time.sleep(1)
             for q in queues.values():
                 q.join()
+        LIVE.set_step(None)
     except KeyboardInterrupt:
         STOP.set()  # the workers skip what's left in their queues
         raise
@@ -2501,7 +2834,9 @@ def translate(texts):
             batches.append([])
         batches[-1].append(t)
     log("translating %d texts to English with Claude (%d batches)" % (len(todo), len(batches)))
-    lock, failed = threading.Lock(), []
+    lock, failed, finished = threading.Lock(), [], [0]
+    step = "translating %s titles to English with Claude" % format(len(todo), ",")
+    LIVE.set_step(step, 0, len(batches))
 
     def run(batch):
         if len(failed) >= 3 or STOP.is_set():  # e.g. not signed in or out of usage: don't keep trying
@@ -2524,6 +2859,9 @@ def translate(texts):
         else:
             failed.append(batch)
             log("  translation batch failed: %s" % (err[:150] or "reply wasn't a matching JSON array"))
+        with lock:
+            finished[0] += 1
+            LIVE.set_step(step + (" (%d batches failed)" % len(failed) if failed else ""), finished[0], len(batches))
 
     try:
         with ThreadPoolExecutor(4) as ex:
@@ -2665,10 +3003,12 @@ def same_title(t1, raw1, t2, raw2, source):
 
 def build_outputs(store, english=True):
     rates = load_fx()
+    LIVE.set_step("reading the saved listings")
     recs = [r for r in store.all() if safe_url(r.get("url"))]  # older data may hold links in other schemes
     cutoff = site_cutoff(recs)
     if english and cutoff:  # before finalize, so the price checks also read the English titles
         add_english([r for r in recs if (r.get("scraped_at") or "") >= cutoff])
+    LIVE.set_step("checking prices and merging duplicates")
     recs = [finalize(r, rates) for r in recs]
     # one exact price on many different-size plots -> a placeholder or a per-m2 price, not a real total
     same = {}
@@ -2702,6 +3042,7 @@ def build_outputs(store, english=True):
     recs.sort(key=lambda r: r.get("scraped_at") or "", reverse=True)  # newest first among equal prices, so a
     recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # repost keeps its live URL; cheapest first
     recs = collapse_similar(recs)
+    LIVE.set_step("writing results.csv, report.html and the site")
     csv_path = os.path.join(HERE, "results.csv")
     with open(csv_path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=COLS, extrasaction="ignore")
@@ -2721,6 +3062,7 @@ def build_outputs(store, english=True):
     open(os.path.join(HERE, "report.html"), "w").write(html)
     build_site(recs, rates)
     write_coverage(store, recs, cutoff)
+    LIVE.set_step(None)
     clean = [r for r in recs if r["price_usd"] and r["flags"] in ("", "no land area listed")]  # land the site shows
     log("wrote %d listings (%d with a believable price) -> results.csv, report.html" % (len(recs), len(clean)))
     for r in clean[:15]:
@@ -2883,6 +3225,9 @@ def town_populations(places):
     return out
 
 
+SITE_PART_BYTES = 12_000_000  # rows per site data file: well under Cloudflare Pages' 25 MiB file limit
+
+
 def build_site(recs, rates):
     """Write site/index.html + site/data.json: every listing seen in the last few days of runs, plus the
     exchange rates its US dollar prices were converted with, for the site's Currency list."""
@@ -2913,6 +3258,25 @@ def build_site(recs, rates):
     data = {"generated": newest.astimezone().isoformat(timespec="seconds"),  # shown as "Updated ..." on the site
             "countries": len(countries), "rows": rows, "rates": rates,
             "populations": town_populations({(row[3], row[13]) for row in rows if row[13]})}
+    # Cloudflare Pages refuses a file over 25 MiB, so rows past SITE_PART_BYTES go to data-2.json, data-3.json...,
+    # which data.json lists under "more" and the page fetches alongside it
+    parts, size = [[]], 0
+    for row in rows:
+        n = len(json.dumps(row, separators=(",", ":"), allow_nan=False)) + 1
+        if size + n > SITE_PART_BYTES and parts[-1]:
+            parts.append([])
+            size = 0
+        parts[-1].append(row)
+        size += n
+    for old in glob.glob(os.path.join(SITE, "data-*.json")):
+        os.remove(old)
+    more = ["data-%d.json" % (i + 2) for i in range(len(parts) - 1)]
+    for name, part in zip(more, parts[1:]):
+        with open(os.path.join(SITE, name), "w") as f:
+            json.dump({"rows": part}, f, separators=(",", ":"), allow_nan=False)
+    data["rows"] = parts[0]
+    if more:
+        data["more"] = more
     with open(os.path.join(SITE, "data.json"), "w") as f:
         json.dump(data, f, separators=(",", ":"), allow_nan=False)
     with open(os.path.join(HERE, "site_template.html")) as f:
@@ -2987,7 +3351,7 @@ TEST_DEFAULTS = dict(states="arizona,maine", countries="portugal,mexico", provin
 
 
 def main():
-    global DATA
+    global DATA, GIVE_UP_AFTER
     ap = argparse.ArgumentParser(description="Find the cheapest land listings worldwide.")
     ap.add_argument("--sources", default=ALL_SOURCES, help="comma-separated, default: " + ALL_SOURCES)
     ap.add_argument("--listings", type=int, default=250,
@@ -2997,6 +3361,12 @@ def main():
     ap.add_argument("--no-houses", action="store_true", help="only search the land-for-sale sections")
     ap.add_argument("--pages", type=int, default=30,
                     help="most pages per country/state/province (20-48 listings each), however few are believable")
+    ap.add_argument("--more", default=MORE_DEFAULT, metavar="PLACE=N",
+                    help="places to search deeper than --listings, as state/country/province=listings, comma-separated "
+                         "(default: %s; '' for none). Their house searches and page cap grow by the same ratio" % MORE_DEFAULT)
+    ap.add_argument("--reach", type=int, default=REACH_DEFAULT, metavar="USD",
+                    help="spread each search evenly over the prices up to this, instead of taking only the cheapest "
+                         "listings (default: %d)" % REACH_DEFAULT)
     ap.add_argument("--countries", help="country slugs for Properstar, OLX and Mercado Libre, comma-separated (default: all)")
     ap.add_argument("--states", help="US state slugs for LandWatch and Zillow, e.g. new-mexico,arizona (default: all)")
     ap.add_argument("--central-america", help="Encuentra24 countries, e.g. CR,PA (default: %s)" % ",".join(ENCUENTRA24_COUNTRIES))
@@ -3008,8 +3378,10 @@ def main():
     ap.add_argument("--hidden", action="store_true", help="no visible windows: one per worker, minimized to the Dock")
     ap.add_argument("--headless", action="store_true", help="fully headless Chrome (more likely to get blocked)")
     ap.add_argument("--delay", type=float, default=2.5, help="base seconds between page loads")
-    ap.add_argument("--dashboard", type=int, default=8765, metavar="PORT",
-                    help="serve a live progress page at http://localhost:PORT while the run goes (0 = off)")
+    ap.add_argument("--give-up", type=int, default=3, metavar="N",
+                    help="skip the rest of a site's pages this run once it has blocked N pages in a row (0 = keep trying)")
+    ap.add_argument("--no-dashboard", action="store_true",
+                    help="don't open the progress window (the run still writes data/progress.json for it)")
     ap.add_argument("--fresh", action="store_true", help="re-scrape pages already done")
     ap.add_argument("--load-all", action="store_true",
                     help="let Chrome download ads, analytics, maps and fonts too (they're blocked by default)")
@@ -3035,10 +3407,17 @@ def main():
         log("test run: %s, pages=%d, verify=%d, workers=%d (data in data-test/)" % (
             a.sources, a.pages, a.verify, a.workers))
 
+    try:
+        a.more = parse_more(a.more)
+    except ValueError as e:
+        ap.error(str(e))
+    GIVE_UP_AFTER = a.give_up
     store = Store()
-    if a.dashboard and not a.report_only:
+    if not a.report_only:
         LIVE.store, LIVE.args = store, " ".join(sys.argv[1:]) or "(defaults)"
-        serve_dashboard(a.dashboard)
+        write_progress()
+        if not a.no_dashboard:
+            open_dashboard()
     if a.fresh:
         store.reset()
     if a.verify_only:
@@ -3056,6 +3435,8 @@ def main():
                  for x in csv_list(a.prefectures, HOMES_PREFECTURES)]
         log("starting: sources=%s, %d believable listings per search, at most %d pages (%d already-scraped listings on disk)" % (
             ",".join(sources), a.listings, a.pages, len(store.urls)))
+        if a.more:
+            log("searching deeper: %s" % ", ".join("%s %d listings" % kv for kv in sorted(a.more.items())))
         br = None
         try:
             rates = store.rates = load_fx()
@@ -3124,7 +3505,10 @@ def main():
         with METRICS.phase("outputs"):
             build_outputs(store, english=not a.no_translate)
     if any(e["kind"] == "fetch" for e in METRICS.events):
-        METRICS.report()
+        METRICS.report(LIVE.args)
+    if not a.report_only:
+        LIVE.ended = True
+        save_progress()
 
 
 if __name__ == "__main__":

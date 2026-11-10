@@ -178,3 +178,26 @@ def test_collapse_folds_realtor_and_kijiji_by_mls_number():
     out = lf.collapse_similar([kijiji, realtor, other])
     assert [r["title"] for r in out] == ["Lot 276 Yorke Street", "Lot 277 Yorke Street"]  # the fuller REALTOR.ca record stands for both
     assert out[0]["similar"] == 1 and out[1]["similar"] == 0
+
+
+def test_site_data_is_split_into_files_cloudflare_accepts(workdir, rates, monkeypatch):
+    """Cloudflare Pages refuses a file over 25 MiB: past a size, rows go to data-2.json... listed in data.json."""
+    import glob, os
+    monkeypatch.setattr(lf, "SITE_PART_BYTES", 2000)
+    recs = [lf.finalize({"source": "landwatch", "country": "US", "region": "Deming, NM", "title": "Lot %d" % i,
+                         "description": "", "price": 5000 + i, "currency": "USD", "acres": 1.0, "lat": 32.2, "lon": -107.7,
+                         "url": "https://www.landwatch.com/x/pid/%d" % i, "scraped_at": "2026-11-10T10:00:00"}, rates)
+            for i in range(60)]
+    site = os.path.join(str(workdir), "site")
+    os.makedirs(site, exist_ok=True)
+    open(os.path.join(site, "data-9.json"), "w").write("{}")  # left over from a bigger run
+    lf.build_site(recs, rates)
+    d = json.load(open(os.path.join(site, "data.json")))
+    assert d["more"] and not os.path.exists(os.path.join(site, "data-9.json"))
+    rows = d["rows"] + [r for name in d["more"] for r in json.load(open(os.path.join(site, name)))["rows"]]
+    assert sorted(r[5] for r in rows) == sorted("Lot %d" % i for i in range(60))
+    assert all(os.path.getsize(f) < 4000 for f in glob.glob(os.path.join(site, "data*.json")))
+    lf.SITE_PART_BYTES = 12_000_000
+    lf.build_site(recs, rates)  # small enough for one file: no "more", no extra files
+    assert "more" not in json.load(open(os.path.join(site, "data.json")))
+    assert not glob.glob(os.path.join(site, "data-*.json"))

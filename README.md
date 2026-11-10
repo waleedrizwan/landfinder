@@ -30,7 +30,7 @@ The results are published daily at **https://cheapest-land.pages.dev**.
 The source names for `--sources` are `properstar`, `castles`, `landwatch`, `zillow`, `kijiji`, `realtor`, `olx`, `mercadolibre`,
 `encuentra24`, `immobiliare`, `ieichiba` and `homes` (`ALL_SOURCES` in `landfinder.py`).
 
-Each search is sorted cheapest first. Properstar and Mercado Libre results start at $1,500, because cheaper
+Each search is spread over the prices up to $200,000 (see Usage). Properstar and Mercado Libre results start at $1,500, because cheaper
 "prices" there are almost always per-m² figures or placeholders; Zillow and Immobiliare.it start at $1,000 (and €1,000)
 and REALTOR.ca at CAD 1,000 for the same reason. OLX searches start at $500 to $1,500 depending
 on the country (`OLX_SITES` in `landfinder.py`): real village plots in Bulgaria, Portugal and Kazakhstan sell for
@@ -61,20 +61,32 @@ different country or state at the same time, and a banner at the top shows what 
 are drawn at half size, so sites still serve their desktop layout. If a window gets closed, the script
 reopens it. A full run takes about 20-40 minutes with 8 windows (each uses about 1.1 GB of memory).
 
-While a run goes, **http://localhost:8765** shows a live dashboard (`dashboard.html`): the phase it's in, searches
-done and a rough time left, every window's and thread's current page, pages per minute, new listings, and per site
-the pages fetched, failures, blocks and seconds per page, with the log underneath. Its Stop button ends the run
-the way Ctrl-C does: the pages in progress finish, everything collected is saved, and the site is built from it.
+A run also opens a dashboard window (`dashboard.py`, a small Tk app; `--no-dashboard` leaves it closed): the phase
+it's in, searches done and a rough time left, every window's and thread's current page, pages per minute, new
+listings, and per site the pages fetched, failures, blocks and seconds per page, with the log underneath. There is no
+server: the scraper rewrites `data/progress.json` every 2 seconds and the window reads it, so
+`.venv/bin/python dashboard.py` opens it again for a run started elsewhere. Its Stop button writes `data/stop`, which
+ends the run the way Ctrl-C does: the pages in progress finish, everything collected is saved, and the site is built.
+
+It also tracks every time a site takes us for a bot: a bot-check page in Chrome (Properstar's Azure WAF, Cloudflare's
+"Just a moment", "Access Denied"), an HTTP 401/403/429/503 over plain requests, a results page with no listing data on
+it (a captcha or sign-in page, or a changed layout), or REALTOR.ca's API answering with a wall. Each one is listed as
+it happens (time, site, what the site sent, which window, which page), the Sites table shows how many got through
+after waiting, and a chart shows blocks per run and per site across the last 30 runs. The events are kept in
+`data/blocks.jsonl` and each run's totals (pages, failures and blocks per site) in `data/runs.jsonl`. Once a site has
+blocked 3 pages in a row (`--give-up N`, 0 = keep trying) the rest of its pages are skipped for that run, since each
+blocked page costs about three minutes of retries and only sends the site more refused requests: the dashboard says
+so, its listings already on disk stay on the site, and the next run tries the site again.
 
 **One-click run:** `scrape.command` does what the daily job does with a window to watch: double-click it in Finder
 (or a copy of it on the Desktop) and a Terminal window opens, runs a full fresh scrape with the Chrome windows
-hidden, opens the dashboard in your browser, keeps the Mac awake, then rebuilds and publishes the site. Any option
+hidden and the dashboard window open, keeps the Mac awake, then rebuilds and publishes the site. Any option
 can be added when it's run from a shell: `./scrape.command --workers 4`.
 
 ## Usage
 
 ```sh
-./run.sh                                         # everything: 250 believable listings per search
+./run.sh                                         # everything: 250 believable listings per search, spread up to $200,000
 ./run.sh --sources properstar --listings 500     # go deeper on one source
 ./run.sh --countries paraguay,bolivia,argentina  # only these countries (Properstar, OLX, Mercado Libre)
 ./run.sh --sources olx,mercadolibre              # only some sources
@@ -88,15 +100,33 @@ can be added when it's run from a shell: `./scrape.command --workers 4`.
 ./run.sh --workers 4                             # fewer windows in parallel (default 8)
 ./run.sh --tile full                             # tile windows over the whole screen
 ./run.sh --hidden                                # no visible windows: minimized to the Dock
-./run.sh --dashboard 0                           # no live dashboard (default port 8765)
+./run.sh --no-dashboard                          # don't open the dashboard window
+./run.sh --give-up 0                             # keep trying a site that blocks page after page (default: skip it after 3)
 ./run.sh --pages 50                              # allow more pages per search (default 30)
+./run.sh --more california=2000,texas=1000       # search these places deeper (default: california=2000; '' for none)
+./run.sh --reach 300000                          # spread every search up to this price in USD (default $200,000)
 ```
 
-A search is one country, state or province on one site. It runs cheapest first until it has 250 believable
-listings (`--listings`): ones the site shows by default, with no flag except a missing land area, and not one
-exact low price repeated on many different-size plots. So when a seller fills the cheapest pages with a
-placeholder price, the search keeps going past them. It also stops when the results run out, or after 30 pages
-(`--pages`).
+A search is one country, state or province on one site, and it wants 250 believable listings (`--listings`): ones
+the site shows by default, with no flag except a missing land area, and not one exact low price repeated on many
+different-size plots.
+
+A search doesn't just take the cheapest 250: those are all desert parcels and village plots at a few thousand
+dollars, while land at $100,000-$200,000 is still cheap. So every search is spread over the prices up to $200,000
+(`--reach`, converted to the site's currency): the range is cut into 20 equal slices of $10,000 and each slice gives
+an equal share of the 250 listings, cheapest first within the slice (a house search, wanting 60, uses 5 slices of
+$40,000). A slice with too few listings passes what it couldn't give to the next ones. A market with no more
+listings under `--reach` than the search wants is read straight through, cheapest first, with no slices. The
+search stops at `--reach` (`price reached` in the coverage report) when the market has fewer listings than wanted,
+or after 30 pages (`--pages`; raised when needed so every slice gets a page).
+
+REALTOR.ca's API refused a browser's calls after about six (seen 2026-11-09), so a province there gets 4 slices of
+$50,000 instead of 20. Three searches still go cheapest first with no slices: Properstar's castles (few and dear), HOME'S akiya bank
+(no price filter we can use) and Ieichiba, which is read in full up to ¥100M. LandWatch pages through at most
+500 results of any search; a slice holding more comes back as a sample spread over the slice.
+
+California is searched deeper than the rest: 2,000 believable listings instead of 250 (100 per slice), with its
+house search and page cap raised by the same ratio (8x). `--more` sets which places get this and how many.
 
 After scraping, landfinder opens the 60 cheapest believable listings on LandWatch, Kijiji and Properstar and
 re-reads their full description, because search results cut it short (Properstar's carry none at all). That
@@ -207,7 +237,7 @@ original; searching in the original language still works. `--no-translate` skips
   `SITE_PASSWORD` secret; set or change it with `npx wrangler pages secret put SITE_PASSWORD --project-name cheapest-land`
   (changing it logs everyone out). For local testing put `SITE_PASSWORD=...` in `.dev.vars` (not committed) and run
   `npx wrangler pages dev site`.
-- `./scrape.command` is the same job started by hand, with a Terminal window and the live dashboard (see Quick start).
+- `./scrape.command` is the same job started by hand, with a Terminal window and the dashboard window (see Quick start).
 - `./install_daily.sh` schedules `daily.sh` with launchd: a fresh scrape at 6:00 every morning, with
   windows hidden in the Dock, then a deploy. If the Mac is asleep at that time, macOS runs the job when it
   wakes. Logs go to `logs/`. Use `./install_daily.sh 7 30` to change the time, or `./install_daily.sh off`
@@ -221,7 +251,7 @@ original; searching in the original language still works. `--no-translate` skips
 - **`coverage.csv`**: one row per search, to show how much of each market the site covers: how many listings the
   site itself reports (above our price floor, where the search has one), how many we fetched (`fetched_pct` of
   them), how many believable ones the site shows, the price the cheapest-first crawl got up to (`reached_usd`, the
-  middle price on its last page) and why it stopped (`enough listings`, `end of results`, `page cap` or `fetch
+  middle price on its last page) and why it stopped (`enough listings`, `end of results`, `price reached`, `page cap` or `fetch
   failed`). The log sums it up per source and names the countries that rely on a single source or have under 10
   believable listings, which is where to look for sources we're missing.
 - **`data/`**: raw scraped records, exchange rates and crawl progress.
@@ -298,10 +328,10 @@ Empty houses on the Japanese akiya sites (Ieichiba, HOME'S) rank with the land: 
 ## Adding a source
 
 1. Write `parse_<site>()`, which turns one search page into listing dicts (`source`, `country`, `region`,
-   `title`, `description`, `price`, `currency`, `acres`, `lat`, `lon`, `url`), and `crawl_<site>()`, which walks
-   the page numbers `search_pages()` gives it (cheapest first, until there are enough believable listings) and
-   saves each page with `store.page()`, along with the site's own result count. It calls `store.stop()` when the
-   results run out or a fetch fails. `crawl_olx` is a short example.
+   `title`, `description`, `price`, `currency`, `acres`, `lat`, `lon`, `url`), and `crawl_<site>()`, which hands
+   `crawl_sliced()` two functions: the URL of page p of the listings within a price range (cheapest first), and a
+   loader that fetches and parses that page. `crawl_sliced()` does the rest: the price slices, the page limits,
+   saving each page and recording why the search stopped. `crawl_olx` is a short example.
 2. Register it in `main()`: sites that answer plain HTTP requests go in the `plain` list (one thread each),
    sites that need a real browser go in the `jobs` passed to `run_pool`.
 3. Add it to the default `--sources`, and to `srcName` and the Source filter in `site_template.html`.
