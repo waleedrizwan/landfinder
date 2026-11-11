@@ -31,7 +31,8 @@ header h1{font-family:var(--display);font-size:21px;font-weight:700;letter-spaci
 header h1 span{font-weight:400;color:var(--soft)}
 .brand{display:flex;flex-direction:column;justify-content:center;line-height:1.2}
 #visitors{font-size:12px;color:var(--soft);white-space:nowrap}
-#fcur{margin-left:auto;background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:5px 8px;max-width:190px}
+#fcur{flex:none;margin-left:auto;background:var(--paper);border:1px solid var(--rule);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:600;cursor:pointer;width:92px}
+#fcur:hover{border-color:var(--ink)}
 
 .layout{display:grid;grid-template-columns:270px minmax(0,1fr);max-width:1320px;margin:0 auto}
 aside{position:sticky;top:0;align-self:start;max-height:100vh;max-height:100dvh;overflow:auto;padding:22px 22px 40px 28px;border-right:1px solid var(--rule)}
@@ -166,9 +167,9 @@ body.mapfull{overflow:hidden}
 /* the filters again, as a bar of dropdowns above the list; each control mirrors the sidebar's (data-for) */
 .fbar{position:sticky;top:0;z-index:1001;background:var(--paper);margin:-22px -28px 18px;padding:12px 28px;border-bottom:1px solid var(--rule)}
 body.mapfull .fbar{display:none}
-.fbar-row{display:flex;gap:8px;align-items:center;overflow-x:auto;scrollbar-width:none}
+.fbar-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}  /* too narrow for one line: a second, never hidden off the edge */
 .fbar-row::-webkit-scrollbar{display:none}
-.fbq{flex:1 1 220px;min-width:150px;max-width:320px;background:var(--tint);border:1px solid transparent;border-radius:999px;padding:7px 14px}
+.fbq{flex:1 1 0;min-width:130px;max-width:320px;background:var(--tint);border:1px solid transparent;border-radius:999px;padding:7px 14px}
 .fbq:focus{background:var(--paper);border-color:var(--blue);outline:0}
 .fb{flex:none;background:var(--paper);border:1px solid var(--rule);border-radius:999px;padding:6px 14px;font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s,color .15s}
 .fb:hover{border-color:var(--ink)}
@@ -209,7 +210,7 @@ footer p{margin:4px 0}
 @media (max-width:860px){
   header{padding:0 16px;gap:14px}
   header h1 span{display:none}
-  #fcur{max-width:84px}
+  #fcur{width:84px}
   .layout{display:block}
   aside{display:none;position:static;max-height:none;border-right:0;border-bottom:1px solid var(--rule);padding:16px}
   aside.open{display:block}
@@ -258,7 +259,6 @@ footer p{margin:4px 0}
     <h1>Cheapest Land <span>worldwide</span></h1>
     <span id="visitors" hidden></span>
   </div>
-  <select id="fcur" aria-label="Currency"></select>
 </header>
 
 <div class="layout" id="layout">
@@ -313,6 +313,7 @@ footer p{margin:4px 0}
         <button type="button" class="fb" id="b-more" data-panel="pp-more" aria-expanded="false" aria-controls="pp-more">More</button>
         <button class="fbtn" id="fbtn" type="button" aria-controls="side" aria-expanded="false">All filters</button>
         </div>
+        <select id="fcur" aria-label="Currency" title="Currency"></select>
       </div>
       <div class="fpanel" id="pp-price" hidden>
         <h3>Price (<span class="cur">USD</span>)</h3>
@@ -472,11 +473,17 @@ getJSON("data.json").then(d => {
   $("updated").textContent = `Updated ${new Date(d.generated).toLocaleString("en-US", {dateStyle:"medium", timeStyle:"short"})}.`;
   POP = d.populations || {};
   RATES = d.rates || RATES;
-  const wide = matchMedia("(min-width:861px)").matches;  // phones only have room for "USD"
   for (const c of Object.keys(RATES).sort()) {  // every currency with a rate and an English name
     const name = currencyNames ? currencyNames.of(c) : "";
-    if (name !== c) $("fcur").add(new Option(name && wide ? `${c} · ${name}` : c, c));
+    if (name === c) continue;
+    const o = new Option(c, c);
+    o.dataset.long = name ? `${c} · ${name}` : c;
+    $("fcur").add(o);
   }
+  // shut, the picker just says "USD"; opened, each currency has its name too
+  const curText = long => { for (const o of $("fcur").options) o.textContent = long ? o.dataset.long : o.value; };
+  for (const ev of ["mousedown", "focus", "keydown"]) $("fcur").addEventListener(ev, () => curText(true));
+  for (const ev of ["blur", "change"]) $("fcur").addEventListener(ev, () => curText(false));
   let saved; try { saved = localStorage.getItem("currency"); } catch (e) {}
   $("fcur").value = [...$("fcur").options].some(o => o.value === saved) ? saved : "USD";
   setCurrency($("fcur").value);
