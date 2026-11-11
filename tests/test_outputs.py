@@ -181,9 +181,11 @@ def test_collapse_folds_realtor_and_kijiji_by_mls_number():
 
 
 def test_site_data_is_split_into_files_cloudflare_accepts(workdir, rates, monkeypatch):
-    """Cloudflare Pages refuses a file over 25 MiB: past a size, rows go to data-2.json... listed in data.json."""
+    """Cloudflare Pages refuses a file over 25 MiB: past a size, rows go to data-2.json... listed in data.json.
+    data.json holds the cheapest, and index.html names the other files so the page fetches them alongside it."""
     import glob, os
     monkeypatch.setattr(lf, "SITE_PART_BYTES", 2000)
+    monkeypatch.setattr(lf, "SITE_FIRST_BYTES", 1000)
     recs = [lf.finalize({"source": "landwatch", "country": "US", "region": "Deming, NM", "title": "Lot %d" % i,
                          "description": "", "price": 5000 + i, "currency": "USD", "acres": 1.0, "lat": 32.2, "lon": -107.7,
                          "url": "https://www.landwatch.com/x/pid/%d" % i, "scraped_at": "2026-11-10T10:00:00"}, rates)
@@ -197,7 +199,11 @@ def test_site_data_is_split_into_files_cloudflare_accepts(workdir, rates, monkey
     rows = d["rows"] + [r for name in d["more"] for r in json.load(open(os.path.join(site, name)))["rows"]]
     assert sorted(r[5] for r in rows) == sorted("Lot %d" % i for i in range(60))
     assert all(os.path.getsize(f) < 4000 for f in glob.glob(os.path.join(site, "data*.json")))
-    lf.SITE_PART_BYTES = 12_000_000
+    assert [r[1] for r in rows] == sorted(r[1] for r in rows)  # cheapest first, across the files
+    assert len(json.dumps(d["rows"])) < 1500 < len(json.dumps(json.load(open(os.path.join(site, d["more"][0])))["rows"]))
+    assert "const MORE = %s;" % json.dumps(d["more"]) in open(os.path.join(site, "index.html")).read()
+    lf.SITE_PART_BYTES = lf.SITE_FIRST_BYTES = 12_000_000
     lf.build_site(recs, rates)  # small enough for one file: no "more", no extra files
     assert "more" not in json.load(open(os.path.join(site, "data.json")))
     assert not glob.glob(os.path.join(site, "data-*.json"))
+    assert "const MORE = [];" in open(os.path.join(site, "index.html")).read()

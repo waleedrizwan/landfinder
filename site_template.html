@@ -135,6 +135,43 @@ body.mapfull{overflow:hidden}
   .tyin .sp{display:inline;margin-left:8px}
 }
 
+/* the filters again, as a bar of dropdowns above the list; each control mirrors the sidebar's (data-for) */
+.fbar{position:sticky;top:0;z-index:1001;background:var(--paper);margin:-22px -28px 18px;padding:12px 28px;border-bottom:1px solid var(--rule)}
+body.mapfull .fbar{display:none}
+.fbar-row{display:flex;gap:8px;align-items:center;overflow-x:auto;scrollbar-width:none}
+.fbar-row::-webkit-scrollbar{display:none}
+.fbq{flex:1 1 220px;min-width:150px;max-width:320px;background:var(--tint);border:1px solid transparent;border-radius:999px;padding:7px 14px}
+.fbq:focus{background:var(--paper);border-color:var(--blue);outline:0}
+.fb{flex:none;background:var(--paper);border:1px solid var(--rule);border-radius:999px;padding:6px 14px;font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s,color .15s}
+.fb:hover{border-color:var(--ink)}
+.fb::after{content:"";display:inline-block;width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:translateY(-3px) rotate(45deg);margin-left:9px;transition:transform .15s}
+.fb[aria-expanded="true"]::after{transform:translateY(1px) rotate(-135deg)}
+.fb.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.fpanel{position:absolute;top:calc(100% - 6px);z-index:2;width:300px;max-height:min(70vh,560px);overflow:auto;background:var(--paper);border:1px solid var(--rule);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:16px 18px;animation:drop .14s ease-out}
+.fpanel.wide{width:min(640px,calc(100% - 56px))}
+.fpanel h3{font-size:13px;font-weight:700;margin:0 0 8px}
+.fpanel .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px 26px}
+.fpanel input[type=search],.fpanel input[type=number],.fpanel select{width:100%;background:var(--tint);border:1px solid transparent;border-radius:4px;padding:8px 10px;min-width:0}
+.fpanel input:focus{background:var(--paper);border-color:var(--blue);outline:0}
+.fpanel .chk{margin-top:8px}
+@keyframes drop{from{opacity:0;transform:translateY(-6px)}}
+
+/* loading: placeholder rows that shimmer until the first listings arrive, then a bar along the top while the rest come */
+.sk td{padding:16px 10px}
+.sk i{display:block;height:12px;border-radius:4px;margin:4px 0 8px;background:linear-gradient(90deg,var(--tint) 25%,var(--rule) 50%,var(--tint) 75%) 0 0/300% 100%;animation:shimmer 1.4s linear infinite}
+.sk i.big{height:20px;width:80px}
+.sk i.s{width:55%}
+@keyframes shimmer{from{background-position:100% 0}to{background-position:0 0}}
+#count.loading::after{content:"";display:inline-block;width:18px;height:18px;margin-left:12px;vertical-align:-2px;border:2.5px solid var(--rule);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+.spin{display:inline-block;width:11px;height:11px;margin-right:6px;vertical-align:-1px;border:2px solid var(--rule);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loadbar{position:fixed;top:0;left:0;right:0;height:3px;z-index:2000;overflow:hidden;pointer-events:none}
+#loadbar::before{content:"";position:absolute;top:0;bottom:0;width:35%;background:var(--blue);border-radius:2px;animation:slide 1.2s ease-in-out infinite}
+@keyframes slide{from{left:-35%}to{left:100%}}
+#rows tr.in{animation:fadein .25s ease-out}
+@keyframes fadein{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}}
+
 footer{color:var(--soft);font-size:13px;padding:28px 0 36px;max-width:80ch}
 footer p{margin:4px 0}
 [hidden]{display:none!important}
@@ -148,6 +185,9 @@ footer p{margin:4px 0}
   aside.open{display:block}
   .done{display:block;width:100%;margin-top:22px;background:var(--ink);color:var(--paper);border:0;border-radius:4px;padding:11px;font-weight:600;cursor:pointer}
   main{padding:16px 16px 0}
+  .fbar{margin:-16px -16px 14px;padding:10px 16px}
+  .fpanel,.fpanel.wide{left:12px!important;right:12px;width:auto}
+  .fpanel .cols{grid-template-columns:1fr}
   .fbtn{display:inline-block;margin-left:auto;background:var(--tint);border:0;border-radius:4px;padding:7px 12px;font-weight:600;cursor:pointer}
   .top h2{font-size:22px}
   thead{display:none}
@@ -166,6 +206,7 @@ footer p{margin:4px 0}
 </style>
 </head>
 <body>
+<div id="loadbar" hidden></div>
 <header>
   <div class="brand">
     <h1>Cheapest Land <span>worldwide</span></h1>
@@ -218,8 +259,42 @@ footer p{margin:4px 0}
   </aside>
 
   <main>
+    <div class="fbar" id="fbar" role="search" aria-label="Filters">
+      <div class="fbar-row">
+        <input class="fbq" type="search" data-for="q" placeholder="Search towns, regions, titles" aria-label="Search">
+        <button type="button" class="fb" id="b-price" data-panel="pp-price" aria-expanded="false" aria-controls="pp-price">Price</button>
+        <button type="button" class="fb" id="b-type" data-panel="pp-type" aria-expanded="false" aria-controls="pp-type">Type</button>
+        <button type="button" class="fb" id="b-where" data-panel="pp-where" aria-expanded="false" aria-controls="pp-where">Location</button>
+        <button type="button" class="fb" id="b-land" data-panel="pp-land" aria-expanded="false" aria-controls="pp-land">Land</button>
+        <button type="button" class="fb" id="b-more" data-panel="pp-more" aria-expanded="false" aria-controls="pp-more">More</button>
+      </div>
+      <div class="fpanel" id="pp-price" hidden>
+        <h3>Price (<span class="cur">USD</span>)</h3>
+        <div class="range"><input data-for="fmin" type="number" min="0" step="100" inputmode="numeric" placeholder="Min" aria-label="Min price">to<input data-for="fmax" type="number" min="0" step="100" inputmode="numeric" placeholder="Max" aria-label="Max price"></div>
+      </div>
+      <div class="fpanel" id="pp-type" hidden><h3>Type of property</h3><div id="tftype" data-label="Type of property"></div></div>
+      <div class="fpanel wide" id="pp-where" hidden>
+        <div class="cols">
+          <div><h3>Continent</h3><div id="tfcont" data-label="Continent"></div></div>
+          <div><h3>Country</h3><div id="tfc" data-label="Country" data-search="Search countries"></div></div>
+          <div id="tplace-prov" hidden><h3>Province / state</h3><div id="tfprov" data-label="Province or state" data-search="Search provinces and states"></div></div>
+          <div id="tplace-city" hidden><h3>City or town</h3><div id="tfcity" data-label="City or town" data-search="Search towns"></div></div>
+        </div>
+      </div>
+      <div class="fpanel" id="pp-land" hidden>
+        <h3>Land</h3>
+        <div class="range"><input data-for="facmin" type="number" min="0" step="any" inputmode="decimal" placeholder="Min acres" aria-label="Min acres">to<input data-for="facmax" type="number" min="0" step="any" inputmode="decimal" placeholder="Max acres" aria-label="Max acres"></div>
+        <label class="field" style="margin-top:10px">Max price per acre (<span class="cur">USD</span>)<input data-for="fppa" type="number" min="0" step="10" inputmode="numeric" placeholder="Any"></label>
+        <label class="chk"><input data-for="farea" type="checkbox"> Area listed only</label>
+      </div>
+      <div class="fpanel" id="pp-more" hidden>
+        <label class="field">Source<select data-for="fsrc" id="tfsrc"></select></label>
+        <label class="chk"><input data-for="fflag" type="checkbox"> Include flagged listings</label>
+        <button class="linkbtn" type="button" onclick="resetAll()" style="margin-top:10px">Clear all filters</button>
+      </div>
+    </div>
     <div class="top">
-      <h2 id="count">Loading…</h2>
+      <h2 id="count" class="loading">Loading…</h2>
       <p id="sub">cheapest first</p>
       <button class="fbtn" id="fbtn" type="button" aria-controls="side" aria-expanded="false">Filters</button>
     </div>
@@ -228,7 +303,7 @@ footer p{margin:4px 0}
     <section id="p-list">
       <table>
         <thead><tr><th>#</th><th>Price</th><th>Land</th><th>Listing</th><th>Type</th></tr></thead>
-        <tbody id="rows"></tbody>
+        <tbody id="rows"><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr></tbody>
       </table>
       <div class="empty" id="empty" hidden><span id="emptymsg">No listings match these filters.</span> <button class="linkbtn" type="button" onclick="resetAll()">Clear all filters</button></div>
       <button class="more" id="more" type="button" hidden>Show more</button>
@@ -310,20 +385,29 @@ const houseOnly = r => !r[7].replace(/[HN]/g, "");
 // MAPVIEW: what the map shows, every filter but AREA, so panning brings more pins into view
 let AREA = null, MAPVIEW = [], placeKey = "", ALL = [], VIEW = [], TOWNS = {}, PROVS = {}, POP = {}, PLACE = "prov", shown = PAGE, map, pins, mapAt = null, mapTimer;
 
-// the listings come in data.json and, when there are too many for one file, in the files it lists under "more"
+// data.json holds the cheapest listings, so the page shows them as soon as it arrives; the rest are in the files
+// listed under "more". build_site writes their names into MORE below, so they download alongside data.json, not after it
+const MORE = [];
+let LOADING = false;  // the files after data.json are still coming
 const getJSON = u => fetch(u).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
-getJSON("data.json").then(d => Promise.all((d.more || []).map(getJSON)).then(parts => {
-  for (const p of parts) d.rows = d.rows.concat(p.rows);
-  return d;
-})).then(d => {
-  ALL = d.rows.filter(r => r[1] != null).sort((a, b) => a[1] - b[1]);
-  for (const r of ALL) r.text = (r[5] + " " + (r[11] || "") + " " + r[4] + " " + cname(r[3])).toLowerCase();
-  $("updated").textContent = `Updated ${new Date(d.generated).toLocaleString("en-US", {dateStyle:"medium", timeStyle:"short"})}.`;
+const early = MORE.map(getJSON);
+for (const p of early) p.catch(() => {});  // a failure is reported where they're awaited, below
+
+function addRows(rows){
+  rows = rows.filter(r => r[1] != null);
+  for (const r of rows) {
+    r.text = (r[5] + " " + (r[11] || "") + " " + r[4] + " " + cname(r[3])).toLowerCase();
+    if (r[13]) (TOWNS[r[3]] ??= new Set()).add(r[13]);
+    if (r[17]) (PROVS[r[3]] ??= new Set()).add(r[17]);
+  }
+  ALL = ALL.concat(rows).sort((a, b) => a[1] - b[1]);
   const cs = [...new Set(ALL.map(r => r[3]))];
   F.country.setItems(cs.map(c => ({value: c, label: cname(c)})));
   F.cont.setItems([...new Set(cs.map(contOf))].sort().map(ct => ({value: ct, label: ct})));
-  for (const r of ALL) if (r[13]) (TOWNS[r[3]] ??= new Set()).add(r[13]);
-  for (const r of ALL) if (r[17]) (PROVS[r[3]] ??= new Set()).add(r[17]);
+}
+
+getJSON("data.json").then(d => {
+  $("updated").textContent = `Updated ${new Date(d.generated).toLocaleString("en-US", {dateStyle:"medium", timeStyle:"short"})}.`;
   POP = d.populations || {};
   RATES = d.rates || RATES;
   const wide = matchMedia("(min-width:861px)").matches;  // phones only have room for "USD"
@@ -340,8 +424,19 @@ getJSON("data.json").then(d => Promise.all((d.more || []).map(getJSON)).then(par
     update();
   });
   for (const id of FILTERS) $(id).addEventListener("input", refilter);
+  const more = early.length ? early : (d.more || []).map(getJSON);  // a page built before MORE: fetch them now
+  LOADING = more.length > 0;
+  $("loadbar").hidden = !LOADING;
+  $("count").classList.remove("loading");
+  addRows(d.rows);
   update();
-}).catch(() => { $("count").textContent = "Couldn't load listings"; $("sub").textContent = "Refresh the page to try again."; });
+  if (!LOADING) return;
+  return Promise.all(more).then(parts => {
+    LOADING = false; $("loadbar").hidden = true;
+    addRows(parts.flatMap(p => p.rows));
+    update();
+  }, () => { LOADING = false; $("loadbar").hidden = true; $("sub").textContent = "Only the cheapest listings loaded. Refresh the page to get the rest."; });
+}).catch(() => { $("count").classList.remove("loading"); $("loadbar").hidden = true; $("rows").innerHTML = ""; $("count").textContent = "Couldn't load listings"; $("sub").textContent = "Refresh the page to try again."; });
 
 // the visitor count (functions/api/visitors.js): a browser's first visit adds one, later visits just read it
 let firstVisit = false;
@@ -404,7 +499,7 @@ const MAX_SHOWN = 250;  // US towns run to thousands: show this many, and say ho
 class Facet {
   constructor(id, {top = Infinity} = {}){
     const el = this.el = $(id), d = el.dataset;
-    this.label = d.label; this.top = top; this.items = []; this.counts = new Map(); this.sel = new Set(); this.q = ""; this.all = false;
+    this.label = d.label; this.top = top; this.items = []; this.counts = new Map(); this.sel = new Set(); this.q = ""; this.all = false; this.twins = [];
     el.innerHTML = (d.search ? `<input type="search" class="fsearch" placeholder="${esc(d.search)}" aria-label="${esc(d.search)}">` : "")
       + `<ul class="facet" role="group" aria-label="${esc(d.label)}"></ul><button type="button" class="linkbtn" hidden></button>`;
     this.list = el.querySelector("ul"); this.btn = el.querySelector("button"); this.inp = el.querySelector("input");
@@ -422,10 +517,11 @@ class Facet {
   }
   setItems(items){
     this.items = items;
+    for (const t of this.twins) t.items = items;
     const vals = new Set(items.map(i => i.value));
     for (const v of this.sel) if (!vals.has(v)) this.sel.delete(v);  // drop ticks that are no longer on the list
   }
-  clear(){ this.sel.clear(); this.q = ""; this.all = false; if (this.inp) this.inp.value = ""; }
+  clear(){ this.sel.clear(); for (const f of [this, ...this.twins]) { f.q = ""; f.all = false; if (f.inp) f.inp.value = ""; } }
   labelOf(v){ return (this.items.find(i => i.value === v) || {}).label || v; }
   render(){
     const n = v => this.counts.get(v) || 0, q = norm(this.q.trim()), groups = [...new Set(this.items.map(i => i.group || ""))];
@@ -454,6 +550,12 @@ class Facet {
 }
 const F = {type: new Facet("ftype"), cont: new Facet("fcont"), country: new Facet("fc", {top: 8}),
            prov: new Facet("fprov", {top: 8}), city: new Facet("fcity", {top: 8})};
+// the same lists in the top bar's dropdowns: their own search box and "show all", but the sidebar's ticks
+for (const [k, id] of [["type", "tftype"], ["cont", "tfcont"], ["country", "tfc"], ["prov", "tfprov"], ["city", "tfcity"]]) {
+  const t = new Facet(id, {top: F[k].top});
+  t.sel = F[k].sel; t.items = F[k].items;
+  F[k].twins.push(t);
+}
 F.type.setItems([...Object.entries(TYPES).map(([k, v]) => ({value: k, label: v})),
   ...[["R", "Ruins & fixer-uppers"], ["K", "Castles & manors"], ["C", "Churches & chapels"]].map(([k, v]) => ({value: "s" + k, label: v, group: "Ruins, castles & churches"}))]);
 const refilter = () => { shown = PAGE; update(); };
@@ -513,7 +615,12 @@ function update(fromMap){
     if (inCont && inCountry && inProv && r[13]) add(cn.city, town);
     if (here && inA) VIEW.push(r);
   }
-  for (const k in F) { F[k].counts = cn[k]; F[k].render(); }
+  for (const k in F) {
+    F[k].counts = cn[k]; F[k].render();
+    for (const t of F[k].twins) { t.counts = cn[k]; if (t.el.offsetParent) t.render(); }  // only an open dropdown
+  }
+  $("tplace-prov").hidden = !F.prov.items.length;
+  $("tplace-city").hidden = !F.city.items.length;
   $("placeblock").hidden = !F.city.items.length && !F.prov.items.length;
   renderChips();
   renderList();
@@ -553,7 +660,59 @@ function renderChips(){
   $("chips").innerHTML = CHIPS.map((c, i) => `<button class="chip" type="button" data-chip="${i}" aria-label="Remove ${esc(c.label)}">${esc(c.label)}<span aria-hidden="true">×</span></button>`).join("")
     + (CHIPS.length > 1 ? `<button class="chip" type="button" onclick="resetAll()">Clear all</button>` : "");
   $("fbtn").textContent = CHIPS.length ? `Filters (${CHIPS.length})` : "Filters";
+  barLabels();
 }
+
+// the top bar: each button says what it's filtering, and its controls copy the sidebar's values
+function barLabels(){
+  const v = id => $(id).value.trim(), k = n => n.toLocaleString("en-US");
+  const set = (id, on, label) => { $(id).classList.toggle("on", !!on); $(id).textContent = label; };
+  const mn = v("fmin"), mx = v("fmax");
+  set("b-price", mn || mx, mn && mx ? `${withCur(k(+mn))}–${k(+mx)}` : mn ? `${withCur(k(+mn))}+` : mx ? `Up to ${withCur(k(+mx))}` : "Price");
+  const named = (keys, word) => { const p = keys.flatMap(x => [...F[x].sel].map(s => F[x].labelOf(s)));
+    return [p.length, p.length === 1 ? p[0] : p.length ? `${word} (${p.length})` : word]; };
+  const [nt, lt] = named(["type"], "Type"), [nw, lw] = named(["cont", "country", "prov", "city"], "Location");
+  set("b-type", nt, lt);
+  set("b-where", nw, lw);
+  const nl = ["facmin", "facmax", "fppa"].filter(v).length + $("farea").checked;
+  set("b-land", nl, nl ? `Land (${nl})` : "Land");
+  const nm = !!$("fsrc").value + $("fflag").checked;
+  set("b-more", nm, nm === 1 && $("fsrc").value ? srcName($("fsrc").value) : nm ? `More (${nm})` : "More");
+  for (const el of $("fbar").querySelectorAll("[data-for]")) {
+    if (el === typing) continue;  // don't rewrite the box being typed in
+    const src = $(el.dataset.for);
+    if (el.type === "checkbox") el.checked = src.checked; else el.value = src.value;
+  }
+}
+$("tfsrc").innerHTML = $("fsrc").innerHTML;
+let typing = null;
+$("fbar").addEventListener("input", e => {
+  const id = e.target.dataset.for;
+  if (!id) return;
+  const src = $(id);
+  if (src.type === "checkbox") src.checked = e.target.checked; else src.value = e.target.value;
+  typing = e.target;
+  try { src.dispatchEvent(new Event("input")); } finally { typing = null; }
+});
+let openBtn = null;
+function closePanel(){
+  if (!openBtn) return;
+  $(openBtn.dataset.panel).hidden = true; openBtn.setAttribute("aria-expanded", "false"); openBtn = null;
+}
+function openPanel(btn){
+  const was = openBtn;
+  closePanel();
+  if (was === btn) return;
+  const panel = $(btn.dataset.panel);
+  panel.hidden = false; btn.setAttribute("aria-expanded", "true"); openBtn = btn;
+  const bar = $("fbar").getBoundingClientRect(), b = btn.getBoundingClientRect();
+  panel.style.left = Math.max(12, Math.min(b.left - bar.left, bar.width - panel.offsetWidth - 12)) + "px";
+  for (const k in F) for (const t of F[k].twins) if (t.el.offsetParent) { t.counts = F[k].counts; t.render(); }
+  if (matchMedia("(hover:hover)").matches) panel.querySelector("input,select")?.focus();
+}
+$("fbar").addEventListener("click", e => { const b = e.target.closest(".fb"); if (b) openPanel(b); });
+document.addEventListener("click", e => { if (openBtn && !e.composedPath().includes($("fbar"))) closePanel(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && openBtn) { const b = openBtn; closePanel(); b.focus(); } });
 
 // the listing is priced in another currency, so the big price was converted from its own
 const converted = r => r[15] && r[15] !== CUR;
@@ -585,11 +744,15 @@ const landCell = r => r[2] == null ? `<span class="ppa">Area not listed</span>`
 // some listings have no title, or just a "•": link those as "View listing"
 const titleLink = r => `<a class="t" href="${esc(r[8])}" target="_blank" rel="noopener"${r[11] ? ` title="Original: ${esc(r[11])}"` : ""}>${esc(/[\p{L}\p{N}]/u.test(r[5] || "") ? tidy(r[5]) : "View listing")}</a>`;
 
+let fadeIn = true;  // the first listings drawn fade in over the placeholder rows
 function renderList(){
   const page = VIEW.slice(0, shown);
   $("count").textContent = `${VIEW.length.toLocaleString("en-US")} ${VIEW.length === 1 ? "listing" : "listings"}`;
-  if (!mapShown() || WIDE.matches) $("sub").textContent = AREA ? "in the map area, cheapest first" : "cheapest first";
-  $("rows").innerHTML = page.map((r, i) => `<tr data-i="${i}">
+  if (!mapShown() || WIDE.matches) {
+    $("sub").textContent = (AREA ? "in the map area, cheapest first" : "cheapest first") + (LOADING ? " · " : "");
+    if (LOADING) $("sub").insertAdjacentHTML("beforeend", `<span class="spin" aria-hidden="true"></span>loading the rest…`);
+  }
+  $("rows").innerHTML = page.map((r, i) => `<tr data-i="${i}"${fadeIn ? ' class="in"' : ""}>
     <td class="rank">${i + 1}</td>
     <td class="price">${priceCell(r)}</td>
     <td class="land">${landCell(r)}</td>
@@ -599,6 +762,7 @@ function renderList(){
   $("emptymsg").textContent = AREA && MAPVIEW.length ? "No listings in this part of the map. Zoom out or drag the map to see more." : "No listings match these filters.";
   $("more").hidden = shown >= VIEW.length;
   $("more").textContent = `Show ${Math.min(PAGE, VIEW.length - shown)} more`;
+  fadeIn = false;
 }
 
 // "$950", "$1.2k", "$35k", "$1.5M": short enough for a map pin

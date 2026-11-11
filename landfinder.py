@@ -3280,6 +3280,7 @@ def town_populations(places):
 
 
 SITE_PART_BYTES = 12_000_000  # rows per site data file: well under Cloudflare Pages' 25 MiB file limit
+SITE_FIRST_BYTES = 2_000_000  # data.json's share: the cheapest listings, small so the page can show them quickly
 
 
 def build_site(recs, rates):
@@ -3312,12 +3313,14 @@ def build_site(recs, rates):
     data = {"generated": newest.astimezone().isoformat(timespec="seconds"),  # shown as "Updated ..." on the site
             "countries": len(countries), "rows": rows, "rates": rates,
             "populations": town_populations({(row[3], row[13]) for row in rows if row[13]})}
-    # Cloudflare Pages refuses a file over 25 MiB, so rows past SITE_PART_BYTES go to data-2.json, data-3.json...,
-    # which data.json lists under "more" and the page fetches alongside it
+    # cheapest first, and data.json gets only the first SITE_FIRST_BYTES of them, so the page can show those while
+    # the rest download. They go to data-2.json, data-3.json... (each under SITE_PART_BYTES: Cloudflare Pages refuses
+    # a file over 25 MiB), which data.json lists under "more" and index.html names so it fetches them alongside data.json
+    rows.sort(key=lambda row: row[1])
     parts, size = [[]], 0
     for row in rows:
         n = len(json.dumps(row, separators=(",", ":"), allow_nan=False)) + 1
-        if size + n > SITE_PART_BYTES and parts[-1]:
+        if size + n > (SITE_FIRST_BYTES if len(parts) == 1 else SITE_PART_BYTES) and parts[-1]:
             parts.append([])
             size = 0
         parts[-1].append(row)
@@ -3335,6 +3338,8 @@ def build_site(recs, rates):
         json.dump(data, f, separators=(",", ":"), allow_nan=False)
     with open(os.path.join(HERE, "site_template.html")) as f:
         html = f.read()
+    assert "const MORE = [];" in html, "site_template.html lost the MORE line build_site fills in"
+    html = html.replace("const MORE = [];", "const MORE = %s;" % json.dumps(more), 1)
     with open(os.path.join(SITE, "index.html"), "w") as f:
         f.write(html)
     open(os.path.join(SITE, ".nojekyll"), "w").close()
