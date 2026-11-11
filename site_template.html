@@ -128,6 +128,12 @@ body.mapfull{overflow:hidden}
 .views svg,.viewpill svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .viewpill{display:none}
 @media (max-width:1279px){#t-both{display:none}}
+@media (min-width:861px){  /* desktop: a bigger switch, so the map is hard to miss */
+  .top{align-items:center}
+  .views{padding:4px;gap:4px}
+  .views button{padding:10px 22px;font-size:16px;gap:9px}
+  .views svg{width:20px;height:20px}
+}
 .view-map .layout{grid-template-columns:minmax(0,1fr);max-width:none}
 .view-map aside,.view-map #fbtn,.view-map footer{display:none!important}
 .view-map #map{margin-top:12px}
