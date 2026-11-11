@@ -147,6 +147,8 @@ body.mapfull .fbar{display:none}
 .fb::after{content:"";display:inline-block;width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:translateY(-3px) rotate(45deg);margin-left:9px;transition:transform .15s}
 .fb[aria-expanded="true"]::after{transform:translateY(1px) rotate(-135deg)}
 .fb.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.fbtns{display:contents}
+.fbtoggle{display:none}
 .fpanel{position:absolute;top:calc(100% - 6px);z-index:2;width:300px;max-height:min(70vh,560px);overflow:auto;background:var(--paper);border:1px solid var(--rule);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:16px 18px;animation:drop .14s ease-out}
 .fpanel.wide{width:min(640px,calc(100% - 56px))}
 .fpanel h3{font-size:13px;font-weight:700;margin:0 0 8px}
@@ -186,9 +188,15 @@ footer p{margin:4px 0}
   .done{display:block;width:100%;margin-top:22px;background:var(--ink);color:var(--paper);border:0;border-radius:4px;padding:11px;font-weight:600;cursor:pointer}
   main{padding:16px 16px 0}
   .fbar{margin:-16px -16px 14px;padding:10px 16px}
+  /* phones: just the search box and a Filters button; the dropdown buttons fold out under them */
+  .fbar-row{flex-wrap:wrap;overflow:visible}
+  .fbq{max-width:none}
+  .fbtoggle{display:inline-block}
+  .fbtns{display:none;width:100%;flex-wrap:wrap;gap:8px}
+  .fbar.open .fbtns{display:flex;animation:drop .14s ease-out}
   .fpanel,.fpanel.wide{left:12px!important;right:12px;width:auto}
   .fpanel .cols{grid-template-columns:1fr}
-  .fbtn{display:inline-block;margin-left:auto;background:var(--tint);border:0;border-radius:4px;padding:7px 12px;font-weight:600;cursor:pointer}
+  .fbtn{display:inline-block;background:var(--tint);border:0;border-radius:999px;padding:7px 14px;font-size:14px;font-weight:600;cursor:pointer}
   .top h2{font-size:22px}
   thead{display:none}
   table,tbody{display:block}
@@ -262,11 +270,15 @@ footer p{margin:4px 0}
     <div class="fbar" id="fbar" role="search" aria-label="Filters">
       <div class="fbar-row">
         <input class="fbq" type="search" data-for="q" placeholder="Search towns, regions, titles" aria-label="Search">
+        <button type="button" class="fb fbtoggle" id="fbtoggle" aria-expanded="false" aria-controls="fbtns">Filters</button>
+        <div class="fbtns" id="fbtns">
         <button type="button" class="fb" id="b-price" data-panel="pp-price" aria-expanded="false" aria-controls="pp-price">Price</button>
         <button type="button" class="fb" id="b-type" data-panel="pp-type" aria-expanded="false" aria-controls="pp-type">Type</button>
         <button type="button" class="fb" id="b-where" data-panel="pp-where" aria-expanded="false" aria-controls="pp-where">Location</button>
         <button type="button" class="fb" id="b-land" data-panel="pp-land" aria-expanded="false" aria-controls="pp-land">Land</button>
         <button type="button" class="fb" id="b-more" data-panel="pp-more" aria-expanded="false" aria-controls="pp-more">More</button>
+        <button class="fbtn" id="fbtn" type="button" aria-controls="side" aria-expanded="false">All filters</button>
+        </div>
       </div>
       <div class="fpanel" id="pp-price" hidden>
         <h3>Price (<span class="cur">USD</span>)</h3>
@@ -296,7 +308,6 @@ footer p{margin:4px 0}
     <div class="top">
       <h2 id="count" class="loading">Loading…</h2>
       <p id="sub">cheapest first</p>
-      <button class="fbtn" id="fbtn" type="button" aria-controls="side" aria-expanded="false">Filters</button>
     </div>
     <div class="chips" id="chips"></div>
 
@@ -450,7 +461,11 @@ fetch("/api/visitors", {method: "POST", headers: {"content-type": "application/j
 
 $("more").onclick = () => { shown += PAGE; renderList(); };
 const openSide = open => { $("side").classList.toggle("open", open); $("fbtn").setAttribute("aria-expanded", open); };
-$("fbtn").onclick = () => openSide(!$("side").classList.contains("open"));
+$("fbtn").onclick = () => {  // on phones the sidebar sits above the list: open it and go there
+  const open = !$("side").classList.contains("open");
+  openSide(open);
+  if (open) { closePanel(); $("side").scrollIntoView({block: "start"}); }
+};
 $("done").onclick = () => { openSide(false); $("fbtn").scrollIntoView({block: "start"}); };
 function resetAll(){
   for (const id of FILTERS) { const el = $(id); if (el.type === "checkbox") el.checked = false; else el.value = ""; }
@@ -659,7 +674,7 @@ function renderChips(){
     AREA && {label: "In the map area", clear: () => { AREA = null; }}].filter(Boolean);
   $("chips").innerHTML = CHIPS.map((c, i) => `<button class="chip" type="button" data-chip="${i}" aria-label="Remove ${esc(c.label)}">${esc(c.label)}<span aria-hidden="true">×</span></button>`).join("")
     + (CHIPS.length > 1 ? `<button class="chip" type="button" onclick="resetAll()">Clear all</button>` : "");
-  $("fbtn").textContent = CHIPS.length ? `Filters (${CHIPS.length})` : "Filters";
+  $("fbtn").textContent = CHIPS.length ? `All filters (${CHIPS.length})` : "All filters";
   barLabels();
 }
 
@@ -678,6 +693,8 @@ function barLabels(){
   set("b-land", nl, nl ? `Land (${nl})` : "Land");
   const nm = !!$("fsrc").value + $("fflag").checked;
   set("b-more", nm, nm === 1 && $("fsrc").value ? srcName($("fsrc").value) : nm ? `More (${nm})` : "More");
+  const on = document.querySelectorAll("#fbtns .fb.on").length;
+  set("fbtoggle", on, on ? `Filters (${on})` : "Filters");
   for (const el of $("fbar").querySelectorAll("[data-for]")) {
     if (el === typing) continue;  // don't rewrite the box being typed in
     const src = $(el.dataset.for);
@@ -710,7 +727,12 @@ function openPanel(btn){
   for (const k in F) for (const t of F[k].twins) if (t.el.offsetParent) { t.counts = F[k].counts; t.render(); }
   if (matchMedia("(hover:hover)").matches) panel.querySelector("input,select")?.focus();
 }
-$("fbar").addEventListener("click", e => { const b = e.target.closest(".fb"); if (b) openPanel(b); });
+$("fbar").addEventListener("click", e => { const b = e.target.closest(".fb[data-panel]"); if (b) openPanel(b); });
+$("fbtoggle").onclick = () => {
+  const open = $("fbar").classList.toggle("open");
+  $("fbtoggle").setAttribute("aria-expanded", open);
+  if (!open) closePanel();
+};
 document.addEventListener("click", e => { if (openBtn && !e.composedPath().includes($("fbar"))) closePanel(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && openBtn) { const b = openBtn; closePanel(); b.focus(); } });
 

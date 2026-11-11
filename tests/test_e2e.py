@@ -146,7 +146,10 @@ def test_phone(browser, site):
     wait_for_data(page)
     assert page.evaluate("document.documentElement.scrollWidth") <= 390
     assert first_price(page) == "$749"
-    assert page.locator("#fbtn").is_visible()  # the filters open from a button on phones
+    assert page.locator("#fbtoggle").is_visible() and page.locator("#b-price").is_hidden()  # the bar starts folded up
+    page.click("#fbtoggle")
+    assert page.locator("#b-price").is_visible()
+    assert page.locator("#fbtn").is_visible()  # the full filter panel opens from a button in it
     assert errors == []
 
 
