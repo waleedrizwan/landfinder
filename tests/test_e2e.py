@@ -103,9 +103,9 @@ def test_desktop(browser, site):
     page.uncheck("#fflag")
     assert first_price(page) == "$749"
 
-    # wide screens: the map is a column beside the list, with no tabs (Leaflet is blocked here, so it stays empty)
+    # wide screens open on List + map, side by side (Leaflet is blocked here, so the map stays empty)
     assert page.locator("#p-map").is_visible() and page.locator("#p-list").is_visible()
-    assert page.locator(".tabs").is_hidden()
+    assert page.get_attribute("#t-both", "aria-selected") == "true"
     assert errors == []
 
 
@@ -125,18 +125,34 @@ def test_moving_the_map_narrows_the_list(browser, site):
     assert errors == []
 
 
-def test_map_is_a_tab_on_narrower_screens(browser, site):
+def test_list_map_and_both_views(browser, site):
+    """The switch above the results picks List, Map (its own page: no sidebar) or, on wide screens, both side by side.
+    The pick goes in the address, so the back button returns to the last view."""
     page, errors = open_page(browser, site, {"width": 1024, "height": 768})
     wait_for_data(page)
-    assert page.locator("#p-map").is_hidden()
+    assert page.locator("#p-map").is_hidden() and page.locator("#t-both").is_hidden()  # too narrow for side by side
     page.click("#t-map")
     assert page.locator("#p-map").is_visible() and page.locator("#p-list").is_hidden()
-    page.set_viewport_size({"width": 1440, "height": 900})  # widened: both, side by side
-    page.wait_for_function("!document.getElementById('p-list').hidden")
-    assert page.locator("#p-map").is_visible()
-    page.set_viewport_size({"width": 1024, "height": 768})  # and back: the map tab is still the one picked
+    assert page.locator("aside").is_hidden() and page.url.endswith("#map")
+    page.set_viewport_size({"width": 1440, "height": 900})  # widened: still the map page, the view that was picked
+    assert page.locator("#p-list").is_hidden()
+    page.click("#t-both")
+    assert page.locator("#p-map").is_visible() and page.locator("#p-list").is_visible() and page.locator("aside").is_visible()
+    page.go_back()  # back to the map page
     page.wait_for_function("document.getElementById('p-list').hidden")
     page.click("#t-list")
+    assert page.locator("#p-map").is_hidden() and first_price(page) == "$749"
+    assert errors == []
+
+
+def test_phone_map_button(browser, site):
+    page, errors = open_page(browser, site, {"width": 390, "height": 844})
+    wait_for_data(page)
+    assert page.locator(".views").is_hidden() and page.inner_text("#viewpill") == "Show map"
+    page.click("#viewpill")
+    assert page.locator("#p-map").is_visible() and page.locator("#p-list").is_hidden()
+    assert page.inner_text("#viewpill") == "Show list"
+    page.click("#viewpill")
     assert first_price(page) == "$749"
     assert errors == []
 
