@@ -7,27 +7,24 @@
 <meta name="description" content="The cheapest land and houses for sale worldwide, ruins and castles included, sorted by total price and updated daily.">
 <!-- inline icon (a "for sale" sign on a field): Cloudflare Pages answers /favicon.ico with this page -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3CclipPath id='r'%3E%3Crect width='32' height='32' rx='7'/%3E%3C/clipPath%3E%3Cg clip-path='url(%23r)'%3E%3Crect width='32' height='32' fill='%233d8fd6'/%3E%3Cpath d='M0 21c6-5 12-6 19-2s10 3 13 1v12H0z' fill='%236cc36c'/%3E%3Cpath d='M0 27c8-4 17-4 32 1v4H0z' fill='%232e8b4a'/%3E%3Crect x='15' y='14' width='2.4' height='13' fill='%237a4b2a'/%3E%3Crect x='7' y='5' width='18.5' height='12' rx='2.5' fill='%23fff'/%3E%3Cpath d='M19.0 9.2c-.8-.8-1.9-1.2-3-1.2-1.7 0-3 .9-3 2.2 0 3 6 1.6 6 4.6 0 1.4-1.4 2.4-3.2 2.4-1.2 0-2.4-.5-3.2-1.3M16.0 6.5v12' transform='translate(16.2 11.0) scale(0.78) translate(-16 -12.5)' stroke='%231f6f43' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500..700&family=Public+Sans:wght@400..800&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <style>
 /* A ranked price list: rows you read down one column, with the filters in a sidebar that shows how many
    listings each choice has. Long lists (countries, towns) have their own search box. */
-:root{--display:Fraunces,Georgia,"Times New Roman",serif;--paper:#fff;--ink:#18202e;--soft:#5a6475;--rule:#e2e5ea;--tint:#f4f5f8;--blue:#2346b5;--mark:#fff3b8;--warn:#a4400f;--bar:#a9b8dc}
+:root{--sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--paper:#fff;--ink:#18202e;--soft:#5a6475;--rule:#e2e5ea;--tint:#f4f5f8;--blue:#2346b5;--mark:#fff3b8;--warn:#a4400f;--bar:#a9b8dc}
 @media (prefers-color-scheme:dark){
   :root{--paper:#161a21;--ink:#e8ebf0;--soft:#9aa3b2;--rule:#2b313b;--tint:#1f242d;--blue:#8ea8ff;--mark:#36311a;--warn:#f0a070;--bar:#4a5d8f}
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 "Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 var(--sans);font-variant-numeric:tabular-nums}
 a{color:var(--blue);text-decoration:none}
 a:hover{text-decoration:underline}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 button,input,select{font:inherit;color:inherit}
 
 header{display:flex;align-items:center;gap:28px;padding:0 28px;height:60px;border-bottom:1px solid var(--rule)}
-header h1{font-family:var(--display);font-size:21px;font-weight:700;letter-spacing:-.01em;margin:0;white-space:nowrap}
+header h1{font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0;white-space:nowrap}
 header h1 span{font-weight:400;color:var(--soft)}
 .brand{display:flex;flex-direction:column;justify-content:center;line-height:1.2}
 #visitors{font-size:12px;color:var(--soft);white-space:nowrap}
@@ -61,7 +58,7 @@ aside input:focus{background:var(--paper);border-color:var(--blue);outline:0}
 
 main{padding:22px 28px 0;min-width:0}
 .top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
-.top h2{font-family:var(--display);font-size:28px;font-weight:650;letter-spacing:-.015em;margin:0}
+.top h2{font-size:26px;font-weight:700;letter-spacing:-.01em;margin:0}
 .top p{margin:0;color:var(--soft)}
 .fbtn{display:none}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
@@ -76,7 +73,7 @@ tbody tr:hover{background:var(--mark)}
 td{padding:12px 10px;vertical-align:top}
 td.rank{color:var(--soft);font-size:13px;width:44px;padding-top:15px}
 td.price{width:140px}
-.p{display:block;font-family:var(--display);font-size:22px;font-weight:650;letter-spacing:-.005em;line-height:1.15}
+.p{display:block;font-size:21px;font-weight:700;letter-spacing:-.01em;line-height:1.15}
 .own{display:block;font-size:12.5px;color:var(--soft);margin-top:3px}
 td.land{width:150px}
 .ac{font-weight:600}
@@ -97,7 +94,7 @@ td.src{width:110px;font-size:14px}
   .view-list td.what .where{display:none}
 }
 .intro{font-size:17px;line-height:1.45;color:var(--soft);margin:0 0 14px;max-width:72ch}
-.intro strong{font-family:var(--display);font-weight:650;font-size:19px;color:var(--ink)}
+.intro strong{font-weight:700;color:var(--ink)}
 .view-map .intro{display:none}
 .sp{display:block;font-size:12.5px;font-weight:600;color:var(--warn);margin-top:2px}
 .more{display:block;margin:22px auto 8px;background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:9px 18px;cursor:pointer}
@@ -107,9 +104,9 @@ td.src{width:110px;font-size:14px}
 #map{height:calc(100vh - 190px);height:calc(100dvh - 190px);min-height:420px;border:1px solid var(--rule);border-radius:4px;margin-top:14px}
 #map.full{position:fixed!important;inset:0;z-index:1000;height:auto;min-height:0;border:0;border-radius:0;margin:0}  /* full screen map */
 body.mapfull{overflow:hidden}
-.fsbtn a{display:flex;align-items:center;justify-content:center;width:auto!important;padding:0 10px;font:600 13px/30px "Public Sans",sans-serif;color:#222;cursor:pointer;white-space:nowrap}
+.fsbtn a{display:flex;align-items:center;justify-content:center;width:auto!important;padding:0 10px;font:600 13px/30px var(--sans);color:#222;cursor:pointer;white-space:nowrap}
 @media (prefers-color-scheme:dark){#map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}}
-.pin div,.cl div{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:999px;cursor:pointer;font:700 12px/1 "Public Sans",sans-serif}
+.pin div,.cl div{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:999px;cursor:pointer;font:700 12px/1 var(--sans)}
 .pin div{background:var(--paper);color:var(--ink);border:1px solid var(--rule);padding:5px 8px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
 .pin div:hover{border-color:var(--ink)}
 .pin div.flag{border-color:var(--warn);color:var(--warn)}
@@ -117,7 +114,7 @@ body.mapfull{overflow:hidden}
 .cl div b{font-weight:700}
 .cl div.big{padding:9px 13px;font-size:13px}
 .cl div.huge{padding:11px 15px;font-size:14px}
-.leaflet-container{font-family:"Public Sans",sans-serif}
+.leaflet-container{font-family:var(--sans)}
 .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--paper);color:var(--ink)}
 .leaflet-popup-content{margin:14px 16px;font-size:14px;line-height:1.45}
 .pop .p{margin-bottom:2px}
@@ -238,7 +235,6 @@ footer p{margin:4px 0}
   td.what{grid-column:1/3;margin-top:8px}
   .blurb{-webkit-line-clamp:3}
   .intro{font-size:15px;margin-bottom:10px}
-  .intro strong{font-size:17px}
   td.type{grid-column:1/3;width:auto;margin-top:4px;color:var(--soft)}
   .sp{display:inline;margin-left:8px}
   #map{height:calc(100dvh - 170px)}
