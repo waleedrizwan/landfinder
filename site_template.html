@@ -84,7 +84,20 @@ td.land{width:150px}
 .t{font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .where{color:var(--soft);font-size:14px;margin-top:2px}
 .w{color:var(--warn);font-size:13px;margin-top:4px}
-td.type{width:160px;font-size:14px}
+td.type{width:130px;font-size:14px}
+.blurb{color:var(--soft);font-size:13.5px;line-height:1.45;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+/* Location and Source get their own columns in the list view when there's room; elsewhere they're the line under the title */
+.loc,.src{display:none}
+td.loc{width:170px;font-size:14px}
+td.loc .cc,td.src .sim{display:block;color:var(--soft);font-size:13px}
+td.src{width:110px;font-size:14px}
+@media (min-width:1100px){
+  .view-list th.loc,.view-list th.src,.view-list td.loc,.view-list td.src{display:table-cell}
+  .view-list td.what .where{display:none}
+}
+.intro{font-size:17px;line-height:1.45;color:var(--soft);margin:0 0 14px;max-width:72ch}
+.intro strong{font-family:var(--display);font-weight:650;font-size:19px;color:var(--ink)}
+.view-map .intro{display:none}
 .sp{display:block;font-size:12.5px;font-weight:600;color:var(--warn);margin-top:2px}
 .more{display:block;margin:22px auto 8px;background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:9px 18px;cursor:pointer}
 .empty{padding:40px 0;color:var(--soft)}
@@ -145,7 +158,7 @@ body.mapfull{overflow:hidden}
   .view-both #p-map{position:sticky;top:0;align-self:start;height:100vh;height:100dvh;display:flex;flex-direction:column;border-left:1px solid var(--rule)}
   .view-both #p-map #map{flex:1;height:auto!important;min-height:0;margin:0;border:0;border-radius:0}
   .view-both #p-map .note{margin:0;padding:10px 18px 14px;border-top:1px solid var(--rule)}
-  .view-both td.rank,.view-both td.type,.view-both thead th:first-child,.view-both thead th:last-child{display:none}  /* the type moves under the listing */
+  .view-both .rank,.view-both .type{display:none}  /* the type moves under the listing */
   .view-both .tyin{display:block;color:var(--soft);font-size:14px}
   .view-both .tyin .sp{display:inline;margin-left:8px}
 }
@@ -222,6 +235,9 @@ footer p{margin:4px 0}
   td.land{width:auto;display:flex;flex-wrap:wrap;gap:0 10px;align-items:baseline}
   td.land .bar{display:none}
   td.what{grid-column:1/3;margin-top:8px}
+  .blurb{-webkit-line-clamp:3}
+  .intro{font-size:15px;margin-bottom:10px}
+  .intro strong{font-size:17px}
   td.type{grid-column:1/3;width:auto;margin-top:4px;color:var(--soft)}
   .sp{display:inline;margin-left:8px}
   #map{height:calc(100dvh - 170px)}
@@ -323,6 +339,7 @@ footer p{margin:4px 0}
         <button class="linkbtn" type="button" onclick="resetAll()" style="margin-top:10px">Clear all filters</button>
       </div>
     </div>
+    <p class="intro" id="intro">Loading land and houses for sale from around the world…</p>
     <div class="top">
       <h2 id="count" class="loading">Loading…</h2>
       <p id="sub">cheapest first</p>
@@ -336,7 +353,7 @@ footer p{margin:4px 0}
 
     <section id="p-list">
       <table>
-        <thead><tr><th>#</th><th>Price</th><th>Land</th><th>Listing</th><th>Type</th></tr></thead>
+        <thead><tr><th class="rank">#</th><th>Price</th><th>Land</th><th>Listing</th><th class="loc">Location</th><th class="type">Type</th><th class="src">Source</th></tr></thead>
         <tbody id="rows"><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr><tr class="sk" aria-hidden="true"><td class="rank"><i></i></td><td class="price"><i class="big"></i><i class="s"></i></td><td class="land"><i></i><i class="s"></i></td><td class="what"><i></i><i class="s"></i></td><td class="type"><i></i></td></tr></tbody>
       </table>
       <div class="empty" id="empty" hidden><span id="emptymsg">No listings match these filters.</span> <button class="linkbtn" type="button" onclick="resetAll()">Clear all filters</button></div>
@@ -361,12 +378,12 @@ footer p{margin:4px 0}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
-// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type, town, price, currency, tags, province, similar]
+// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type, town, price, currency, tags, province, similar, blurb]
 // title and region are in English; originalTitle is set when the title was translated; type is a TYPES key;
 // town is "" when the listing doesn't say, and "Deming, NM" in the US and Canada; price is in the listing's own currency;
 // tags holds SPECIAL keys: a ruin or fixer-upper, a castle or manor, a church or chapel; province is the state,
 // province or region ("" when unknown); similar is how many near-identical listings (reposts, the same lot on two
-// sites, a seller's row of identical lots) this one stands for
+// sites, a seller's row of identical lots) this one stands for; blurb is the start of its description, when in English
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let regionNames, currencyNames;
@@ -429,6 +446,15 @@ const getJSON = u => fetch(u).then(r => { if (!r.ok) throw new Error(r.status); 
 const early = MORE.map(getJSON);
 for (const p of early) p.catch(() => {});  // a failure is reported where they're awaited, below
 
+// the line at the top: how many listings there are worldwide (the ones shown with no filters: no flagged ones)
+let COUNTRIES = 0;
+function setIntro(){
+  const k = n => n.toLocaleString("en-US");
+  if (LOADING) { $("intro").innerHTML = `Loading listings for sale in <strong>${k(COUNTRIES)} countries</strong> worldwide…`; return; }
+  const live = ALL.filter(clean), cs = new Set(live.map(r => r[3])).size;
+  $("intro").innerHTML = `<strong>${k(live.length)}</strong> listings of land and houses for sale in <strong>${k(cs)} countries</strong> worldwide, cheapest first.`;
+}
+
 function addRows(rows){
   rows = rows.filter(r => r[1] != null);
   for (const r of rows) {
@@ -462,14 +488,17 @@ getJSON("data.json").then(d => {
   for (const id of FILTERS) $(id).addEventListener("input", refilter);
   const more = early.length ? early : (d.more || []).map(getJSON);  // a page built before MORE: fetch them now
   LOADING = more.length > 0;
+  COUNTRIES = d.countries || 0;
   $("loadbar").hidden = !LOADING;
   $("count").classList.remove("loading");
   addRows(d.rows);
+  setIntro();
   update();
   if (!LOADING) return;
   return Promise.all(more).then(parts => {
     LOADING = false; $("loadbar").hidden = true;
     addRows(parts.flatMap(p => p.rows));
+    setIntro();
     update();
   }, () => { LOADING = false; $("loadbar").hidden = true; $("sub").textContent = "Only the cheapest listings loaded. Refresh the page to get the rest."; });
 }).catch(() => { $("count").classList.remove("loading"); $("loadbar").hidden = true; $("rows").innerHTML = ""; $("count").textContent = "Couldn't load listings"; $("sub").textContent = "Refresh the page to try again."; });
@@ -822,8 +851,10 @@ function renderList(){
     <td class="rank">${i + 1}</td>
     <td class="price">${priceCell(r)}</td>
     <td class="land">${landCell(r)}</td>
-    <td class="what">${titleLink(r)}${whereLine(r)}<div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${feeNote(r)}${warning(r)}</td>
-    <td class="type">${TYPES[r[12]] || "Land"}${specials(r)}</td></tr>`).join("");
+    <td class="what">${titleLink(r)}${r[19] ? `<div class="blurb">${esc(r[19])}</div>` : ""}${whereLine(r)}<div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${feeNote(r)}${warning(r)}</td>
+    <td class="loc">${esc(r[4] || "")}<span class="cc">${esc(cname(r[3]))}</span></td>
+    <td class="type">${TYPES[r[12]] || "Land"}${specials(r)}</td>
+    <td class="src">${esc(srcName(r[6]))}${r[18] ? `<span class="sim" title="${r[18]} more ${r[18] === 1 ? "listing" : "listings"} of this parcel or lots just like it">+${r[18]} similar</span>` : ""}</td></tr>`).join("");
   $("empty").hidden = VIEW.length > 0;
   $("emptymsg").textContent = AREA && MAPVIEW.length ? "No listings in this part of the map. Zoom out or drag the map to see more." : "No listings match these filters.";
   $("more").hidden = shown >= VIEW.length;

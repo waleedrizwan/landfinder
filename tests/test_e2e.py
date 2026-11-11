@@ -183,7 +183,7 @@ def real_build_is_current():
             rows = json.load(f)["rows"]
     except (OSError, ValueError, KeyError):
         return False
-    return bool(rows) and len(rows[0]) == 19
+    return bool(rows) and len(rows[0]) == 20
 
 
 @pytest.mark.skipif(not real_build_is_current(), reason="no site/ build in the current format here")

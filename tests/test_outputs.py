@@ -9,7 +9,7 @@ from conftest import FakeStore, fixture_html
 
 NOW = datetime(2026, 10, 22, 6, 30)
 # site/data.json row fields (see the comment at the top of the script in site_template.html)
-PER_ACRE, PRICE, ACRES, CC, REGION, TITLE, SRC, FLAGS, URL, LAT, LON, ORIG, TYPE, TOWN, OWN_PRICE, CUR, TAGS = range(17)
+PER_ACRE, PRICE, ACRES, CC, REGION, TITLE, SRC, FLAGS, URL, LAT, LON, ORIG, TYPE, TOWN, OWN_PRICE, CUR, TAGS, PROV, SIMILAR, BLURB = range(20)
 
 
 def stamp(days_ago=0):
@@ -102,7 +102,7 @@ def test_site_rows(built):
     assert "https://www.landwatch.com/old/pid/1" in built["csv_by_url"]  # ...but still in results.csv
     assert data["countries"] == len({r[CC] for r in data["rows"]}) == 5
     for r in data["rows"]:
-        assert len(r) == 19  # ... province, similar-listings count
+        assert len(r) == 20  # ... province, similar-listings count, description excerpt
         assert r[PRICE] is not None
     py = built["by_url"]["https://www.properstar.com/listing/114526942"]
     assert py[PRICE] == 4400 and (py[OWN_PRICE], py[CUR]) == (33000000, "PYG")
@@ -207,3 +207,15 @@ def test_site_data_is_split_into_files_cloudflare_accepts(workdir, rates, monkey
     assert "more" not in json.load(open(os.path.join(site, "data.json")))
     assert not glob.glob(os.path.join(site, "data-*.json"))
     assert "const MORE = [];" in open(os.path.join(site, "index.html")).read()
+
+
+def test_site_blurb():
+    """The list shows the start of English descriptions, cut at a word; nothing from other languages or repeats of the title."""
+    long = "Discover the perfect opportunity to create your own haven in the heart of Luna County, New Mexico. " * 3
+    b = lf.site_blurb({"source": "landwatch", "title": "La Susida Rd", "description": long})
+    assert b.endswith("…") and len(b) <= lf.BLURB_CHARS + 1 and b.startswith("Discover the perfect")
+    assert lf.site_blurb({"source": "olx", "title": "Działka", "description": "Sprzedam działkę"}) is None
+    assert lf.site_blurb({"source": "kijiji", "title": "Terrain", "description": "Terrain à vendre près du lac"}) is None
+    assert lf.site_blurb({"source": "landwatch", "title": "Big lot in Deming", "description": "Big lot in Deming, NM"}) is None
+    assert lf.site_blurb({"source": "zillow", "title": "0 Main St", "description": "Lot / Land for sale | 256 days on Zillow | -- sqft"}) == "256 days on Zillow"
+    assert lf.site_blurb({"source": "zillow", "title": "0 Main St", "description": "Lot / Land for sale | 12 hours ago | 1 acres lot"}) == "Listed 12 hours ago · 1 acres lot"

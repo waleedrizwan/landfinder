@@ -3279,6 +3279,28 @@ def town_populations(places):
     return out
 
 
+DESC_SOURCES = {"landwatch", "kijiji", "zillow", "realtor"}  # sites whose descriptions are in English and say more than the title
+BLURB_CHARS = 140
+
+
+def site_blurb(r):
+    """The start of the listing's description for the site's list, cut at a word: only from DESC_SOURCES (the other
+    sites' descriptions are in other languages, which would cost Claude usage to translate, or just repeat the title),
+    and not French Kijiji ads. None when there's nothing to add."""
+    if r.get("source") not in DESC_SOURCES:
+        return None
+    d = " ".join((r.get("description") or "").split())
+    title = " ".join((r.get("title") or "").split())
+    if not d or d.lower().startswith(title.lower()[:40]) or (r.get("source") == "kijiji" and FRENCH_RX.search(d[:200])):
+        return None
+    if r.get("source") == "zillow":  # "Lot / Land for sale | 256 days on Zillow | 6,098 sqft": the facts after the first part
+        parts = [p.strip() for p in d.split("|")[1:] if p.strip() and "--" not in p]
+        return " · ".join("Listed " + p if p.endswith(" ago") else p for p in parts) or None
+    if len(d) <= BLURB_CHARS:
+        return d
+    return d[:BLURB_CHARS].rsplit(" ", 1)[0].rstrip(",.;:-–") + "…"
+
+
 SITE_PART_BYTES = 12_000_000  # rows per site data file: well under Cloudflare Pages' 25 MiB file limit
 SITE_FIRST_BYTES = 2_000_000  # data.json's share: the cheapest listings, small so the page can show them quickly
 
@@ -3307,7 +3329,8 @@ def build_site(recs, rates):
                      TYPE_CODES.get(r.get("type"), "V"), place,
                      rnd(r.get("price"), 2), (r.get("currency") or "USD").upper(),  # the price in its own currency
                      "".join(TAG_CODES[t] for t in (r.get("tags") or "").split(",") if t), prov,
-                     r.get("similar") or 0])  # how many near-identical listings this row stands for (collapse_similar)
+                     r.get("similar") or 0,  # how many near-identical listings this row stands for (collapse_similar)
+                     site_blurb(r)])
     if newest < datetime.now() - timedelta(days=1):
         log("site: WARNING - the newest listing was scraped %s; the site is being rebuilt from old data" % newest.strftime("%Y-%m-%d %H:%M"))
     data = {"generated": newest.astimezone().isoformat(timespec="seconds"),  # shown as "Updated ..." on the site
