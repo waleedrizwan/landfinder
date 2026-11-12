@@ -149,7 +149,8 @@ def castle_records():
     for i, price in enumerate((150000, 105000)):
         recs.append({"source": "properstar", "country": "FR", "region": "Ravières", "kind": "houses",
                      "title": "Castle: Home for sale in Ravières, France", "description": "", "price": price,
-                     "currency": "USD", "acres": 0.1, "url": "https://www.properstar.com/listing/castle%d" % i})
+                     "currency": "USD", "acres": 0.1, "living_m2": 600,
+                     "url": "https://www.properstar.com/listing/castle%d" % i})
     for r in recs:
         r["scraped_at"] = stamp()
     return recs

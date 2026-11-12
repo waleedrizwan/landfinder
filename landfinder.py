@@ -635,7 +635,8 @@ RUIN_RX = re.compile(
     r"|\bsnosga\b|\bbuzib olish"  # Uzbek: for demolition
     r"|空き家|空家|古民家|廃屋|廃墟|要修繕|要リフォーム|老朽|雨漏り|床(?:が)?抜け|傷みが|劣化|要解体|取り壊し|解体(?:が|を)?前提", re.I)  # Japanese
 # castle: a castle, château, manor house or palace. Not a place named after one ("Castle Rock, CO", "Castelo Branco",
-# "Château-Richer") or a street ("Rue du Château")
+# "Château-Richer", "for sale in Castelo, Brazil") or a street ("Rue du Château"). Only titles count: a description's
+# castle is nearly always something else (the castle in town, "Golf du Manoir", "Castle & Associates Real Estate")
 _PLACE_AFTER = r"(?!-|\s+(?-i:[A-Z])|\s+(?:de|do|da|dos|das|di|del|d')\b)"
 CASTLE_RX = re.compile(
     r"\bcastles?\b(?!\s+(?:rock|dale|valley|hills?|creek|pines|park|peak|gate|danger|hayne|bay|road|rd|st|street|ave|lane|ln"
@@ -659,7 +660,7 @@ CHURCH_RX = re.compile(
 NEARBY_RX = re.compile(r"(?:n['’]t|\b(?:near|nearby|next to|beside|behind|across from|opposite|close to|walk to|walking distance|minutes? (?:from|to)"
                        r"|from the|by the|views? (?:of|to)|overlook\w*|sand|bouncy|bounce|mayan?|roman|inca|ancient|archa?eolog\w*"
                        r"|no|not|without|não|sem|sin|nie|без|не|junto (?:a|ao|al)|perto d\w|cerca de\w*|frente a\w*|vista (?:para|al|a)\w*"
-                       r"|pr[eè]s d\w*|rue|route|chemin|avenue|all[ée]e|impasse|obok|blisko|koło|рядом|поруч|біля|возле|lâng[aă]|style\w*|styl\w*"
+                       r"|(?:road|way|path|access) to|pr[eè]s d\w*|rue|route|chemin|avenue|all[ée]e|impasse|obok|blisko|koło|рядом|поруч|біля|возле|lâng[aă]|style\w*|styl\w*"
                        r"|w stylu|type|like|such as|interesse|como))\W+(?:\S+\s+){0,2}$", re.I)
 # just after a match: a street or place name ("Chateau Drive", "Church Lane", "Pedro del Castillo 790", "Conac Archia")
 AFTER_RX = re.compile(r"^(?:,\s*(?-i:[A-Z]{2})\b|\s+(?:place|pl|drive|dr|road|rd|street|st|avenue|ave|lane|ln|way|court|ct|blvd|circle|hwy|highway)\b|\s*\d"
@@ -669,7 +670,13 @@ AFTER_RX = re.compile(r"^(?:,\s*(?-i:[A-Z]{2})\b|\s+(?:place|pl|drive|dr|road|rd
 NAME_BEFORE_RX = re.compile(r"(?-i:\b(?!(?:Medieval|Historic|Old|Ancient|Restored|Renovated|Ruined|French|Scottish|Irish|English|Italian"
                             r"|Spanish|Portuguese|German|Charming|Beautiful|Magnificent|Small|Little|Fairytale|Stone|For|Sale|A|The)\b)"
                             r"[A-Z][\w'’.]*\s+(?:(?:do|da|de|del|di|of|la|le)\s+)?)$")
+# a castle word standing alone as a place: "for sale in Castelo, Brazil", "Terreno, Castelo", "plot in Ichon castle"
+PLACE_BEFORE_RX = re.compile(r"(?:\bin\s+(?:(?-i:[A-Z])[\w'’-]*\s+)?|,\s*|\(\s*)$")
 TAG_RULES = (("ruin", RUIN_RX), ("castle", CASTLE_RX), ("church", CHURCH_RX))
+ADDRESS_TITLES = {"zillow", "landwatch"}  # their titles are street addresses ("Castle And Shackleford, Batesville, AR")
+# Properstar's castle subtype is set by the agency, and many set it on ordinary houses ("House 58 m² with garden in
+# Château-d'Oléron", a London villa, a Phuket flat). Below this much floor space it's believed only when the title says so.
+CASTLE_MIN_M2 = 400
 
 
 def _tag_hit(tag, t, m):
@@ -682,18 +689,43 @@ def _tag_hit(tag, t, m):
         return False
     if tag == "castle" and re.search(r"\b(?:do|da|de|del|di)\s+$", before):  # "penalva do castelo" is a town
         return False
+    if tag == "castle" and re.search(r"\b\d+\s+$", before):  # a house number: "0 Chateau Kern"
+        return False
+    if tag == "castle" and PLACE_BEFORE_RX.search(before) and re.match(r"\s*(?:[,()]|$)", after):
+        return False
     return not (tag == "castle" and m.group(0)[:1].isupper() and NAME_BEFORE_RX.search(before))
 
 
+def has_castle(text):
+    return any(_tag_hit("castle", text, m) for m in CASTLE_RX.finditer(text or ""))
+
+
+def properstar_castle_title(name, living_m2):
+    """The title of a listing in Properstar's castle subtype: "Castle: " in front when its own title doesn't say castle
+    (Properstar titles them "Home for sale in ..."), unless it's too small to believe (CASTLE_MIN_M2)."""
+    if has_castle(name) or (living_m2 or 0) < CASTLE_MIN_M2:
+        return name
+    return "Castle: " + name
+
+
 def special_tags(rec):
-    """Which of ruin / castle / church a listing is, from its title, English title and description."""
+    """Which of ruin / castle / church a listing is, from its title, English title and description (castles: titles only)."""
     keys = ("title", "title_en") if rec.get("source") == "properstar" else ("title", "title_en", "description")
-    texts = [str(rec.get(k) or "") for k in keys]
-    return [tag for tag, rx in TAG_RULES if any(_tag_hit(tag, t, m) for t in texts for m in rx.finditer(t))]
+    texts = {k: str(rec.get(k) or "") for k in keys}
+    tags = []
+    for tag, rx in TAG_RULES:
+        use = keys
+        if tag == "castle":
+            use = () if rec.get("source") in ADDRESS_TITLES else ("title", "title_en")
+        if any(_tag_hit(tag, texts[k], m) for k in use for m in rx.finditer(texts[k])):
+            tags.append(tag)
+    return tags
 
 
 def finalize(rec, rates):
     down_only = rec.get("source") == "landwatch" and fix_down_payment(rec)
+    if rec.get("source") == "properstar" and (rec.get("title") or "").startswith("Castle: "):  # saved before CASTLE_MIN_M2
+        rec["title"] = properstar_castle_title(rec["title"][len("Castle: "):], rec.get("living_m2"))
     if rec.get("source") == "kijiji" and not rec.get("acres"):  # no "Size (acres)" field: what the text says
         # (only then: the text also mentions nearby parks and farms, "minutes from the 300 acre park")
         rec["acres"] = acres_from_text(rec.get("title")) or acres_from_text(rec.get("description"))
@@ -1610,8 +1642,8 @@ def parse_properstar(html, slug, kind="land"):
         en = [t["text"] for t in (L.get("title") or []) if t.get("language") == "en"]
         castle = ((L.get("subType") or {}).get("id")) == "Castle"
         name = (en[0] if en else "") or title
-        if castle and not CASTLE_RX.search(name):
-            name = "Castle: " + name  # Properstar titles castles "Home for sale in ..."
+        if castle:
+            name = properstar_castle_title(name, living)
         out.append({
             "source": "properstar",
             "country": loc.get("countryISO") or slug,

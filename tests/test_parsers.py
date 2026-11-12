@@ -88,11 +88,11 @@ def castle_page(listings, total):
     return "<script>window.__INITIAL_STATE__ = %s;</script>" % json.dumps(state)
 
 
-def castle_listing(i, title_en=None, auto="Home for sale in Ravières, France", sub="Castle"):
+def castle_listing(i, title_en=None, auto="Home for sale in Ravières, France", sub="Castle", living=500):
     return {"id": i, "subType": {"id": sub, "name": sub}, "automaticTitle": auto,
             "title": [{"language": "en", "text": title_en}] if title_en else [],
             "price": {"show": True, "values": [{"type": "Original", "value": 105000, "currencyId": "EUR"}]},
-            "area": {"land": 400, "unit": {"id": "SquareMeter"}},
+            "area": {"land": 400, "living": living, "unit": {"id": "SquareMeter"}},
             "location": {"countryISO": "FR", "city": "Ravières"}}
 
 
@@ -101,12 +101,14 @@ def test_properstar_castles():
         castle_listing(1),                                         # generic title -> labelled
         castle_listing(2, title_en="Château with moat and park"),  # already says so -> left alone
         castle_listing(3, sub="Villa", auto="Home for sale in Nice, France"),
+        castle_listing(4, auto="House 58 m² in Château-d'Oléron", living=58),  # too small to believe the subtype
     ], 705), "france", "houses")
     assert total == 705
-    assert [r["kind"] for r in recs] == ["houses"] * 3
+    assert [r["kind"] for r in recs] == ["houses"] * 4
     assert recs[0]["title"] == "Castle: Home for sale in Ravières, France"
     assert recs[1]["title"] == "Château with moat and park"
     assert recs[2]["title"] == "Home for sale in Nice, France"
+    assert recs[3]["title"] == "House 58 m² in Château-d'Oléron"
     assert recs[0]["acres"] == pytest.approx(400 / lf.ACRE_M2)
 
 

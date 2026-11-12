@@ -299,7 +299,7 @@ description, in each site's languages (no Claude calls):
 | Tag | Matches |
 |---|---|
 | 🏚️ **Ruins & fixer-uppers** | a ruin, an abandoned or derelict building, a house for demolition or one that needs a full renovation ("ruína", "à rénover", "da ristrutturare", "do remontu", "под снос", "за събаряне", "空き家", "fixer-upper") |
-| 🏰 **Castles & manors** | castle, château, manoir, castelo, castillo, palácio, conac, замък. Places and streets named after one ("New Castle, IN", "Viana do Castelo", "Chateau Drive") don't count |
+| 🏰 **Castles & manors** | castle, château, manoir, castelo, castillo, palácio, conac, замък. Only the title counts (a description's castle is usually the one in town), and places, streets and addresses named after one ("New Castle, IN", "for sale in Castelo, Brazil", "Chateau Drive") don't. Properstar's own castle category counts from 400 m² of floor space, since agents set it on ordinary houses too |
 | ⛪ **Churches & chapels** | a former, old or converted church or chapel, or one for sale ("former church building", "antiga igreja"), not one nearby ("next to the old church") or a street ("Church Lane") |
 
 A listing can have more than one, and each shows as a tag under its type. Every Japanese akiya (空き家, "empty house") counts as a
