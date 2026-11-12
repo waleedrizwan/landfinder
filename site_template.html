@@ -614,13 +614,13 @@ function placeMode(m){
 $("m-prov").onclick = () => placeMode("prov");
 $("m-city").onclick = () => placeMode("city");
 // the view: list, map, or both side by side (wide screens only). The address says which (#list, #map, #both), so the
-// back button goes back to the last one and a link can open on the map; with none, wide screens get both
+// back button goes back to the last one and a link can open on the map; with none, it's the list
 const VIEWS = ["list", "map", "both"], WIDE = matchMedia("(min-width:1280px)");
 let MODE = "list";
 const mapShown = () => MODE !== "list";
 function wantedView(){
   const h = location.hash.slice(1);
-  const v = VIEWS.includes(h) ? h : WIDE.matches ? "both" : "list";
+  const v = VIEWS.includes(h) ? h : "list";
   return v === "both" && !WIDE.matches ? "list" : v;
 }
 // the map page: the map fills the window below the switch, leaving room for the note under it

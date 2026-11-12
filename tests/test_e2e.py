@@ -103,9 +103,11 @@ def test_desktop(browser, site):
     page.uncheck("#fflag")
     assert first_price(page) == "$749"
 
-    # wide screens open on List + map, side by side (Leaflet is blocked here, so the map stays empty)
+    # every screen opens on the list; List + map is one click away on wide ones (Leaflet is blocked here, so the map stays empty)
+    assert page.get_attribute("#t-list", "aria-selected") == "true"
+    assert page.locator("#p-map").is_hidden() and page.locator("#t-both").is_visible()
+    page.click("#t-both")
     assert page.locator("#p-map").is_visible() and page.locator("#p-list").is_visible()
-    assert page.get_attribute("#t-both", "aria-selected") == "true"
     assert errors == []
 
 
