@@ -3366,6 +3366,8 @@ def build_site(recs, rates):
     with open(os.path.join(SITE, "index.html"), "w") as f:
         f.write(html)
     open(os.path.join(SITE, ".nojekyll"), "w").close()
+    for path in glob.glob(os.path.join(HERE, "legal", "*")):  # privacy.html, terms.html, licenses.html, legal.css
+        shutil.copy(path, SITE)
     log("site: %d listings from %d countries -> site/" % (len(rows), len(countries)))
 
 

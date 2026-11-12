@@ -43,6 +43,7 @@ input{width:100%;font:inherit;padding:10px 12px;border-radius:6px;border:1px sol
 input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
 button{font:inherit;font-weight:600;padding:10px 14px;border:0;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer}
 .err{color:#d6453d;font-size:14px}
+.legal{position:fixed;bottom:16px;left:0;right:0;text-align:center;font-size:12px}.legal a{color:var(--soft);margin:0 8px}
 </style></head><body>
 <form method="post" action="/login">
   <h1>Cheapest Land <span>worldwide</span></h1>
@@ -52,7 +53,8 @@ button{font:inherit;font-weight:600;padding:10px 14px;border:0;border-radius:6px
   <input type="hidden" name="next" value="${esc(next)}">
   ${error ? `<div class="err">${esc(error)}</div>` : ""}
   <button type="submit">Enter</button>
-</form></body></html>`;
+</form>
+<p class="legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/licenses.html">Open source</a></p></body></html>`;
 }
 
 const html = (body, status, headers = {}) =>
@@ -61,8 +63,13 @@ const html = (body, status, headers = {}) =>
 // only a path on this site, never an outside URL, so the login form can't be used to send people elsewhere
 const safeNext = p => (typeof p === "string" && /^\/(?!\/)/.test(p) && p !== "/login") ? p : "/";
 
+// the Privacy, Terms and Open source pages (legal/, copied into site/ by build_site) are readable before logging in;
+// Cloudflare Pages may serve them with or without ".html"
+const PUBLIC = /^\/(privacy|terms|licenses)(\.html)?$|^\/legal\.css$/;
+
 export async function onRequest({request, env, next}){
   const url = new URL(request.url);
+  if (PUBLIC.test(url.pathname) && (request.method === "GET" || request.method === "HEAD")) return next();
   if (!env.SITE_PASSWORD) return html("<p>SITE_PASSWORD isn't set for this deployment.</p>", 500);
   const token = await sessionToken(env.SITE_PASSWORD);
   if (same(cookieValue(request), token)) {
