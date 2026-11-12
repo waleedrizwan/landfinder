@@ -28,7 +28,9 @@ jobs:
       - run: uv pip install -r requirements-dev.txt
       - name: Unit tests
         run: python -m pytest -m "not e2e"
+      # the site's own JavaScript, so one Python is enough; Playwright's last 3.9 release predates this Ubuntu
       - name: Browser tests
+        if: matrix.python == '3.12'
         run: |
           python -m playwright install --with-deps chromium
           python -m pytest -m e2e
