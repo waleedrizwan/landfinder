@@ -22,6 +22,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
+          activate-environment: true
           enable-cache: true
           cache-dependency-glob: requirements*.txt
       - run: uv pip install -r requirements-dev.txt
