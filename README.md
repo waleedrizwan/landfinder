@@ -23,10 +23,12 @@ Every row links to the live listing.
 
 <br>
 
-| Desktop | Phone (dark mode) |
+| Every listing, cheapest first | On a phone, in dark mode |
 |---|---|
-| ![Home page: today's cheapest listing and the runners-up](docs/screenshots/home.png) | <img src="docs/screenshots/phone.png" alt="Home page on a phone in dark mode" width="260"> |
-| ![Map of every listing with coordinates, coloured by total price](docs/screenshots/map.png) | ![Listings table filtered to Poland, at least 1 acre](docs/screenshots/listings.png) |
+| ![The list view: filters on the left, listings ranked by total price with land size, location, type and source](docs/screenshots/list.png) | <img src="docs/screenshots/phone.png" alt="The list on a phone in dark mode" width="260"> |
+| ![The map view: listings grouped into bubbles showing how many there are and the cheapest price](docs/screenshots/map.png) | ![The list filtered to Europe: 8,331 listings, cheapest first](docs/screenshots/europe.png) |
+
+<sub>Screenshots are taken from the real site with `tools/screenshots.py`.</sub>
 
 ## ✨ Highlights
 
@@ -431,7 +433,7 @@ When a site changes its markup, refresh the matching fixture by saving one searc
 listings; the parser tests show which fields are expected.
 
 `tools/` has small probe scripts used to work out Properstar's URL parameters and LandWatch's page structure,
-and `rebuild_site.py` (see above).
+`rebuild_site.py` (see above), and `screenshots.py`, which retakes the README screenshots from the current `site/` build.
 
 ## ⚖️ Legal
 
