@@ -18,12 +18,13 @@ jobs:
         python: ["3.9", "3.12"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # uv rather than actions/setup-python: GitHub's runner images no longer carry Python 3.9 (the Mac's python3)
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
-          cache: pip
-          cache-dependency-path: requirements*.txt
-      - run: pip install -r requirements-dev.txt
+          enable-cache: true
+          cache-dependency-glob: requirements*.txt
+      - run: uv pip install -r requirements-dev.txt
       - name: Unit tests
         run: python -m pytest -m "not e2e"
       - name: Browser tests
