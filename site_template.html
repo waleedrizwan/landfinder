@@ -12,7 +12,7 @@
 <style>
 /* A ranked price list: rows you read down one column, with the filters in a sidebar that shows how many
    listings each choice has. Long lists (countries, towns) have their own search box. */
-:root{--sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--paper:#fff;--ink:#18202e;--soft:#5a6475;--rule:#e2e5ea;--tint:#f4f5f8;--blue:#2346b5;--mark:#fff3b8;--warn:#a4400f;--bar:#a9b8dc}
+:root{--save:#d6336c;--sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--paper:#fff;--ink:#18202e;--soft:#5a6475;--rule:#e2e5ea;--tint:#f4f5f8;--blue:#2346b5;--mark:#fff3b8;--warn:#a4400f;--bar:#a9b8dc}
 @media (prefers-color-scheme:dark){
   :root{--paper:#161a21;--ink:#e8ebf0;--soft:#9aa3b2;--rule:#2b313b;--tint:#1f242d;--blue:#8ea8ff;--mark:#36311a;--warn:#f0a070;--bar:#4a5d8f}
 }
@@ -83,6 +83,19 @@ td.land{width:150px}
 .where{color:var(--soft);font-size:14px;margin-top:2px}
 .w{color:var(--warn);font-size:13px;margin-top:4px}
 td.type{width:130px;font-size:14px}
+/* the shortlist: a heart on each listing, kept in this browser (localStorage) */
+.tl{display:flex;align-items:flex-start;gap:8px}
+.tl .t{flex:1;min-width:0}
+.save{flex:none;background:none;border:0;padding:2px;margin:-2px -2px 0 0;cursor:pointer;color:var(--soft);line-height:0;border-radius:50%}
+.save svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;transition:transform .15s}
+.save:hover{color:var(--save)}
+.save:active svg{transform:scale(.85)}
+.save[aria-pressed="true"]{color:var(--save)}
+.save[aria-pressed="true"] svg{fill:currentColor}
+.fbsl svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-2px;margin-right:6px}
+.fbsl.on svg{fill:currentColor}
+.fbsl::after{display:none!important}
+.gone{color:var(--warn);font-size:13px;margin-top:4px}
 .blurb{color:var(--soft);font-size:13.5px;line-height:1.45;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 /* Location and Source get their own columns in the list view when there's room; elsewhere they're the line under the title */
 .loc,.src{display:none}
@@ -218,7 +231,7 @@ footer p{margin:4px 0}
   .fbar-row{flex-wrap:wrap;overflow:visible}
   .fbq{max-width:none}
   .fbtoggle{display:inline-block}
-  .fbtns{display:none;width:100%;flex-wrap:wrap;gap:8px}
+  .fbtns{display:none;width:100%;flex-wrap:wrap;gap:8px;order:2}  /* folds out under the search, Filters and currency */
   .fbar.open .fbtns{display:flex;animation:drop .14s ease-out}
   .fpanel,.fpanel.wide{left:12px!important;right:12px;width:auto}
   .fpanel .cols{grid-template-columns:1fr}
@@ -234,6 +247,7 @@ footer p{margin:4px 0}
   td.land .bar{display:none}
   td.what{grid-column:1/3;margin-top:8px}
   .blurb{-webkit-line-clamp:3}
+  .save{padding:10px;margin:-10px -10px -6px 0}  /* a finger-sized target around the heart */
   .intro{font-size:15px;margin-bottom:10px}
   td.type{grid-column:1/3;width:auto;margin-top:4px;color:var(--soft)}
   .sp{display:inline;margin-left:8px}
@@ -307,6 +321,7 @@ footer p{margin:4px 0}
         <button type="button" class="fb" id="b-where" data-panel="pp-where" aria-expanded="false" aria-controls="pp-where">Location</button>
         <button type="button" class="fb" id="b-land" data-panel="pp-land" aria-expanded="false" aria-controls="pp-land">Land</button>
         <button type="button" class="fb" id="b-more" data-panel="pp-more" aria-expanded="false" aria-controls="pp-more">More</button>
+        <button type="button" class="fb fbsl" id="b-sl" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-9.3-9.2C1.4 7.9 3.6 4.5 7 4.5c2 0 3.4 1.1 5 3 1.6-1.9 3-3 5-3 3.4 0 5.6 3.4 4.3 6.8-1.8 4.6-9.3 9.2-9.3 9.2z"/></svg><span>Shortlist</span></button>
         <button class="fbtn" id="fbtn" type="button" aria-controls="side" aria-expanded="false">All filters</button>
         </div>
         <select id="fcur" aria-label="Currency" title="Currency"></select>
@@ -452,6 +467,62 @@ function setIntro(){
   $("intro").innerHTML = `<strong>${k(live.length)}</strong> listings of land and houses for sale in <strong>${k(cs)} countries</strong> worldwide, cheapest first.`;
 }
 
+// the shortlist: url -> {row: the listing as it was when saved, at: when}. Kept in this browser only; a listing that
+// later drops off the site stays on it from that copy, marked as gone. SL_ON: show only the shortlist
+const HEART = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-9.3-9.2C1.4 7.9 3.6 4.5 7 4.5c2 0 3.4 1.1 5 3 1.6-1.9 3-3 5-3 3.4 0 5.6 3.4 4.3 6.8-1.8 4.6-9.3 9.2-9.3 9.2z"/></svg>`;
+let SAVED = new Map(), SL_ON = false;
+const BYURL = new Map(), GONE = new Map();
+function loadSaved(){
+  try { SAVED = new Map(Object.entries(JSON.parse(localStorage.getItem("shortlist") || "{}"))); } catch (e) { SAVED = new Map(); }
+}
+function storeSaved(){
+  try { localStorage.setItem("shortlist", JSON.stringify(Object.fromEntries(SAVED))); } catch (e) {}
+}
+loadSaved();
+const saveBtn = r => { const on = SAVED.has(r[8]), what = on ? "Remove from shortlist" : "Save to shortlist";
+  return `<button type="button" class="save" data-url="${esc(r[8])}" aria-pressed="${on}" aria-label="${what}" title="${what}">${HEART}</button>`; };
+// the shortlist's rows, cheapest first: the listing itself while it's on the site, else the saved copy
+function shortlistRows(){
+  const out = [];
+  for (const [url, s] of SAVED) {
+    let r = BYURL.get(url) || GONE.get(url);
+    if (!r) {
+      r = s.row.slice(); r.gone = true;
+      r.text = (r[5] + " " + (r[11] || "") + " " + r[4] + " " + cname(r[3])).toLowerCase();
+      GONE.set(url, r);
+    }
+    out.push(r);
+  }
+  return out.sort((a, b) => a[1] - b[1]);
+}
+function toggleSave(url){
+  const r = BYURL.get(url) || GONE.get(url);
+  if (SAVED.has(url)) SAVED.delete(url);
+  else if (r) SAVED.set(url, {row: r.slice(0, 20), at: Date.now()});
+  else return;
+  storeSaved();
+  const on = SAVED.has(url), what = on ? "Remove from shortlist" : "Save to shortlist";
+  for (const b of document.querySelectorAll(".save")) if (b.dataset.url === url) {  // the row's heart, and the map popup's
+    b.setAttribute("aria-pressed", on); b.setAttribute("aria-label", what); b.title = what;
+  }
+  if (SL_ON) update();  // it leaves (or joins) the shortlist being shown
+  else barLabels();
+}
+document.addEventListener("click", e => { const b = e.target.closest(".save"); if (b) { e.preventDefault(); toggleSave(b.dataset.url); } });
+$("b-sl").onclick = () => { SL_ON = !SL_ON; refilter(); };
+// another tab saved or removed one: pick it up
+addEventListener("storage", e => { if (e.key === "shortlist") { loadSaved(); if (ALL.length) update(); } });
+
+// saved listings still on the site: keep their copy up to date (a new price, say)
+function refreshSaved(){
+  let changed = false;
+  for (const [url, s] of SAVED) {
+    const r = BYURL.get(url);
+    if (r && JSON.stringify(r.slice(0, 20)) !== JSON.stringify(s.row)) { s.row = r.slice(0, 20); changed = true; }
+  }
+  if (changed) storeSaved();
+}
+
 function addRows(rows){
   rows = rows.filter(r => r[1] != null);
   for (const r of rows) {
@@ -460,6 +531,7 @@ function addRows(rows){
     if (r[17]) (PROVS[r[3]] ??= new Set()).add(r[17]);
   }
   ALL = ALL.concat(rows).sort((a, b) => a[1] - b[1]);
+  for (const r of rows) { BYURL.set(r[8], r); GONE.delete(r[8]); }
   const cs = [...new Set(ALL.map(r => r[3]))];
   F.country.setItems(cs.map(c => ({value: c, label: cname(c)})));
   F.cont.setItems([...new Set(cs.map(contOf))].sort().map(ct => ({value: ct, label: ct})));
@@ -495,12 +567,14 @@ getJSON("data.json").then(d => {
   $("loadbar").hidden = !LOADING;
   $("count").classList.remove("loading");
   addRows(d.rows);
+  if (!LOADING) refreshSaved();
   setIntro();
   update();
   if (!LOADING) return;
   return Promise.all(more).then(parts => {
     LOADING = false; $("loadbar").hidden = true;
     addRows(parts.flatMap(p => p.rows));
+    refreshSaved();
     setIntro();
     update();
   }, () => { LOADING = false; $("loadbar").hidden = true; $("sub").textContent = "Only the cheapest listings loaded. Refresh the page to get the rest."; });
@@ -527,7 +601,7 @@ $("done").onclick = () => { openSide(false); $("fbtn").scrollIntoView({block: "s
 function resetAll(){
   for (const id of FILTERS) { const el = $(id); if (el.type === "checkbox") el.checked = false; else el.value = ""; }
   for (const f of Object.values(F)) f.clear();
-  AREA = null;
+  AREA = null; SL_ON = false;
   refilter();
 }
 $("reset").onclick = resetAll;
@@ -673,7 +747,7 @@ function update(fromMap){
     && (isNaN(ppa) || (r[0] != null && r[0] * RATE <= ppa))
     && (!q || r.text.includes(q));
   // picking "House" or one of the ruins and castles shows house listings, which the "house listing" flag otherwise hides
-  const ok = r => fl || clean(r) || ((tys.has("H") || sps.length) && houseOnly(r));
+  const ok = r => SL_ON || fl || clean(r) || ((tys.has("H") || sps.length) && houseOnly(r));
   const isType = r => !picks.size || tys.has(r[12]) || sps.some(s => (r[16] || "").includes(s));
   // the province list: the picked countries' provinces and states (biggest first, as it's a long list)
   F.prov.setItems(F.country.items.filter(c => ccs.has(c.value) && PROVS[c.value]).flatMap(c =>
@@ -686,7 +760,7 @@ function update(fromMap){
   // (and the continents' under every filter but the places)
   const cn = {type: new Map(), cont: new Map(), country: new Map(), prov: new Map(), city: new Map()}, add = (m, k) => m.set(k, (m.get(k) || 0) + 1);
   VIEW = []; MAPVIEW = [];
-  for (const r of ALL) {
+  for (const r of SL_ON ? shortlistRows() : ALL) {
     if (!base(r)) continue;
     // the map area narrows the list and the type counts. Not the places: picking one moves the map there and drops
     // the area, so every continent, country and town stays on its list with its full count
@@ -734,7 +808,8 @@ function setCurrency(c){
   } catch (e) {}
   SIGN = /[^\p{L}]/u.test(sign) ? sign : "";  // "$", "€" and "R$" go before amounts; "zł", "kr" and bare codes don't
   for (const el of document.querySelectorAll(".cur")) el.textContent = c;
-  for (const r of ALL) r.pin = null;  // map pins show prices too: make them again
+  for (const r of ALL) r.pin = null;
+  for (const r of GONE.values()) r.pin = null;  // map pins show prices too: make them again
 }
 
 // what's filtered, as buttons that each take one filter off
@@ -747,7 +822,8 @@ function renderChips(){
     field("facmin", v => `${v}+ acres`), field("facmax", v => `Up to ${v} acres`), field("fppa", v => `Up to ${withCur(v)} an acre`),
     $("fsrc").value && {label: srcName($("fsrc").value), clear: () => { $("fsrc").value = ""; }},
     tick("farea", "Area listed"), tick("fflag", "Flagged included"),
-    AREA && {label: "In the map area", clear: () => { AREA = null; }}].filter(Boolean);
+    AREA && {label: "In the map area", clear: () => { AREA = null; }},
+    SL_ON && {label: "Shortlist", clear: () => { SL_ON = false; }}].filter(Boolean);
   $("chips").innerHTML = CHIPS.map((c, i) => `<button class="chip" type="button" data-chip="${i}" aria-label="Remove ${esc(c.label)}">${esc(c.label)}<span aria-hidden="true">×</span></button>`).join("")
     + (CHIPS.length > 1 ? `<button class="chip" type="button" onclick="resetAll()">Clear all</button>` : "");
   $("fbtn").textContent = CHIPS.length ? `All filters (${CHIPS.length})` : "All filters";
@@ -769,6 +845,9 @@ function barLabels(){
   set("b-land", nl, nl ? `Land (${nl})` : "Land");
   const nm = !!$("fsrc").value + $("fflag").checked;
   set("b-more", nm, nm === 1 && $("fsrc").value ? srcName($("fsrc").value) : nm ? `More (${nm})` : "More");
+  $("b-sl").classList.toggle("on", SL_ON);
+  $("b-sl").setAttribute("aria-pressed", SL_ON);
+  $("b-sl").querySelector("span").textContent = SAVED.size ? `Shortlist (${SAVED.size})` : "Shortlist";
   const on = document.querySelectorAll("#fbtns .fb.on").length;
   set("fbtoggle", on, on ? `Filters (${on})` : "Filters");
   for (const el of $("fbar").querySelectorAll("[data-for]")) {
@@ -847,19 +926,19 @@ function renderList(){
   const page = VIEW.slice(0, shown);
   $("count").textContent = `${VIEW.length.toLocaleString("en-US")} ${VIEW.length === 1 ? "listing" : "listings"}`;
   if (MODE !== "map") {
-    $("sub").textContent = (AREA ? "in the map area, cheapest first" : "cheapest first") + (LOADING ? " · " : "");
+    $("sub").textContent = (SL_ON ? "in your shortlist, " : AREA ? "in the map area, " : "") + "cheapest first" + (LOADING ? " · " : "");
     if (LOADING) $("sub").insertAdjacentHTML("beforeend", `<span class="spin" aria-hidden="true"></span>loading the rest…`);
   }
   $("rows").innerHTML = page.map((r, i) => `<tr data-i="${i}"${fadeIn ? ' class="in"' : ""}>
     <td class="rank">${i + 1}</td>
     <td class="price">${priceCell(r)}</td>
     <td class="land">${landCell(r)}</td>
-    <td class="what">${titleLink(r)}${r[19] ? `<div class="blurb">${esc(r[19])}</div>` : ""}${whereLine(r)}<div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${feeNote(r)}${warning(r)}</td>
+    <td class="what"><div class="tl">${titleLink(r)}${saveBtn(r)}</div>${r.gone && !LOADING ? `<div class="gone">No longer on the site: it may have sold or been taken down. Saved details shown.</div>` : ""}${r[19] ? `<div class="blurb">${esc(r[19])}</div>` : ""}${whereLine(r)}<div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${feeNote(r)}${warning(r)}</td>
     <td class="loc">${esc(r[4] || "")}<span class="cc">${esc(cname(r[3]))}</span></td>
     <td class="type">${TYPES[r[12]] || "Land"}${specials(r)}</td>
     <td class="src">${esc(srcName(r[6]))}${r[18] ? `<span class="sim" title="${r[18]} more ${r[18] === 1 ? "listing" : "listings"} of this parcel or lots just like it">+${r[18]} similar</span>` : ""}</td></tr>`).join("");
   $("empty").hidden = VIEW.length > 0;
-  $("emptymsg").textContent = AREA && MAPVIEW.length ? "No listings in this part of the map. Zoom out or drag the map to see more." : "No listings match these filters.";
+  $("emptymsg").textContent = SL_ON && !SAVED.size ? "Your shortlist is empty. Tap the heart on a listing to save it here." : AREA && MAPVIEW.length ? "No listings in this part of the map. Zoom out or drag the map to see more." : "No listings match these filters.";
   $("more").hidden = shown >= VIEW.length;
   $("more").textContent = `Show ${Math.min(PAGE, VIEW.length - shown)} more`;
   fadeIn = false;
@@ -949,7 +1028,7 @@ function renderMap(){
       r.pin = L.marker([r[9], r[10]], {row: r, icon: L.divIcon({className: "pin", iconSize: [0, 0],
         html: `<div class="${clean(r) ? "" : "flag"}">${short(price(r))}</div>`})});
       r.pin.bindPopup(() => `<div class="pop">${priceCell(r)}<div class="ppa">${r[2] != null ? acres(r[2]) + (r[2] === 1 ? " acre, " : " acres, ") : ""}${(TYPES[r[12]] || "Land").toLowerCase()}</div>
-        ${titleLink(r)}${whereLine(r)}${specials(r)}${feeNote(r)}${warning(r)}
+        <div class="tl">${titleLink(r)}${saveBtn(r)}</div>${whereLine(r)}${specials(r)}${feeNote(r)}${warning(r)}
         ${r[6] === "landwatch" ? `<div class="ppa">Pin shows the ZIP code area</div>` : ""}</div>`, {minWidth: 220, maxWidth: 280});
     }
     on.push(r.pin);

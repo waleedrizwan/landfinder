@@ -195,3 +195,26 @@ def test_real_site_build(browser):
     assert page.locator("#rows tr").count() > 10
     assert page.locator("#more").is_visible()
     assert errors == []
+
+
+def test_shortlist(browser, site):
+    """The heart saves a listing in this browser; Shortlist shows only those, and keeps one that later drops off the site."""
+    page, errors = open_page(browser, site, {"width": 1440, "height": 900})
+    wait_for_data(page)
+    assert page.inner_text("#b-sl") == "Shortlist"
+    page.click("#rows tr:first-child .save")
+    assert page.get_attribute("#rows tr:first-child .save", "aria-pressed") == "true"
+    assert page.inner_text("#b-sl") == "Shortlist (1)"
+    page.click("#b-sl")
+    assert page.inner_text("#count") == "1 listing" and first_price(page) == "$749"
+    assert "Shortlist" in page.inner_text("#chips")
+    page.reload()  # kept in the browser
+    wait_for_data(page)
+    assert page.inner_text("#b-sl") == "Shortlist (1)"
+    # as if the listing had dropped off the site: the saved copy still shows, marked
+    page.evaluate("""() => { const u = [...SAVED.keys()][0]; ALL = ALL.filter(r => r[8] !== u); BYURL.delete(u); SL_ON = true; refilter(); }""")
+    assert page.inner_text("#count") == "1 listing" and first_price(page) == "$749"
+    assert "No longer on the site" in page.inner_text("#rows tr:first-child .gone")
+    page.click("#rows tr:first-child .save")  # removed: the shortlist is empty
+    assert page.inner_text("#count") == "0 listings" and "Your shortlist is empty" in page.inner_text("#emptymsg")
+    assert errors == []
