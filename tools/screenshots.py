@@ -9,8 +9,8 @@ from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE, OUT = os.path.join(ROOT, "site"), os.path.join(ROOT, "docs", "screenshots")
-# the storage notice only shows on a first visit; the shots show the page as a returning visitor sees it
-QUIET = "try { localStorage.setItem('notice-ok', '1'); localStorage.setItem('counted', '1'); } catch (e) {}"
+# the disclaimer only shows on a first visit; the shots show the page as a returning visitor sees it
+QUIET = "try { localStorage.setItem('disclaimer', '1'); localStorage.setItem('counted', '1'); } catch (e) {}"
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):

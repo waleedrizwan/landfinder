@@ -217,18 +217,23 @@ footer{color:var(--soft);font-size:13px;padding:28px 0 36px;max-width:80ch}
 footer p{margin:4px 0}
 footer .disclaim{margin-top:12px;font-size:12px}
 footer .legal{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:12px}
-/* the one-time storage notice: informational, the site has no tracking cookies to consent to */
-#notice{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:1003;margin:0 auto;max-width:560px;display:flex;gap:14px;align-items:center;
-  background:var(--paper);border:1px solid var(--rule);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:12px 14px 12px 16px;font-size:13px;color:var(--soft)}
-#notice p{margin:0;flex:1}
-#notice button{flex:none;border:0;border-radius:999px;background:var(--blue);color:var(--paper);font-weight:600;padding:7px 16px;cursor:pointer}
+/* the disclaimer, shown on a first visit until "I understand" is clicked (it also says what the browser stores) */
+#disclaim{width:min(520px,calc(100% - 32px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--rule);border-radius:12px;
+  padding:24px 24px 20px;background:var(--paper);color:var(--ink);box-shadow:0 24px 60px rgba(0,0,0,.35)}
+#disclaim::backdrop{background:rgba(10,14,20,.6)}
+#disclaim h2{display:flex;align-items:center;gap:10px;font-size:20px;margin:0 0 12px}
+#disclaim h2 svg{flex:none;width:26px;height:26px;fill:none;stroke:var(--warn);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#disclaim ul{margin:0 0 14px;padding-left:20px}
+#disclaim li{margin:7px 0}
+#disclaim .small{font-size:13px;color:var(--soft);margin:0 0 18px}
+#disclaim-ok{width:100%;border:0;border-radius:8px;background:var(--blue);color:var(--paper);font-weight:600;font-size:16px;padding:11px 16px;cursor:pointer}
+#disclaim-ok:hover{filter:brightness(1.08)}
 [hidden]{display:none!important}
 
 @media (max-width:860px){
   header{padding:0 16px;gap:14px}
   header h1 span{display:none}
   #fcur{width:84px}
-  #notice{bottom:calc(76px + env(safe-area-inset-bottom))}  /* above the List/Map pill */
   .layout{display:block}
   aside{display:none;position:static;max-height:none;border-right:0;border-bottom:1px solid var(--rule);padding:16px}
   aside.open{display:block}
@@ -390,16 +395,24 @@ footer .legal{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:12px}
       <p><span id="updated"></span></p>
       <p>Prices are converted at the exchange rates of the last update. Check access, zoning, title and foreign-ownership rules before buying. Sources: Properstar, LandWatch, Zillow, Kijiji, REALTOR.ca, OLX, Mercado Libre, Ieichiba, HOME'S Akiya Bank, Immobiliare.it, Encuentra24. A free (¥0) Japanese house still costs transfer fees, registration and yearly property tax.</p>
       <p class="disclaim">Listings are collected automatically from other sites and may be wrong, out of date or already sold; always check the original listing. Nothing here is legal, financial or real estate advice. Not affiliated with any listing site. Exchange rates by <a href="https://www.exchangerate-api.com" rel="noopener">Exchange Rate API</a>.</p>
-      <p class="legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms &amp; disclaimer</a><a href="/licenses.html">Open source</a></p>
+      <p class="legal"><a href="#" id="show-disclaim">Disclaimer</a><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms &amp; disclaimer</a><a href="/licenses.html">Open source</a></p>
     </footer>
   </main>
 </div>
 
 <button class="viewpill" id="viewpill" type="button"></button>
-<div id="notice" role="region" aria-label="Storage notice" hidden>
-  <p>No ads or tracking. This site keeps a login cookie and saves your shortlist and currency in this browser. <a href="/privacy.html">Privacy</a></p>
-  <button type="button" id="notice-ok">OK</button>
-</div>
+<dialog id="disclaim" aria-labelledby="disclaim-h" aria-describedby="disclaim-list">
+  <h2 id="disclaim-h"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></svg>Before you look</h2>
+  <ul id="disclaim-list">
+    <li><strong>Listings may be wrong.</strong> They're collected automatically from other websites and can be out of date, already sold, mislabeled or not what they seem.</li>
+    <li><strong>Prices are estimates.</strong> They're converted at the last update's exchange rates and may leave out taxes, fees and other costs.</li>
+    <li><strong>This isn't advice.</strong> Nothing here is legal, financial or real estate advice. Check the original listing, the seller, the title and local rules, including whether foreigners can buy, before paying anything. Never send money to someone you haven't verified.</li>
+    <li><strong>Not affiliated</strong> with any of the listing sites.</li>
+  </ul>
+  <p class="small">No ads or tracking: the site keeps a login cookie and saves your shortlist and currency in this browser.
+    <a href="/terms.html">Terms &amp; disclaimer</a> · <a href="/privacy.html">Privacy</a></p>
+  <button type="button" id="disclaim-ok" autofocus>I understand</button>
+</dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
@@ -594,13 +607,19 @@ getJSON("data.json").then(d => {
   }, () => { LOADING = false; $("loadbar").hidden = true; $("sub").textContent = "Only the cheapest listings loaded. Refresh the page to get the rest."; });
 }).catch(() => { $("count").classList.remove("loading"); $("loadbar").hidden = true; $("rows").innerHTML = ""; $("count").textContent = "Couldn't load listings"; $("sub").textContent = "Refresh the page to try again."; });
 
-// the storage notice, shown until it's closed once (see privacy.html)
-let noticed = false;
-try { noticed = !!localStorage.getItem("notice-ok"); } catch (e) {}
-if (!noticed) {
-  $("notice").hidden = false;
-  $("notice-ok").onclick = () => { $("notice").hidden = true; try { localStorage.setItem("notice-ok", "1"); } catch (e) {} };
-}
+// the disclaimer: shown on a first visit until "I understand" is clicked (see terms.html, privacy.html);
+// the footer's Disclaimer link shows it again
+let agreed = false;
+try { agreed = localStorage.getItem("disclaimer") === "1"; } catch (e) {}
+const disclaim = $("disclaim");
+disclaim.addEventListener("cancel", e => { if (!agreed) e.preventDefault(); });  // Esc doesn't skip it the first time
+$("disclaim-ok").onclick = () => {
+  agreed = true;
+  try { localStorage.setItem("disclaimer", "1"); } catch (e) {}
+  disclaim.close();
+};
+$("show-disclaim").onclick = e => { e.preventDefault(); if (disclaim.showModal) disclaim.showModal(); };
+if (!agreed && disclaim.showModal) disclaim.showModal();
 
 // the visitor count (functions/api/visitors.js): a browser's first visit adds one, later visits just read it
 let firstVisit = false;

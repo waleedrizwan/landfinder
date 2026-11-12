@@ -48,8 +48,10 @@ def serve(page, site_dir):
     page.route("**/*", handle)
 
 
-def open_page(browser, site_dir, viewport):
+def open_page(browser, site_dir, viewport, first_visit=False):
     page = browser.new_page(viewport=viewport)
+    if not first_visit:  # a returning visitor: the disclaimer was already accepted
+        page.add_init_script("try { localStorage.setItem('disclaimer', '1'); } catch (e) {}")
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     serve(page, site_dir)
@@ -219,4 +221,23 @@ def test_shortlist(browser, site):
     assert "No longer on the site" in page.inner_text("#rows tr:first-child .gone")
     page.click("#rows tr:first-child .save")  # removed: the shortlist is empty
     assert page.inner_text("#count") == "0 listings" and "Your shortlist is empty" in page.inner_text("#emptymsg")
+    assert errors == []
+
+
+def test_disclaimer_shows_once_and_must_be_accepted(browser, site):
+    page, errors = open_page(browser, site, {"width": 390, "height": 844}, first_visit=True)
+    box = page.locator("#disclaim")
+    box.wait_for(state="visible")
+    assert "Listings may be wrong" in box.inner_text()
+    page.keyboard.press("Escape")  # Esc doesn't skip it
+    assert box.is_visible()
+    page.click("#disclaim-ok")
+    assert not box.is_visible()
+    page.reload()
+    page.wait_for_timeout(300)
+    assert not box.is_visible()  # remembered
+    page.evaluate("document.getElementById('show-disclaim').click()")  # the footer link shows it again...
+    assert box.is_visible()
+    page.keyboard.press("Escape")  # ...and now Esc closes it
+    assert not box.is_visible()
     assert errors == []
