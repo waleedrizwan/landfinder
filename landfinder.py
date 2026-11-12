@@ -30,7 +30,7 @@ Output (in this folder)
   coverage.csv  per country/state/province on each site: results the site reports, what we fetched, why we stopped
   data/         raw scraped records + progress, so a stopped run resumes where it left off
 """
-import argparse, csv, glob, gzip, json, math, os, queue, random, re, shutil, signal, subprocess, sys, threading, time, unicodedata, warnings
+import argparse, csv, glob, gzip, hashlib, json, math, os, queue, random, re, shutil, signal, subprocess, sys, threading, time, unicodedata, warnings
 from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -475,6 +475,9 @@ FINANCE_RX = re.compile(r"\b(seller financ|owner financ|financing available|down
 
 
 MONTH_RX = r"\s*(?:/|per|a|each|pcm|p/m)?\s*(?:mo\b|month|p/m\b|pcm\b|pm\b)"
+# the word every match of the price-per-month patterns below ends in: without one in the text, neither can match, so
+# the pattern built from each listing's price (one regex compile per price) is skipped
+MONTH_WORD_RX = re.compile(r"mo\b|month|p/m\b|pcm\b|pm\b", re.I)
 
 
 def monthly_rent(rec):
@@ -484,6 +487,8 @@ def monthly_rent(rec):
     if not p:
         return False
     text = " ".join(str(rec.get(k) or "") for k in ("title", "title_en", "description"))
+    if not MONTH_WORD_RX.search(text):
+        return False
     amt = re.escape("{:,.0f}".format(p)).replace(",", ",?")
     return bool(re.search(r"(?<![\d.])\$?\s?%s(?!\d)%s" % (amt, MONTH_RX), text, re.I))
 
@@ -497,7 +502,7 @@ def fix_down_payment(rec):
     text = " ".join(str(rec.get(k) or "") for k in ("title", "description"))
     downs = {num(m) for m in DOWN_RX.findall(text)}
     amt = re.escape("{:,.0f}".format(p)).replace(",", ",?")
-    if re.search(r"\$\s?%s\s*(?:/|per|a|each)?\s*(?:mo\b|month)" % amt, text, re.I):
+    if "$" in text and MONTH_WORD_RX.search(text) and re.search(r"\$\s?%s\s*(?:/|per|a|each)?\s*(?:mo\b|month)" % amt, text, re.I):
         return True  # the listed price is the monthly payment
     if p not in downs and not (p < 3000 and FINANCE_RX.search(text)):
         return False
@@ -722,7 +727,8 @@ def special_tags(rec):
     return tags
 
 
-def finalize(rec, rates):
+def check_listing(rec, rates):
+    """The work of finalize(): price in US dollars, flags, property type and tags, set on rec."""
     down_only = rec.get("source") == "landwatch" and fix_down_payment(rec)
     if rec.get("source") == "properstar" and (rec.get("title") or "").startswith("Castle: "):  # saved before CASTLE_MIN_M2
         rec["title"] = properstar_castle_title(rec["title"][len("Castle: "):], rec.get("living_m2"))
@@ -752,6 +758,32 @@ def finalize(rec, rates):
     rec["tags"] = ",".join(special_tags(rec))
     if down_only:
         rec["flags"] = "; ".join(x for x in (rec["flags"], "may be payment plan price - listed price is the down payment") if x)
+    return rec
+
+
+# A run checks most listings several times: as each search page is saved, in every round of verify_cheapest() and for
+# the outputs. main() turns this memo on for a run, so a listing whose fields haven't changed is only checked once. The
+# key is every field check_listing() can read (all but FINALIZE_IGNORES, which it doesn't) and the exchange rate it uses.
+FINALIZE_MEMO = None
+FINALIZE_IGNORES = ("scraped_at", "first_seen", "verified_at", "verified_key", "search", "similar")
+FINALIZE_SETS = ("title", "acres", "living_m2", "lat", "lon", "price", "listed_price", "price_usd", "usd_per_acre",
+                 "flags", "type", "tags")
+
+
+def finalize(rec, rates):
+    """check_listing(rec, rates), remembered for the run while FINALIZE_MEMO is on."""
+    memo = FINALIZE_MEMO
+    if memo is None:
+        return check_listing(rec, rates)
+    rate = (rates or {}).get((rec.get("currency") or "USD").upper())
+    key = hashlib.sha1(json.dumps([{k: v for k, v in rec.items() if k not in FINALIZE_IGNORES}, rate],
+                                  sort_keys=True, default=str).encode()).digest()
+    hit = memo.get(key)
+    if hit is None:
+        check_listing(rec, rates)
+        memo[key] = {k: rec[k] for k in FINALIZE_SETS if k in rec}
+    else:
+        rec.update(hit)
     return rec
 
 
@@ -896,8 +928,10 @@ class Store:
             f.write(page_url + "\n")
 
     def all(self):
-        """Latest record per URL, with first_seen = when it was first scraped."""
-        latest, first = {}, {}
+        """Latest record per URL, with first_seen = when it was first scraped. A listing whose search card hasn't
+        changed since it was last verified keeps what verify_cheapest() found (VERIFIED_FIELDS), and card_description
+        holds the card's own description."""
+        latest, first, verified = {}, {}, {}
         if os.path.exists(self.path):
             for line in open(self.path):
                 try:
@@ -909,7 +943,13 @@ class Store:
                     continue
                 first.setdefault(u, r.get("scraped_at"))
                 latest[u] = r
+                if r.get("verified_key"):
+                    verified[u] = r
         for u, r in latest.items():
+            v = verified.get(u)
+            if v is not None and v is not r and card_key(r) == v["verified_key"]:
+                r = latest[u] = dict(r, card_description=r.get("description"),
+                                     **{k: v[k] for k in VERIFIED_FIELDS if k in v})
             r["first_seen"] = first[u]
         return list(latest.values())
 
@@ -1938,6 +1978,42 @@ def tile_slots(n, area="right"):
     return [(x0 + (i % cols) * w, top + (i // cols) * h, w, h) for i in range(n)]
 
 
+EMPTY_DAYS = 7  # a Properstar search that found nothing is tried again after this many days, not on every run
+_EMPTY_LOCK = threading.Lock()
+
+
+def empty_sid(src, key, kind):
+    """The search a Properstar job saves its listings under (a castle search is 'castles <country>')."""
+    return search_id("castles", key, "land") if src == "castles" else search_id(src, key, kind)
+
+
+def empty_searches():
+    """{search: the day it last found nothing}, from data/empty_searches.json."""
+    try:
+        return json.load(open(os.path.join(DATA, "empty_searches.json")))
+    except (OSError, ValueError):
+        return {}
+
+
+def note_empty(store, sid):
+    """After a Properstar search: remember the day when it found nothing, forget it once it finds something. A search
+    that failed or was blocked shows neither."""
+    s = store.searches.get(sid) or {}
+    if s.get("stop") not in ("end of results", "price reached", "enough listings", "page cap"):
+        return
+    with _EMPTY_LOCK:
+        empty = empty_searches()
+        if s.get("listings"):
+            if empty.pop(sid, None) is None:
+                return
+        else:
+            empty[sid] = datetime.now().strftime("%Y-%m-%d")
+        path = os.path.join(DATA, "empty_searches.json")
+        with open(path + ".tmp", "w") as f:
+            json.dump(empty, f, indent=0, sort_keys=True)
+        os.replace(path + ".tmp", path)
+
+
 def run_pool(jobs, store, a):
     """Several Chrome windows, each taking the next country/state off a shared queue."""
     q = queue.Queue()
@@ -1958,7 +2034,7 @@ def run_pool(jobs, store, a):
                 except queue.Empty:
                     break
                 fn = BROWSER_CRAWLERS[src]
-                if given_up("properstar" if src == "castles" else src):
+                if given_up({"castles": "properstar"}.get(src, src.replace("delta-", ""))):
                     done[0] += 1
                     METRICS.add("job", source=src, key=key, section=kind, secs=0, pages=0, new=0, skipped=True)
                     log("%-10s [%d/%d] %-28s skipped: the site is blocking us" % (src, done[0], total, key if kind == "land" else key + " " + kind))
@@ -1971,6 +2047,8 @@ def run_pool(jobs, store, a):
                     new = 0
                 done[0] += 1
                 METRICS.add("job", source=src, key=key, section=kind, secs=round(time.time() - t, 2), pages=br.pages - pages, new=new)
+                if src in ("properstar", "castles"):
+                    note_empty(store, empty_sid(src, key, kind))
                 log("%-10s [%d/%d] %-28s +%d listings" % (src, done[0], total, key if kind == "land" else key + " " + kind, new))
         finally:
             LIVE.idle("finished" if not STOP.is_set() else "stopped")
@@ -2516,9 +2594,10 @@ ZILLOW_MIN_USD = 1000  # $1 and $100 placeholders sit below this
 ZILLOW_PER_PAGE, ZILLOW_PAGES = 41, 20  # Zillow answers HTTP 400 past page 24 of a search (about 1,000 results)
 
 
-def zillow_url(state, p, kind="land", floor=ZILLOW_MIN_USD, ceil=None):
+def zillow_url(state, p, kind="land", floor=ZILLOW_MIN_USD, ceil=None, sort="pricea"):
+    """sort: "pricea" cheapest first, "days" newest first."""
     fs = {k: {"value": False} for k in ("sf", "tow", "mf", "con", "apa", "manu", "apco")}  # land only
-    fs.update({"sort": {"value": "pricea"}, "price": dict({"min": floor}, **({"max": ceil} if ceil else {}))})
+    fs.update({"sort": {"value": sort}, "price": dict({"min": floor}, **({"max": ceil} if ceil else {}))})
     sq = {"pagination": {"currentPage": p} if p > 1 else {}, "isMapVisible": False, "isListVisible": True,
           "filterState": fs}
     return "https://www.zillow.com/%s/land/%s?searchQueryState=%s" % (
@@ -2541,6 +2620,7 @@ def parse_zillow(html, state, kind="land"):
             continue
         ll = L.get("latLong") or {}
         url = L["detailUrl"]
+        on_zillow = L.get("timeOnZillow") or info.get("timeOnZillow")  # milliseconds since it was listed
         out.append({
             "source": "zillow",
             "country": "US",
@@ -2552,6 +2632,8 @@ def parse_zillow(html, state, kind="land"):
             "acres": acres_from_text(L.get("lotAreaString")),
             "lat": ll.get("latitude"), "lon": ll.get("longitude"),
             "url": url if url.startswith("http") else "https://www.zillow.com" + url,
+            "listed_at": (datetime.now() - timedelta(milliseconds=on_zillow)).isoformat(timespec="minutes")
+            if isinstance(on_zillow, (int, float)) else None,
         })
     return out
 
@@ -2776,6 +2858,14 @@ def properstar_full_listing(html, url):
 
 VERIFY_SOURCES = ("landwatch", "kijiji", "properstar")
 VERIFY_READY = {"landwatch": LANDWATCH_AD_READY, "properstar": PROPERSTAR_READY}
+VERIFY_DAYS = 7  # a verified listing whose search card hasn't changed is opened again after this many days
+VERIFIED_FIELDS = ("description", "acres", "verified_at", "verified_key")  # what verification sets, carried by Store.all()
+
+
+def card_key(rec):
+    """What a listing's search card says, as a short hash: verification is redone when any of it changes."""
+    return hashlib.sha1(json.dumps([rec.get(k) for k in ("price", "currency", "title", "description", "acres")],
+                                   default=str).encode()).hexdigest()[:16]
 
 
 def verify_cheapest(store, a, n=60, rounds=4):
@@ -2785,13 +2875,18 @@ def verify_cheapest(store, a, n=60, rounds=4):
     2030'). Properstar search results carry no description at all, and its agencies post rentals and per-m2 prices as
     sales ('$100 pesos m2 renta'); the listing page has the full text. Only listings the site will show are checked.
     LandWatch and Properstar pages open in several Chrome windows at once (--workers), Kijiji's load over plain HTTP."""
-    today = datetime.now().strftime("%Y-%m-%d")
+    recent = (datetime.now() - timedelta(days=VERIFY_DAYS)).isoformat(timespec="seconds")
     sources = [s for s in VERIFY_SOURCES if s in csv_list(a.sources, [])]
     plain, gone = Plain(delay=max(1.0, a.delay / 2)), set()
     queues = {s: queue.Queue() for s in sources}
 
     def recheck(r, raw, get):
         rec = dict(raw[r["url"]])
+        card = rec.pop("card_description", None)
+        if card is not None:  # verified before with the same card (Store.all() joined the two): start from the card again
+            rec["description"] = card
+        elif not rec.get("verified_at"):  # the search card's own line
+            rec["verified_key"] = card_key(rec)
         rec["verified_at"] = datetime.now().isoformat(timespec="seconds")
         if r["source"] == "kijiji":
             ad = kijiji_full_ad(get(r["url"]) or "", r["url"])
@@ -2834,10 +2929,7 @@ def verify_cheapest(store, a, n=60, rounds=4):
                         recheck(job[0], job[1], lambda u: br.get(u, ready=VERIFY_READY[src], what="verify"))
                 except Exception as e:
                     log("  verifying %s failed: %s" % (job[0]["url"], str(e)[:120]))
-                finally:
-                    if br and queues[src].empty():  # nothing left for now: close the window, reopen it next round
-                        br.close()
-                        br = None
+                finally:  # the window stays open for the next round; it closes when the rounds are over
                     queues[src].task_done()
         finally:
             if br:
@@ -2860,7 +2952,7 @@ def verify_cheapest(store, a, n=60, rounds=4):
             for src in sources:
                 top = [r for r in recs if r["source"] == src and r["price_usd"] and r["url"] not in gone
                        and r["flags"] in ("", "no land area listed")][:n]
-                todo += [r for r in top if not (r.get("verified_at") or "").startswith(today)]
+                todo += [r for r in top if (r.get("verified_at") or "") < recent]  # unchanged since: still verified
             if not todo or STOP.is_set():
                 break
             log("verifying %d of the cheapest %d listings per site (%s, round %d)" % (
@@ -3203,21 +3295,40 @@ def town(rec):
     return name, state
 
 
+def nearest_point(grid, pts, lat, lon):
+    """The point of pts, (lat, lon, ...) tuples, nearest to (lat, lon). grid holds the same points by 1° cell: the cells
+    around the spot come first, widening until no point outside them can be nearer, so the answer is the one measuring
+    every point gives. Far from any point it measures them all."""
+    k = math.cos(math.radians(lat))  # a degree of longitude shrinks away from the equator
+    dist = lambda p: (p[0] - lat) ** 2 + ((p[1] - lon) * k) ** 2
+    ci, cj = math.floor(lat), math.floor(lon)
+    for reach in (1, 2, 4, 8):
+        near = [p for i in range(ci - reach, ci + reach + 1) for j in range(cj - reach, cj + reach + 1)
+                for p in grid.get((i, j), ())]
+        if near:
+            best = min(near, key=dist)
+            if dist(best) <= (reach * k) ** 2:  # any point outside these cells is at least reach * k away
+                return best
+    return min(pts, key=dist)
+
+
 def towns(recs):
     """Town of each listing, for the site's City filter. In the US and Canada, where town names repeat from state to
     state, it reads "Deming, NM"; listings whose address has no state (Properstar, a few Kijiji ads) take the state
     of the nearest listing that has one. Spellings that differ only in case become the most common one."""
     found = [town(r) for r in recs]
-    known = {}
+    known, grids = {}, {}
     for r, (name, st) in zip(recs, found):
         if st and r.get("lat") is not None:
             known.setdefault(r["country"].upper(), set()).add((r["lat"], r["lon"], st))
+    for cc, pts in known.items():  # the same points by 1° cell, so a listing's nearest one is found without measuring them all
+        for p in pts:
+            grids.setdefault(cc, {}).setdefault((math.floor(p[0]), math.floor(p[1])), []).append(p)
     names = []
     for r, (name, st) in zip(recs, found):
-        pts = known.get((r.get("country") or "").upper())
-        if name and not st and pts and r.get("lat") is not None:
-            k = math.cos(math.radians(r["lat"]))  # a degree of longitude shrinks away from the equator
-            st = min(pts, key=lambda p: (p[0] - r["lat"]) ** 2 + ((p[1] - r["lon"]) * k) ** 2)[2]
+        cc = (r.get("country") or "").upper()
+        if name and not st and cc in known and r.get("lat") is not None:
+            st = nearest_point(grids[cc], known[cc], r["lat"], r["lon"])[2]
         names.append("%s, %s" % (name, st) if name and st else name)
     keys = [((r.get("country") or "").upper(), n.lower()) for r, n in zip(recs, names)]
     spelling = {}
@@ -3461,6 +3572,137 @@ def write_coverage(store, recs, cutoff):
         " (%s%s)" % (", ".join("%s %d" % (c, n) for n, c in thin[:15]), "..." if len(thin) > 15 else "") if thin else ""))
 
 
+# ----------------------------------------------------------------------------- delta trial
+
+# --delta-trial measures whether a daily newest-first pass could stand in for the full scrape on most days. Before the
+# full scrape, each LandWatch, Properstar and Zillow land search is read newest first, only as far as listings that
+# were already up at the last run, and logs/delta-<run>.jsonl records what each one took. After the scrape, the new
+# listings the full pass found are checked against the ones the newest-first pass found, and logs/delta-trial.jsonl
+# gets a line per site. The full scrape itself runs as usual; the newest-first listings are saved too, but not counted
+# towards any search's tally.
+DELTA_PAGES = 8  # most newest-first pages a search reads; a search that reaches it had more new listings than that
+TRIAL = None  # the DeltaTrial of a --delta-trial run
+
+
+def listing_number(url):
+    """LandWatch's and Properstar's listing numbers, which grow with each new listing: /pid/428813623, /listing/121903523."""
+    m = re.search(r"/(?:pid|listing)/(\d+)(?:$|[/?#])", url or "")
+    return int(m.group(1)) if m else None
+
+
+class DeltaTrial:
+    def __init__(self, store, a):
+        self.store, self.reach = store, getattr(a, "reach", REACH_DEFAULT)
+        self.run = os.path.basename(METRICS.path)[len("metrics-"):-len(".jsonl")]
+        self.start = datetime.now().isoformat(timespec="seconds")
+        self.path = os.path.join(HERE, "logs", "delta-%s.jsonl" % self.run)
+        self.lock, self.rows = threading.Lock(), []
+        # new = a listing number above the highest one stored (LandWatch, Properstar), or a Zillow listing put up
+        # after its state's last scrape
+        self.top, self.last = {}, {}
+        for u in store.urls:
+            n = listing_number(u)
+            if n:
+                self.top[source_of(u)] = max(self.top.get(source_of(u), 0), n)
+        for r in store.all():
+            if r.get("source") == "zillow" and r.get("search"):
+                self.last[r["search"]] = max(self.last.get(r["search"], ""), r.get("scraped_at") or "")
+
+    def is_new(self, rec):
+        src = rec.get("source")
+        if src == "zillow":
+            last = self.last.get(rec.get("search") or "")
+            return bool(last and rec.get("listed_at") and rec["listed_at"] > last[:16])
+        n, top = listing_number(rec.get("url")), self.top.get(src)
+        return bool(n and top and n > top)
+
+    def search(self, src, key, url_for, load):
+        """One search newest first, page by page, until a page holds nothing new or DELTA_PAGES is reached."""
+        sid, pages, seen, new, capped = search_id(src, key, "land"), 0, 0, 0, False
+        for p in range(1, DELTA_PAGES + 1):
+            if STOP.is_set() or given_up(src):
+                break
+            res = load(url_for(p), (0, self.reach - 1), p)
+            if res is None:
+                break
+            recs, _, raw = res
+            pages += 1
+            for r in recs:
+                r["search"], r["delta"] = sid, self.run
+            fresh = sum(self.is_new(r) for r in recs)
+            seen, new = seen + len(recs), new + fresh
+            self.store.add(recs)
+            capped = bool(fresh) and p == DELTA_PAGES
+            if not fresh or not raw:
+                break
+        row = {"source": src, "search": sid, "pages": pages, "seen": seen, "new": new, "capped": capped}
+        with self.lock:
+            self.rows.append(row)
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            with open(self.path, "a") as f:
+                f.write(json.dumps(row) + "\n")
+        return new
+
+    def report(self):
+        """Per site: what the newest-first pass took, and how many of the new listings the full pass found it had too."""
+        found, full = {}, {}  # source -> URLs
+        with open(self.store.path) as f:
+            for line in f:
+                r = json.loads(line)
+                if (r.get("scraped_at") or "") < self.start or not r.get("search"):
+                    continue
+                if r.get("delta") == self.run:
+                    found.setdefault(r["source"], set()).add(r["url"])
+                elif "delta" not in r and self.is_new(r):
+                    full.setdefault(r["source"], set()).add(r["url"])
+        pages_all = Counter(e["source"] for e in METRICS.events if e["kind"] == "fetch" and e.get("what") == "search")
+        out = []
+        for src in sorted({row["source"] for row in self.rows}):
+            rows = [row for row in self.rows if row["source"] == src]
+            per = sorted(row["pages"] for row in rows)
+            got, new = found.get(src, set()), full.get(src, set())
+            e = {"run": self.run, "source": src, "searches": len(rows), "pages": sum(per), "pages_median": per[len(per) // 2],
+                 "pages_max": per[-1], "capped": sum(row["capped"] for row in rows), "new_newest_first": sum(row["new"] for row in rows),
+                 "full_pages": pages_all[src] - sum(per), "new_full_pass": len(new), "both": len(new & got),
+                 "recall": round(len(new & got) / len(new), 3) if new else None}
+            out.append(e)
+            log("delta trial, %s: %d searches newest first took %d pages (median %d, most %d, %d hit the cap) and found %d new "
+                "listings; the full pass took %d pages and found %d new, %s of them also found newest first" % (
+                    src, e["searches"], e["pages"], e["pages_median"], e["pages_max"], e["capped"], e["new_newest_first"],
+                    e["full_pages"], e["new_full_pass"], "%d (%.0f%%)" % (e["both"], 100 * e["recall"]) if new else "none"))
+        with open(os.path.join(HERE, "logs", "delta-trial.jsonl"), "a") as f:
+            for e in out:
+                f.write(json.dumps(e) + "\n")
+
+
+def delta_landwatch(br, store, st, a):
+    url = lambda p: "https://www.landwatch.com/%s-land-for-sale/price-0-%d/sort-newest%s" % (
+        st, TRIAL.reach - 1, "/page-%d" % p if p > 1 else "")
+    return TRIAL.search("landwatch", st, url, html_loader(br, "landwatch", st, "land", parse_landwatch, LANDWATCH_READY))
+
+
+def delta_properstar(br, store, slug, a):
+    url = lambda p: "https://www.properstar.com/%s/buy/land-plot/most-recent?price.min=%d&price.max=%d%s" % (
+        slug, MIN_PRICE, TRIAL.reach - 1, "&p=%d" % p if p > 1 else "")
+    return TRIAL.search("properstar", slug, url, html_loader(br, "properstar", slug, "land", parse_properstar, PROPERSTAR_READY))
+
+
+def crawl_zillow_trial(fetch, store, states, a):
+    """--delta-trial: every state newest first, then the usual Zillow scrape."""
+    for st in states:
+        if STOP.is_set():
+            return
+        TRIAL.search("zillow", st, lambda p, st=st: zillow_url(st, p, floor=ZILLOW_MIN_USD, ceil=TRIAL.reach - 1, sort="days"),
+                     html_loader(fetch, "zillow", st, "land", zillow_page))
+    crawl_zillow(fetch, store, states, a)
+
+
+BROWSER_CRAWLERS.update({
+    "delta-landwatch": lambda br, store, key, a, kind: delta_landwatch(br, store, key, a),
+    "delta-properstar": lambda br, store, key, a, kind: delta_properstar(br, store, key, a),
+})
+
+
 # ----------------------------------------------------------------------------- main
 
 def csv_list(s, default):
@@ -3473,7 +3715,7 @@ TEST_DEFAULTS = dict(states="arizona,maine", countries="portugal,mexico", provin
 
 
 def main():
-    global DATA, GIVE_UP_AFTER
+    global DATA, GIVE_UP_AFTER, FINALIZE_MEMO, TRIAL
     ap = argparse.ArgumentParser(description="Find the cheapest land listings worldwide.")
     ap.add_argument("--sources", default=ALL_SOURCES, help="comma-separated, default: " + ALL_SOURCES)
     ap.add_argument("--listings", type=int, default=250,
@@ -3513,6 +3755,9 @@ def main():
     ap.add_argument("--verify-only", action="store_true", help="only run the verification step, then rebuild outputs")
     ap.add_argument("--no-translate", action="store_true",
                     help="don't translate new non-English titles for the site (uses the claude CLI)")
+    ap.add_argument("--delta-trial", action="store_true",
+                    help="also read each LandWatch, Properstar and Zillow land search newest first, and log how many pages "
+                         "that took and how many of the full scrape's new listings it found (logs/delta-trial.jsonl)")
     ap.add_argument("--test", action="store_true",
                     help="small sample run for measuring: 2 states, 2 countries, 1 province, 2 pages each, 5 verified, "
                          "2 hidden windows (any of these can still be set). Uses data-test/ and leaves the site alone")
@@ -3534,6 +3779,7 @@ def main():
     except ValueError as e:
         ap.error(str(e))
     GIVE_UP_AFTER = a.give_up
+    FINALIZE_MEMO = {}  # each listing is checked once a run, however often the scrape, verify and outputs ask
     store = Store()
     if not a.report_only:
         LIVE.store, LIVE.args = store, " ".join(sys.argv[1:]) or "(defaults)"
@@ -3573,8 +3819,10 @@ def main():
                 plain.append((crawl_meli, (wanted(MELI_SITES), a, rates, kinds)))
             if "ieichiba" in sources and (not a.countries or "japan" in countries):
                 plain.append((crawl_ieichiba, (a,)))
+            if a.delta_trial:
+                TRIAL = DeltaTrial(store, a)
             if "zillow" in sources:
-                plain.append((crawl_zillow, (states, a)))
+                plain.append((crawl_zillow_trial if a.delta_trial else crawl_zillow, (states, a)))
             def timed(fn):
                 def run(*args):
                     with METRICS.phase(fn.__name__.replace("crawl_", "http ")):
@@ -3597,7 +3845,19 @@ def main():
                 "encuentra24": [(cc, "land") for cc in e24],
                 "homes": [(pf, k) for k in kinds for pf in prefs] if japan else [],
             }
-            lists = [[(src, key, k) for key, k in keys] for src, keys in per_source.items() if src in sources]
+            # Properstar searches that found nothing lately wait a week (unless --countries names them): each costs a page
+            since = (datetime.now() - timedelta(days=EMPTY_DAYS)).strftime("%Y-%m-%d")
+            quiet = set() if a.countries else {sid for sid, day in empty_searches().items() if day > since}
+            lists = [[(src, key, k) for key, k in keys if empty_sid(src, key, k) not in quiet or src not in ("properstar", "castles")]
+                     for src, keys in per_source.items() if src in sources]
+            if quiet:
+                log("%d Properstar searches skipped: nothing for sale at their last check this week" % len(
+                    [1 for src, keys in per_source.items() if src in ("properstar", "castles") and src in sources
+                     for key, k in keys if empty_sid(src, key, k) in quiet]))
+            if a.delta_trial:  # the newest-first reads take turns with the other searches
+                lists.insert(0, [("delta-properstar", c, "land") for c in countries
+                                 if "properstar" in sources and empty_sid("properstar", c, "land") not in quiet])
+                lists.insert(0, [("delta-landwatch", st, "land") for st in states if "landwatch" in sources])
             jobs = []
             for i in range(max([len(l) for l in lists] or [0])):  # interleave so no single site gets every window at once
                 for l in lists:
@@ -3606,12 +3866,26 @@ def main():
                 log("%d browser jobs across %d Chrome windows" % (len(jobs), min(a.workers, len(jobs))))
                 with METRICS.phase("chrome pool"):
                     run_pool(jobs, store, a)
-            while any(t.is_alive() for t in threads):
-                for t in threads:
-                    t.join(0.5)
+
+            def wait(ts):
+                while any(t.is_alive() for t in ts):
+                    for t in ts:
+                        t.join(0.5)
+            # verify and the translations don't wait for Zillow, the slowest site: its listings aren't verified and its
+            # titles are English addresses, so both run while its thread finishes
+            wait([t for (fn, _), t in zip(plain, threads) if fn not in (crawl_zillow, crawl_zillow_trial)])
             if a.verify and not STOP.is_set():
                 with METRICS.phase("verify"):
                     verify_cheapest(store, a, a.verify)
+            if not (a.test or a.no_translate or STOP.is_set()):
+                with METRICS.phase("translate"):  # fills data/translations.json, so build_outputs finds them done
+                    recs = [r for r in store.all() if safe_url(r.get("url"))]  # what build_outputs() will translate
+                    cutoff = site_cutoff(recs)
+                    if cutoff:
+                        add_english([r for r in recs if (r.get("scraped_at") or "") >= cutoff])
+            wait(threads)
+            if TRIAL and not STOP.is_set():
+                TRIAL.report()
         except KeyboardInterrupt:
             STOP.set()
             log("stopped by user - progress is saved; rerun the same command to resume")

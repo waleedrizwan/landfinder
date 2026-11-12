@@ -12,7 +12,8 @@ if pgrep -f "landfinder.py" >/dev/null; then
 fi
 echo "== start $(date)" | tee -a "$LOG"
 echo "Log: $LOG"
-if caffeinate -i ./run.sh --fresh --hidden "$@" 2>&1 | tee -a "$LOG"; then
+# --delta-trial: for the week of 12 Nov 2026, also measure a newest-first pass (logs/delta-trial.jsonl); remove after
+if caffeinate -i ./run.sh --fresh --hidden --delta-trial "$@" 2>&1 | tee -a "$LOG"; then
   ./publish.sh 2>&1 | tee -a "$LOG"
 fi
 echo "== end $(date) (exit $?)" | tee -a "$LOG"
