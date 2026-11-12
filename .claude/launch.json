@@ -1,9 +1,33 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "site", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8765", "--directory", "site"], "port": 8765 },
-    { "name": "design", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8767", "--directory", "design"], "port": 8767 },
-    { "name": "site-login", "runtimeExecutable": "/opt/homebrew/bin/npx",
-      "runtimeArgs": ["-y", "wrangler@4", "pages", "dev", "site", "--port", "8790", "--persist-to", ".wrangler/state"], "port": 8790 }
+    {
+      "name": "site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765",
+        "--directory",
+        "site"
+      ],
+      "port": 8765
+    },
+    {
+      "name": "site-login",
+      "runtimeExecutable": "/opt/homebrew/bin/npx",
+      "runtimeArgs": [
+        "-y",
+        "wrangler@4",
+        "pages",
+        "dev",
+        "site",
+        "--port",
+        "8790",
+        "--persist-to",
+        ".wrangler/state"
+      ],
+      "port": 8790
+    }
   ]
 }

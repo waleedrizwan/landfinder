@@ -1,0 +1,3 @@
+# Everything in requirements.txt, plus the test runner (test.sh installs these into .venv).
+-r requirements.txt
+pytest>=8.0

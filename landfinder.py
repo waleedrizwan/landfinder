@@ -3305,6 +3305,20 @@ SITE_PART_BYTES = 12_000_000  # rows per site data file: well under Cloudflare P
 SITE_FIRST_BYTES = 2_000_000  # data.json's share: the cheapest listings, small so the page can show them quickly
 
 
+def write_site_pages(more):
+    """Write site/index.html from site_template.html (naming the extra data files in `more`) and copy the legal pages
+    (privacy.html, terms.html, licenses.html, legal.css) from legal/. tools/rebuild_site.py calls this alone."""
+    with open(os.path.join(HERE, "site_template.html")) as f:
+        html = f.read()
+    assert "const MORE = [];" in html, "site_template.html lost the MORE line build_site fills in"
+    html = html.replace("const MORE = [];", "const MORE = %s;" % json.dumps(more), 1)
+    with open(os.path.join(SITE, "index.html"), "w") as f:
+        f.write(html)
+    open(os.path.join(SITE, ".nojekyll"), "w").close()
+    for path in glob.glob(os.path.join(HERE, "legal", "*")):
+        shutil.copy(path, SITE)
+
+
 def build_site(recs, rates):
     """Write site/index.html + site/data.json: every listing seen in the last few days of runs, plus the
     exchange rates its US dollar prices were converted with, for the site's Currency list."""
@@ -3359,15 +3373,7 @@ def build_site(recs, rates):
         data["more"] = more
     with open(os.path.join(SITE, "data.json"), "w") as f:
         json.dump(data, f, separators=(",", ":"), allow_nan=False)
-    with open(os.path.join(HERE, "site_template.html")) as f:
-        html = f.read()
-    assert "const MORE = [];" in html, "site_template.html lost the MORE line build_site fills in"
-    html = html.replace("const MORE = [];", "const MORE = %s;" % json.dumps(more), 1)
-    with open(os.path.join(SITE, "index.html"), "w") as f:
-        f.write(html)
-    open(os.path.join(SITE, ".nojekyll"), "w").close()
-    for path in glob.glob(os.path.join(HERE, "legal", "*")):  # privacy.html, terms.html, licenses.html, legal.css
-        shutil.copy(path, SITE)
+    write_site_pages(more)
     log("site: %d listings from %d countries -> site/" % (len(rows), len(countries)))
 
 

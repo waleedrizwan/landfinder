@@ -11,3 +11,6 @@ logs/
 .wrangler/
 data-test/
 .dev.vars
+.pytest_cache/
+*.log
+.claude/settings.local.json
