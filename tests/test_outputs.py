@@ -9,7 +9,7 @@ from conftest import FakeStore, fixture_html
 
 NOW = datetime(2026, 10, 22, 6, 30)
 # site/data.json row fields (see the comment at the top of the script in site_template.html)
-PER_ACRE, PRICE, ACRES, CC, REGION, TITLE, SRC, FLAGS, URL, LAT, LON, ORIG, TYPE, TOWN, OWN_PRICE, CUR, TAGS, PROV, SIMILAR, BLURB = range(20)
+PER_ACRE, PRICE, ACRES, CC, REGION, TITLE, SRC, FLAGS, URL, LAT, LON, ORIG, TYPE, TOWN, OWN_PRICE, CUR, TAGS, PROV, SIMILAR, BLURB, DEAL, DEAL_USD, DEAL_N = range(23)
 
 
 def stamp(days_ago=0):
@@ -102,7 +102,7 @@ def test_site_rows(built):
     assert "https://www.landwatch.com/old/pid/1" in built["csv_by_url"]  # ...but still in results.csv
     assert data["countries"] == len({r[CC] for r in data["rows"]}) == 5
     for r in data["rows"]:
-        assert len(r) == 20  # ... province, similar-listings count, description excerpt
+        assert len(r) == 23  # ... province, similar-listings count, description excerpt, deal, its typical price and comparables
         assert r[PRICE] is not None
     py = built["by_url"]["https://www.properstar.com/listing/114526942"]
     assert py[PRICE] == 4400 and (py[OWN_PRICE], py[CUR]) == (33000000, "PYG")
@@ -220,3 +220,65 @@ def test_site_blurb():
     assert lf.site_blurb({"source": "landwatch", "title": "Big lot in Deming", "description": "Big lot in Deming, NM"}) is None
     assert lf.site_blurb({"source": "zillow", "title": "0 Main St", "description": "Lot / Land for sale | 256 days on Zillow | -- sqft"}) == "256 days on Zillow"
     assert lf.site_blurb({"source": "zillow", "title": "0 Main St", "description": "Lot / Land for sale | 12 hours ago | 1 acres lot"}) == "Listed 12 hours ago · 1 acres lot"
+
+
+def deal_market(n=48):
+    """n believable plots around one spot in Tennessee at ~$10,000 x acres^0.6, 1 to 10 acres, a few percent apart."""
+    recs = []
+    for i in range(n):
+        acres = (1, 2, 5, 10)[i % 4]
+        recs.append({"source": "landwatch", "country": "US", "title": "Lot %d" % i, "flags": "", "type": "vacant land",
+                     "price_usd": 10000 * acres ** 0.6 * (0.8, 0.9, 1.0, 1.1, 1.25)[i % 5], "acres": acres,
+                     "lat": 35.5 + (i % 6) * 0.03, "lon": -85.2 + (i // 6) * 0.03, "url": "https://example.com/%d" % i})
+    return recs
+
+
+def deal_listing(name, frac, acres=2, **kw):
+    """A 2-acre plot in the middle of deal_market() at frac of its typical price."""
+    return dict({"source": "landwatch", "country": "US", "title": name, "flags": "", "type": "vacant land",
+                 "price_usd": 10000 * acres ** 0.6 * frac, "acres": acres, "lat": 35.58, "lon": -85.13,
+                 "url": "https://example.com/" + name}, **kw)
+
+
+def test_deal_scores_tags_steals_and_good_deals_against_nearby_land():
+    picks = [deal_listing("steal", 0.2), deal_listing("good", 0.35), deal_listing("fair", 0.9),
+             deal_listing("too-cheap-to-trust", 0.03),  # a per-m2 price or a wrong area, not a bargain
+             deal_listing("flagged", 0.2, flags="lease/rental"), deal_listing("house", 0.2, type="house"),
+             deal_listing("big-steal", 0.2, acres=10)]  # its comparables are scaled to 10 acres, not compared per acre
+    recs = deal_market() + picks
+    lf.deal_scores(recs)
+    got = {r["title"]: r["deal"] for r in picks}
+    assert got == {"steal": "steal", "good": "good deal", "fair": "", "too-cheap-to-trust": "", "flagged": "",
+                   "house": "", "big-steal": "steal"}
+    steal = picks[0]
+    assert steal["deal_n"] == lf.DEAL_COMPS and 0.8 < 10000 * 2 ** 0.6 / steal["deal_usd"] < 1.25
+    assert picks[4]["deal_usd"] is None and picks[5]["deal_usd"] is None  # flagged listings and houses aren't scored
+    assert not any(r["deal"] for r in recs[:48])  # the ordinary market has no deals
+
+
+def test_deal_scores_are_deterministic_and_need_enough_comparables():
+    import random
+    recs = deal_market() + [deal_listing("steal", 0.2)]
+    first = {r["url"]: (r["deal"], r["deal_usd"]) for r in lf.deal_scores([dict(r) for r in recs])}
+    for seed in range(3):  # the order listings come in doesn't change any verdict or typical price
+        shuffled = [dict(r) for r in recs]
+        random.Random(seed).shuffle(shuffled)
+        assert {r["url"]: (r["deal"], r["deal_usd"]) for r in lf.deal_scores(shuffled)} == first
+    few = deal_market(lf.DEAL_MIN_COMPS - 1) + [deal_listing("lonely", 0.2)]
+    lf.deal_scores(few)
+    assert few[-1]["deal"] == "" and few[-1]["deal_usd"] is None
+    far = deal_market() + [deal_listing("far", 0.2, lat=36.9)]  # ~150 km north: nothing within reach
+    lf.deal_scores(far)
+    assert far[-1]["deal_usd"] is None
+
+
+def test_site_rows_carry_the_deal_and_its_reason(workdir, rates):
+    recs = deal_market() + [deal_listing("steal", 0.2)]
+    for r in recs:
+        r.update(scraped_at="2026-11-10T10:00:00", price=r["price_usd"], currency="USD", region="Spencer, TN")
+    lf.deal_scores(recs)
+    lf.build_site(recs, rates)
+    rows = json.loads((workdir / "site" / "data.json").read_text())["rows"]
+    steal = next(r for r in rows if r[TITLE] == "steal")
+    assert steal[DEAL] == "S" and steal[DEAL_N] == lf.DEAL_COMPS and steal[DEAL_USD] % 100 == 0
+    assert all(r[DEAL] == "" and r[DEAL_USD] is None and r[DEAL_N] is None for r in rows if r is not steal)

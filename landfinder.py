@@ -3097,7 +3097,7 @@ def add_english(recs):
 # ----------------------------------------------------------------------------- output
 
 COLS =["price_usd", "usd_per_acre", "acres", "type", "tags", "country", "region", "title", "price", "currency",
-        "source", "flags", "url", "lat", "lon", "scraped_at", "similar"]
+        "source", "flags", "url", "lat", "lon", "scraped_at", "similar", "deal", "deal_usd"]
 
 
 # words that vary between two postings of the same address: "4 SANDPIPER AVENUE Manitouwadge" / "4 Sandpiper AVE Manitouwadge"
@@ -3178,6 +3178,97 @@ def same_title(t1, raw1, t2, raw2, source):
     return len(raw_short) >= KIJIJI_TITLE_MAX and long_.startswith(short)
 
 
+# ----------------------------------------------------------------------------- deal score
+# A listing is a good deal or a steal when it's priced far below comparable land nearby: the DEAL_COMPS listings
+# closest to it in place and size, among the believable land listings we hold. Their prices are scaled to its size
+# (land costs less per acre the more you buy), and it's measured against their median and how much they spread.
+# Plain arithmetic on our own data, with fixed settings: the same listings always get the same tags.
+DEAL_COMPS, DEAL_MIN_COMPS = 40, 15  # comparables per listing; fewer than DEAL_MIN_COMPS -> no verdict
+DEAL_POOL = 150  # look outward until this many listings are in reach (or DEAL_KM): busy areas compare at short range
+DEAL_KM = 80
+DEAL_CELL = 0.2  # degrees: the grid the neighbor search walks
+DEAL_SIZE_SPAN = math.log(4)  # in picking comparables, a 4x size difference counts as much as the pool's whole radius
+DEAL_SLOPE = (0.3, 1.0)  # price ~ acres ** slope, fitted per listing within these bounds; DEAL_SLOPE_DEFAULT when
+DEAL_SLOPE_DEFAULT = 0.6  # the comparables are all about one size
+DEAL_MIN_SPREAD = 0.35  # log-price spread floor, so a tight market doesn't call a small discount a steal
+# (tier, at most this fraction of the typical price, at least this many spreads below it), best first
+DEAL_TIERS = (("steal", 0.25, 2.0), ("good deal", 0.4, 1.25))
+# under this fraction of the typical price it's nearly always a wrong number (a price per m2 or per sotka, a wrong
+# area), not a bargain: no tag
+DEAL_FLOOR = 0.10
+NOT_LAND_TYPES = ("house", "land with house")
+
+
+def deal_ready(r):
+    """r can be scored and can be a comparable: believable land with a price, an area and a location."""
+    return (not r.get("flags") and (r.get("price_usd") or 0) > 0 and (r.get("acres") or 0) > 0
+            and r.get("lat") is not None and r.get("lon") is not None
+            and r.get("type") not in NOT_LAND_TYPES and r.get("kind") != "houses")
+
+
+def _median(v):
+    v = sorted(v)
+    n = len(v)
+    return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
+
+
+def deal_scores(recs):
+    """Set deal ("steal", "good deal" or ""), deal_usd (the typical price of land this size around it, in US dollars)
+    and deal_n (how many comparables that came from) on every listing in recs."""
+    pts = []  # (lat, lon, log price, log acres, rec)
+    for r in recs:
+        r["deal"], r["deal_usd"], r["deal_n"] = "", None, 0
+        if deal_ready(r):
+            pts.append((r["lat"], r["lon"], math.log(r["price_usd"]), math.log(r["acres"]), r))
+    grid = {}
+    for p in pts:
+        grid.setdefault((math.floor(p[0] / DEAL_CELL), math.floor(p[1] / DEAL_CELL)), []).append(p)
+    km_lat = 111.2
+    for p in pts:
+        lat, lon, lp, la, rec = p
+        k = max(math.cos(math.radians(lat)), 0.2)  # a degree of longitude shrinks away from the equator
+        ci, cj = math.floor(lat / DEAL_CELL), math.floor(lon / DEAL_CELL)
+        cell_km = DEAL_CELL * km_lat * k  # the narrower side of a cell
+        found, reach = [], 0
+        while True:
+            ring = [(ci + i, cj + j) for i in range(-reach, reach + 1) for j in range(-reach, reach + 1)
+                    if max(abs(i), abs(j)) == reach]
+            for c in ring:
+                for q in grid.get(c, ()):
+                    if q is not p:
+                        found.append((math.hypot((q[0] - lat) * km_lat, (q[1] - lon) * km_lat * k), q))
+            covered = min(reach * cell_km, DEAL_KM)  # every listing nearer than this is in `found`
+            if covered >= DEAL_KM or sum(1 for d, _ in found if d <= covered) >= DEAL_POOL:
+                break
+            reach += 1
+        pool = [(d, q) for d, q in found if d <= covered]
+        if len(pool) < DEAL_MIN_COMPS:
+            continue
+        radius = max(max(d for d, _ in pool), 1.0)
+        # closest in place and size together; ties go to the listing URL, so the order recs come in doesn't matter
+        pool.sort(key=lambda dq: (dq[0] / radius + abs(dq[1][3] - la) / DEAL_SIZE_SPAN, dq[1][4].get("url") or ""))
+        comps = [q for _, q in pool[:DEAL_COMPS]]
+        xs, ys = [q[3] for q in comps], [q[2] for q in comps]
+        mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+        sxx = sum((x - mx) ** 2 for x in xs)
+        if sxx / len(xs) < 0.1:
+            slope = DEAL_SLOPE_DEFAULT
+        else:
+            slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+            slope = min(max(slope, DEAL_SLOPE[0]), DEAL_SLOPE[1])
+        scaled = [y + slope * (la - x) for x, y in zip(xs, ys)]  # each comparable's price at this listing's size
+        typical = _median(scaled)
+        spread = max(1.4826 * _median([abs(s - typical) for s in scaled]), DEAL_MIN_SPREAD)
+        rec["deal_usd"], rec["deal_n"] = math.exp(typical), len(comps)
+        if lp < typical + math.log(DEAL_FLOOR):
+            continue
+        for tier, frac, spreads in DEAL_TIERS:
+            if lp <= typical + math.log(frac) and lp <= typical - spreads * spread:
+                rec["deal"] = tier
+                break
+    return recs
+
+
 def build_outputs(store, english=True):
     rates = load_fx()
     LIVE.set_step("reading the saved listings")
@@ -3219,6 +3310,7 @@ def build_outputs(store, english=True):
     recs.sort(key=lambda r: r.get("scraped_at") or "", reverse=True)  # newest first among equal prices, so a
     recs.sort(key=lambda r: (r["price_usd"] is None, r["price_usd"] or 0))  # repost keeps its live URL; cheapest first
     recs = collapse_similar(recs)
+    deal_scores(recs)  # after merging duplicates, so a parcel posted five times isn't five comparables
     LIVE.set_step("writing results.csv, report.html and the site")
     csv_path = os.path.join(HERE, "results.csv")
     with open(csv_path, "w", newline="") as f:
@@ -3226,7 +3318,7 @@ def build_outputs(store, english=True):
         w.writeheader()
         for r in recs:
             row = dict(r)
-            for k in ("usd_per_acre", "price_usd"):
+            for k in ("usd_per_acre", "price_usd", "deal_usd"):
                 if row.get(k) is not None:
                     row[k] = round(row[k], 2)
             w.writerow(row)
@@ -3263,6 +3355,7 @@ def site_codes(flags):
 
 TYPE_CODES = {"vacant land": "V", "building lot": "L", "farmland": "F", "forest": "T", "recreational": "R", "waterfront": "W",
               "commercial": "C", "dacha plot": "G", "land with house": "B", "house": "H"}  # labels are in site_template.html
+DEAL_CODES = {"steal": "S", "good deal": "G"}  # deal_scores(); labels are in site_template.html
 TAG_CODES = {"ruin": "R", "castle": "K", "church": "C"}  # special_tags(); labels are in site_template.html
 # where each site keeps the town: LandWatch in its address "[street, ]Deming, NM, 88030[, Luna County]", Kijiji before
 # the province or postal code, OLX before the region name ("Vila de Rei, Castelo Branco"), Mercado Libre before the
@@ -3487,7 +3580,11 @@ def build_site(recs, rates):
                      rnd(r.get("price"), 2), (r.get("currency") or "USD").upper(),  # the price in its own currency
                      "".join(TAG_CODES[t] for t in (r.get("tags") or "").split(",") if t), prov,
                      r.get("similar") or 0,  # how many near-identical listings this row stands for (collapse_similar)
-                     site_blurb(r)])
+                     site_blurb(r),
+                     # deal_scores(): "S" steal or "G" good deal, the typical price of land this size nearby and how
+                     # many listings that came from (only on tagged rows, to keep the data small)
+                     DEAL_CODES.get(r.get("deal"), ""), rnd(r.get("deal_usd"), -2) if r.get("deal") else None,
+                     r.get("deal_n") if r.get("deal") else None])
     if newest < datetime.now() - timedelta(days=1):
         log("site: WARNING - the newest listing was scraped %s; the site is being rebuilt from old data" % newest.strftime("%Y-%m-%d %H:%M"))
     data = {"generated": newest.astimezone().isoformat(timespec="seconds"),  # shown as "Updated ..." on the site

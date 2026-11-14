@@ -12,9 +12,9 @@
 <style>
 /* A ranked price list: rows you read down one column, with the filters in a sidebar that shows how many
    listings each choice has. Long lists (countries, towns) have their own search box. */
-:root{--save:#d6336c;--sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--paper:#fff;--ink:#18202e;--soft:#5a6475;--rule:#e2e5ea;--tint:#f4f5f8;--blue:#2346b5;--mark:#fff3b8;--warn:#a4400f;--bar:#a9b8dc}
+:root{--save:#d6336c;--sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--paper:#fff;--ink:#18202e;--soft:#5a6475;--rule:#e2e5ea;--tint:#f4f5f8;--blue:#2346b5;--mark:#fff3b8;--warn:#a4400f;--bar:#a9b8dc;--good:#1d7a3e;--goodbg:#e3f4e8}
 @media (prefers-color-scheme:dark){
-  :root{--paper:#161a21;--ink:#e8ebf0;--soft:#9aa3b2;--rule:#2b313b;--tint:#1f242d;--blue:#8ea8ff;--mark:#36311a;--warn:#f0a070;--bar:#4a5d8f}
+  :root{--paper:#161a21;--ink:#e8ebf0;--soft:#9aa3b2;--rule:#2b313b;--tint:#1f242d;--blue:#8ea8ff;--mark:#36311a;--warn:#f0a070;--bar:#4a5d8f;--good:#7fd99a;--goodbg:#1c3324}
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 var(--sans);font-variant-numeric:tabular-nums}
@@ -75,6 +75,10 @@ td.rank{color:var(--soft);font-size:13px;width:44px;padding-top:15px}
 td.price{width:140px}
 .p{display:block;font-size:21px;font-weight:700;letter-spacing:-.01em;line-height:1.15}
 .own{display:block;font-size:12.5px;color:var(--soft);margin-top:3px}
+/* deal_scores() in landfinder.py: priced far below comparable land nearby */
+.deal{display:inline-block;margin-top:5px;padding:1px 7px;border-radius:9px;font-size:12px;font-weight:700;color:var(--good);background:var(--goodbg)}
+.deal.S{color:var(--paper);background:var(--good)}
+.dealwhy{color:var(--good);font-size:13px;margin-top:2px}
 td.land{width:150px}
 .ac{font-weight:600}
 .bar{display:block;height:4px;background:var(--bar);border-radius:2px;margin:6px 0 4px;min-width:3px;max-width:100%}
@@ -291,6 +295,7 @@ footer .legal{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:12px}
 
     <h2>Price (<span class="cur">USD</span>)</h2>
     <div class="range"><input id="fmin" type="number" min="0" step="100" inputmode="numeric" placeholder="Min" aria-label="Min price">to<input id="fmax" type="number" min="0" step="100" inputmode="numeric" placeholder="Max" aria-label="Max price"></div>
+    <label class="chk"><input id="fdeal" type="checkbox"> Steals and good deals only</label>
 
     <h2>Type of property</h2>
     <div id="ftype" data-label="Type of property"></div>
@@ -342,6 +347,7 @@ footer .legal{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:12px}
       <div class="fpanel" id="pp-price" hidden>
         <h3>Price (<span class="cur">USD</span>)</h3>
         <div class="range"><input data-for="fmin" type="number" min="0" step="100" inputmode="numeric" placeholder="Min" aria-label="Min price">to<input data-for="fmax" type="number" min="0" step="100" inputmode="numeric" placeholder="Max" aria-label="Max price"></div>
+        <label class="chk"><input data-for="fdeal" type="checkbox"> Steals and good deals only</label>
       </div>
       <div class="fpanel" id="pp-type" hidden><h3>Type of property</h3><div id="tftype" data-label="Type of property"></div></div>
       <div class="fpanel wide" id="pp-where" hidden>
@@ -417,12 +423,14 @@ footer .legal{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:12px}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script>
-// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type, town, price, currency, tags, province, similar, blurb]
+// row: [usdPerAcre, priceUsd, acres, cc, region, title, source, flags, url, lat, lon, originalTitle, type, town, price, currency, tags, province, similar, blurb, deal, dealUsd, dealN]
 // title and region are in English; originalTitle is set when the title was translated; type is a TYPES key;
 // town is "" when the listing doesn't say, and "Deming, NM" in the US and Canada; price is in the listing's own currency;
 // tags holds SPECIAL keys: a ruin or fixer-upper, a castle or manor, a church or chapel; province is the state,
 // province or region ("" when unknown); similar is how many near-identical listings (reposts, the same lot on two
-// sites, a seller's row of identical lots) this one stands for; blurb is the start of its description, when in English
+// sites, a seller's row of identical lots) this one stands for; blurb is the start of its description, when in English;
+// deal is "S" (steal), "G" (good deal) or "": priced far below comparable land nearby, whose typical price for a
+// lot this size is dealUsd, from dealN listings (both null on untagged rows)
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let regionNames, currencyNames;
@@ -460,7 +468,8 @@ for (const [name, codes] of Object.entries({
   for (const cc of codes.split(" ")) CONTINENT[cc] = name;
 const contOf = cc => CONTINENT[cc] || "Other";
 const SPECIAL = {R:"Ruin", K:"Castle", C:"Church"};
-const FILTERS = ["q", "fmin", "fmax", "facmin", "facmax", "fppa", "fsrc", "farea", "fflag"];
+const DEAL = {S:"Steal", G:"Good deal"};
+const FILTERS = ["q", "fmin", "fmax", "facmin", "facmax", "fppa", "fsrc", "farea", "fflag", "fdeal"];
 // titles written in capitals read as shouting: show them in sentence case
 const tidy = s => {
   s = String(s || "").trim();
@@ -525,7 +534,7 @@ function shortlistRows(){
 function toggleSave(url){
   const r = BYURL.get(url) || GONE.get(url);
   if (SAVED.has(url)) SAVED.delete(url);
-  else if (r) SAVED.set(url, {row: r.slice(0, 20), at: Date.now()});
+  else if (r) SAVED.set(url, {row: r.slice(0, 23), at: Date.now()});
   else return;
   storeSaved();
   const on = SAVED.has(url), what = on ? "Remove from shortlist" : "Save to shortlist";
@@ -545,7 +554,7 @@ function refreshSaved(){
   let changed = false;
   for (const [url, s] of SAVED) {
     const r = BYURL.get(url);
-    if (r && JSON.stringify(r.slice(0, 20)) !== JSON.stringify(s.row)) { s.row = r.slice(0, 20); changed = true; }
+    if (r && JSON.stringify(r.slice(0, 23)) !== JSON.stringify(s.row)) { s.row = r.slice(0, 23); changed = true; }
   }
   if (changed) storeSaved();
 }
@@ -777,13 +786,13 @@ function update(fromMap){
         sps = [...picks].filter(p => p[0] === "s").map(p => p[1]), tys = new Set([...picks].filter(p => p[0] !== "s")),
         num = id => parseFloat($(id).value), mn = num("fmin"), mx = num("fmax"),
         amn = num("facmin"), amx = num("facmax"), ppa = num("fppa"),
-        area = $("farea").checked, fl = $("fflag").checked;
+        area = $("farea").checked, fl = $("fflag").checked, deal = $("fdeal").checked;
   // picking a continent, country or town moves the map there, so the old map area no longer applies
   const places = [conts, ccs, towns].map(m => [...m].sort().join(",")).join("|");
   if (places !== placeKey) { placeKey = places; AREA = null; }
   // the filters that aren't checkbox lists
   const base = r => (!src || r[6] === src) && (isNaN(mn) || price(r) >= mn) && (isNaN(mx) || price(r) <= mx)
-    && (!area || r[2] != null)
+    && (!area || r[2] != null) && (!deal || r[20])
     && (isNaN(amn) || (r[2] != null && r[2] >= amn)) && (isNaN(amx) || (r[2] != null && r[2] <= amx))
     && (isNaN(ppa) || (r[0] != null && r[0] * RATE <= ppa))
     && (!q || r.text.includes(q));
@@ -862,7 +871,7 @@ function renderChips(){
     ...["type", "cont", "country", "prov", "city"].flatMap(k => [...F[k].sel].map(v => ({label: F[k].labelOf(v), clear: () => F[k].sel.delete(v)}))),
     field("facmin", v => `${v}+ acres`), field("facmax", v => `Up to ${v} acres`), field("fppa", v => `Up to ${withCur(v)} an acre`),
     $("fsrc").value && {label: srcName($("fsrc").value), clear: () => { $("fsrc").value = ""; }},
-    tick("farea", "Area listed"), tick("fflag", "Flagged included"),
+    tick("fdeal", "Deals only"), tick("farea", "Area listed"), tick("fflag", "Flagged included"),
     AREA && {label: "In the map area", clear: () => { AREA = null; }},
     SL_ON && {label: "Shortlist", clear: () => { SL_ON = false; }}].filter(Boolean);
   $("chips").innerHTML = CHIPS.map((c, i) => `<button class="chip" type="button" data-chip="${i}" aria-label="Remove ${esc(c.label)}">${esc(c.label)}<span aria-hidden="true">×</span></button>`).join("")
@@ -876,7 +885,8 @@ function barLabels(){
   const v = id => $(id).value.trim(), k = n => n.toLocaleString("en-US");
   const set = (id, on, label) => { $(id).classList.toggle("on", !!on); $(id).textContent = label; };
   const mn = v("fmin"), mx = v("fmax");
-  set("b-price", mn || mx, mn && mx ? `${withCur(k(+mn))}–${k(+mx)}` : mn ? `${withCur(k(+mn))}+` : mx ? `Up to ${withCur(k(+mx))}` : "Price");
+  const dl = $("fdeal").checked, pl = mn && mx ? `${withCur(k(+mn))}–${k(+mx)}` : mn ? `${withCur(k(+mn))}+` : mx ? `Up to ${withCur(k(+mx))}` : "";
+  set("b-price", mn || mx || dl, pl && dl ? `${pl} · Deals` : pl || (dl ? "Deals only" : "Price"));
   const named = (keys, word) => { const p = keys.flatMap(x => [...F[x].sel].map(s => F[x].labelOf(s)));
     return [p.length, p.length === 1 ? p[0] : p.length ? `${word} (${p.length})` : word]; };
   const [nt, lt] = named(["type"], "Type"), [nw, lw] = named(["cont", "country", "prov", "city"], "Location");
@@ -953,7 +963,10 @@ const free = r => price(r) === 0;
 const feeNote = r => { if (!free(r)) return ""; const [line, more] = FEES[r[3]] || FEES[""];
   return `<details class="fees"><summary>${esc(line)}</summary><p>${esc(more)}</p></details>`; };
 const ownLine = r => free(r) ? "plus transfer costs" : converted(r) ? (r[14] ? `${digits(r[14])} ${r[15]}` : "") : (price(r) ? `${digits(price(r))} ${CUR}` : "");
-const priceCell = r => `<span class="p">${money(price(r))}</span>${ownLine(r) ? `<span class="own">${ownLine(r)}</span>` : ""}`;
+// "Steal: 18% of the ~$94,000 typical for 40 nearby listings this size", from deal_scores() in landfinder.py
+const dealWhy = r => r[20] ? `${DEAL[r[20]]}: ${Math.max(1, Math.round(r[1] / r[21] * 100))}% of the ~${money(r[21] * RATE)} typical for ${r[22]} nearby listings this size` : "";
+const dealBadge = r => r[20] ? `<span class="deal ${r[20]}" title="${esc(dealWhy(r))}">${DEAL[r[20]]}</span>` : "";
+const priceCell = r => `<span class="p">${money(price(r))}</span>${ownLine(r) ? `<span class="own">${ownLine(r)}</span>` : ""}${dealBadge(r)}`;
 // the bar shows land on a log scale, so a 0.05-acre lot and a 500-acre ranch both read
 const barW = a => Math.max(2, Math.min(100, (Math.log10(a) + 2) / 5 * 100));
 const landCell = r => r[2] == null ? `<span class="ppa">Area not listed</span>`
@@ -974,7 +987,7 @@ function renderList(){
     <td class="rank">${i + 1}</td>
     <td class="price">${priceCell(r)}</td>
     <td class="land">${landCell(r)}</td>
-    <td class="what"><div class="tl">${titleLink(r)}${saveBtn(r)}</div>${r.gone && !LOADING ? `<div class="gone">No longer on the site: it may have sold or been taken down. Saved details shown.</div>` : ""}${r[19] ? `<div class="blurb">${esc(r[19])}</div>` : ""}${whereLine(r)}<div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${feeNote(r)}${warning(r)}</td>
+    <td class="what"><div class="tl">${titleLink(r)}${saveBtn(r)}</div>${r.gone && !LOADING ? `<div class="gone">No longer on the site: it may have sold or been taken down. Saved details shown.</div>` : ""}${r[19] ? `<div class="blurb">${esc(r[19])}</div>` : ""}${whereLine(r)}${r[20] ? `<div class="dealwhy">${esc(dealWhy(r))}</div>` : ""}<div class="tyin">${TYPES[r[12]] || "Land"}${specials(r)}</div>${feeNote(r)}${warning(r)}</td>
     <td class="loc">${esc(r[4] || "")}<span class="cc">${esc(cname(r[3]))}</span></td>
     <td class="type">${TYPES[r[12]] || "Land"}${specials(r)}</td>
     <td class="src">${esc(srcName(r[6]))}${r[18] ? `<span class="sim" title="${r[18]} more ${r[18] === 1 ? "listing" : "listings"} of this parcel or lots just like it">+${r[18]} similar</span>` : ""}</td></tr>`).join("");

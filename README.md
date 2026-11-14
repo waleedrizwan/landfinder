@@ -38,6 +38,7 @@ Every row links to the live listing.
 - 🧹 **Junk filtered out.** Down payments, per-m² prices, rentals, auctions, wanted ads and reposts are caught and flagged.
 - 🗺️ **A map and filters.** Search by country, town, type, size and price; the map groups thousands of pins.
 - 🏚️ **Ruins, castles & churches.** Special listings are tagged by keyword in a dozen languages.
+- 💸 **Steals & good deals.** Each land listing is compared with the 40 most similar ones nearby (close in place and size, prices scaled to its size). Far below their typical price is a good deal (≤40%) or a steal (≤25%); under 10% is treated as a likely data error, not a bargain. Fixed rules, no AI: the same data always gives the same tags.
 - 🈳 **Everything in English.** Foreign titles are translated once with Claude Haiku and cached.
 - 🖥️ **A live dashboard.** Watch every Chrome window, every site's blocks and the time left while it runs.
 
